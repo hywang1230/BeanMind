@@ -50,6 +50,119 @@ def get_config():
     }
 
 
+@app.get("/api/test/db")
+def test_database():
+    """测试数据库连接"""
+    from backend.config import get_db
+    from backend.infrastructure.persistence.db.models import User
+    
+    db = next(get_db())
+    try:
+        # 查询用户数量
+        user_count = db.query(User).count()
+        return {
+            "status": "ok",
+            "message": "Database connection successful",
+            "user_count": user_count,
+        }
+    finally:
+        db.close()
+
+
+@app.get("/api/test/beancount")
+def test_beancount():
+    """测试 Beancount 服务"""
+    from backend.config import get_beancount_service
+    
+    service = get_beancount_service()
+    accounts = service.get_accounts()
+    balances = service.get_account_balances()
+    
+    return {
+        "status": "ok",
+        "message": "Beancount service working",
+        "ledger_file": str(service.ledger_path),
+        "total_entries": len(service.entries),
+        "total_accounts": len(accounts),
+        "accounts": accounts,
+        "balances": {
+            account: {currency: float(amount) for currency, amount in bal.items()}
+            for account, bal in balances.items()
+        },
+    }
+
+
+@app.post("/api/test/jwt/create")
+def test_jwt_create(user_id: str = "test_user", username: str = "admin"):
+    """测试 JWT Token 创建"""
+    from backend.infrastructure.auth.jwt_utils import JWTUtils
+    
+    token = JWTUtils.create_access_token({
+        "sub": user_id,
+        "username": username,
+    })
+    
+    expiry = JWTUtils.get_token_expiry(token)
+    
+    return {
+        "status": "ok",
+        "message": "JWT token created",
+        "token": token,
+        "expiry": expiry.isoformat() if expiry else None,
+    }
+
+
+@app.get("/api/test/jwt/verify")
+def test_jwt_verify(token: str):
+    """测试 JWT Token 验证"""
+    from backend.infrastructure.auth.jwt_utils import JWTUtils
+    
+    payload = JWTUtils.verify_token(token)
+    
+    if payload:
+        return {
+            "status": "ok",
+            "message": "Token is valid",
+            "payload": payload,
+            "is_expired": JWTUtils.is_token_expired(token),
+        }
+    else:
+        return {
+            "status": "error",
+            "message": "Token is invalid",
+        }
+
+
+@app.post("/api/test/password/hash")
+def test_password_hash(password: str):
+    """测试密码加密"""
+    from backend.infrastructure.auth.password_utils import PasswordUtils
+    
+    hashed = PasswordUtils.hash_password(password)
+    
+    return {
+        "status": "ok",
+        "message": "Password hashed",
+        "original_length": len(password),
+        "hash": hashed,
+        "hash_length": len(hashed),
+    }
+
+
+@app.post("/api/test/password/verify")
+def test_password_verify(password: str, hashed: str):
+    """测试密码验证"""
+    from backend.infrastructure.auth.password_utils import PasswordUtils
+    
+    is_valid = PasswordUtils.verify_password(password, hashed)
+    
+    return {
+        "status": "ok",
+        "message": "Password verified",
+        "is_valid": is_valid,
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
