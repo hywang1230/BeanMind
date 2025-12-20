@@ -256,31 +256,3 @@ class BeancountService:
         return transactions
 
 
-# 测试代码
-if __name__ == "__main__":
-    from backend.config import settings
-    
-    print("=" * 60)
-    print("Beancount Service Test")
-    print("=" * 60)
-    
-    service = BeancountService(settings.LEDGER_FILE)
-    
-    print(f"\n📁 Ledger file: {service.ledger_path}")
-    print(f"📊 Total entries: {len(service.entries)}")
-    print(f"⚠️  Errors: {len(service.errors)}")
-    
-    # 获取账户列表
-    accounts = service.get_accounts()
-    print(f"\n💰 Accounts ({len(accounts)}):")
-    for acc in accounts:
-        print(f"  - {acc['name']} ({', '.join(acc['currencies'])})")
-    
-    # 获取所有余额
-    balances = service.get_account_balances()
-    print(f"\n💵 Balances:")
-    for account, balance in balances.items():
-        for currency, amount in balance.items():
-            print(f"  - {account}: {amount} {currency}")
-    
-    print("\n" + "=" * 60)

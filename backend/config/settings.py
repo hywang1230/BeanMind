@@ -85,18 +85,3 @@ settings = Settings()
 # 应用启动时确保目录存在
 settings.ensure_directories()
 
-
-if __name__ == "__main__":
-    # 测试配置加载
-    print("=" * 60)
-    print("BeanMind Configuration")
-    print("=" * 60)
-    print(f"Auth Mode: {settings.AUTH_MODE}")
-    print(f"Database URL: {settings.database_url}")
-    print(f"Ledger File: {settings.LEDGER_FILE}")
-    print(f"JWT Secret Key: {'*' * 20} (hidden)")
-    print(f"CORS Origins: {settings.cors_origins_list}")
-    print(f"Backup Provider: {settings.BACKUP_PROVIDER}")
-    print(f"AI Enabled: {settings.AI_ENABLED}")
-    print(f"Debug Mode: {settings.DEBUG}")
-    print("=" * 60)
