@@ -26,9 +26,11 @@ app.add_middleware(
 # 注册 API 路由
 from backend.interfaces.api import auth as auth_api
 from backend.interfaces.api import account as account_api
+from backend.interfaces.api import transaction as transaction_api
 
 app.include_router(auth_api.router)
 app.include_router(account_api.router)
+app.include_router(transaction_api.router)
 
 
 @app.get("/")

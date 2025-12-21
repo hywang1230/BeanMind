@@ -1,5 +1,7 @@
-"""应用服务层"""
-from .auth_service import AuthApplicationService
+"""应用服务模块"""
 from .account_service import AccountApplicationService
+from .auth_service import AuthApplicationService
+from .transaction_service import TransactionApplicationService
 
-__all__ = ["AuthApplicationService", "AccountApplicationService"]
+__all__ = ["AccountApplicationService", "AuthApplicationService", "TransactionApplicationService"]
+

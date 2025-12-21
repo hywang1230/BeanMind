@@ -1,16 +1,24 @@
 """交易元数据表 ORM 模型"""
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Index
+from sqlalchemy.orm import relationship
 from .base import BaseModel
 
 
 class TransactionMetadata(BaseModel):
-    """交易元数据模型"""
+    """交易元数据模型
+    
+    用于存储 Beancount 交易的元数据信息。
+    与 Beancount 文件中的交易通过 beancount_id 关联。
+    """
     __tablename__ = "transaction_metadata"
 
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     beancount_id = Column(String(100), nullable=False, index=True)
     sync_at = Column(DateTime, nullable=False, index=True)
     notes = Column(Text, nullable=True)
+    
+    # 关系
+    user = relationship("User", backref="transaction_metadata")
 
     __table_args__ = (
         Index("idx_transaction_metadata_user", "user_id"),
