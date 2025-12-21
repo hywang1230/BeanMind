@@ -23,6 +23,11 @@ app.add_middleware(
 )
 
 
+# 注册 API 路由
+from backend.interfaces.api import auth as auth_api
+app.include_router(auth_api.router)
+
+
 @app.get("/")
 def read_root():
     """健康检查"""
