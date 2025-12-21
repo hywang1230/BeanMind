@@ -1,0 +1,95 @@
+"""预算仓储接口"""
+from abc import ABC, abstractmethod
+from typing import List, Optional
+from datetime import date
+from backend.domain.budget.entities.budget import Budget
+
+
+class BudgetRepository(ABC):
+    """预算仓储接口"""
+    
+    @abstractmethod
+    async def create(self, budget: Budget) -> Budget:
+        """创建预算
+        
+        Args:
+            budget: 预算实体
+            
+        Returns:
+            创建后的预算实体
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_id(self, budget_id: str) -> Optional[Budget]:
+        """根据ID获取预算
+        
+        Args:
+            budget_id: 预算ID
+            
+        Returns:
+            预算实体，如果不存在则返回None
+        """
+        pass
+    
+    @abstractmethod
+    async def get_by_user_id(self, user_id: str, is_active: Optional[bool] = None) -> List[Budget]:
+        """根据用户ID获取预算列表
+        
+        Args:
+            user_id: 用户ID
+            is_active: 是否只获取活跃的预算，None表示获取所有
+            
+        Returns:
+            预算实体列表
+        """
+        pass
+    
+    @abstractmethod
+    async def get_active_budgets_for_date(self, user_id: str, target_date: date) -> List[Budget]:
+        """获取指定日期的活跃预算
+        
+        Args:
+            user_id: 用户ID
+            target_date: 目标日期
+            
+        Returns:
+            预算实体列表
+        """
+        pass
+    
+    @abstractmethod
+    async def update(self, budget: Budget) -> Budget:
+        """更新预算
+        
+        Args:
+            budget: 预算实体
+            
+        Returns:
+            更新后的预算实体
+        """
+        pass
+    
+    @abstractmethod
+    async def delete(self, budget_id: str) -> bool:
+        """删除预算
+        
+        Args:
+            budget_id: 预算ID
+            
+        Returns:
+            删除成功返回True，否则返回False
+        """
+        pass
+    
+    @abstractmethod
+    async def exists(self, budget_id: str) -> bool:
+        """检查预算是否存在
+        
+        Args:
+            budget_id: 预算ID
+            
+        Returns:
+            存在返回True，否则返回False
+        """
+        pass
