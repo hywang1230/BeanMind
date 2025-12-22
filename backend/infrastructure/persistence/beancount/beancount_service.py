@@ -352,5 +352,81 @@ class BeancountService:
                 rates[currency] = rate
         
         return rates
+    
+    def get_year_file_path(self, year: int) -> Path:
+        """
+        获取指定年份的交易文件路径
+        
+        Args:
+            year: 年份（如 2025）
+            
+        Returns:
+            年份对应的文件路径（如 /path/to/ledger/transactions_2025.beancount）
+        """
+        return self.ledger_path.parent / f"transactions_{year}.beancount"
+    
+    def ensure_year_file(self, year: int) -> Path:
+        """
+        确保年份对应的交易文件存在，并在 main.beancount 中被引用
+        
+        如果文件不存在，则创建一个带有注释头的空文件，
+        并在 main.beancount 中添加 include 指令。
+        
+        Args:
+            year: 年份（如 2025）
+            
+        Returns:
+            年份对应的文件路径
+        """
+        year_file = self.get_year_file_path(year)
+        
+        if not year_file.exists():
+            # 创建年份文件，添加注释头
+            with open(year_file, "w", encoding="utf-8") as f:
+                f.write(f"; {year} 年度交易记录\n")
+                f.write(f"; 创建时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("\n")
+            
+            # 在 main.beancount 中添加 include 指令
+            self._add_include_to_main(year_file.name)
+        
+        return year_file
+    
+    def _add_include_to_main(self, filename: str) -> None:
+        """
+        在 main.beancount 中添加 include 指令
+        
+        Args:
+            filename: 要包含的文件名
+        """
+        include_line = f'include "{filename}"'
+        
+        # 读取 main.beancount 内容
+        with open(self.ledger_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # 检查是否已经包含该文件
+        if include_line in content:
+            return
+        
+        # 查找现有的 include 部分，将新的 include 添加到其中
+        lines = content.split("\n")
+        insert_index = -1
+        
+        # 找到最后一个 include 语句的位置
+        for i, line in enumerate(lines):
+            if line.strip().startswith("include "):
+                insert_index = i + 1
+        
+        if insert_index == -1:
+            # 没有现有的 include，在文件开头添加
+            lines.insert(0, include_line)
+        else:
+            # 在最后一个 include 之后添加
+            lines.insert(insert_index, include_line)
+        
+        # 写回文件
+        with open(self.ledger_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
 
 

@@ -269,6 +269,7 @@ class TransactionRepositoryImpl(TransactionRepository):
         创建新交易
         
         同时写入 Beancount 文件和 SQLite 数据库。
+        交易根据日期年份保存到对应的年份文件中（如 transactions_2025.beancount）。
         """
         # 生成 ID（如果没有）
         if not transaction.id:
@@ -277,8 +278,12 @@ class TransactionRepositoryImpl(TransactionRepository):
         # 转换为 Beancount 格式
         beancount_txn = self._domain_to_beancount(transaction)
         
-        # 写入 Beancount 文件
-        with open(self.beancount_service.ledger_path, "a", encoding="utf-8") as f:
+        # 根据交易日期获取对应年份的文件，并确保文件存在
+        year = transaction.date.year
+        year_file = self.beancount_service.ensure_year_file(year)
+        
+        # 写入到对应年份的 Beancount 文件
+        with open(year_file, "a", encoding="utf-8") as f:
             f.write("\n")
             f.write(printer.format_entry(beancount_txn))
             f.write("\n")
@@ -298,6 +303,7 @@ class TransactionRepositoryImpl(TransactionRepository):
         self.reload()
         
         return self._transactions_cache.get(transaction.id, transaction)
+
     
     def update(self, transaction: Transaction) -> Transaction:
         """

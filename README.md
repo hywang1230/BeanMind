@@ -41,6 +41,8 @@ BeanMind/
 │   └── infrastructure/     # 基础设施层（数据库、Beancount、备份）
 ├── frontend/               # 前端代码
 │   └── src/
+├── scripts/                # 工具脚本
+│   └── sync_beancount.py  # 账本数据同步脚本
 ├── data/                   # 数据目录
 │   ├── ledger/            # Beancount 账本文件
 │   └── beanmind.db        # SQLite 数据库
@@ -65,6 +67,26 @@ BeanMind/
 - 🌐 前端应用：http://localhost:5173
 - 🔌 后端 API：http://localhost:8000
 - 📚 API 文档：http://localhost:8000/docs
+
+### 数据同步（针对已有账本）
+
+如果你有现有的 Beancount 账本文件，可以使用同步脚本将其导入数据库：
+
+```bash
+# 激活虚拟环境
+source venv/bin/activate
+
+# 查看同步摘要
+python scripts/sync_beancount.py --summary-only
+
+# 执行同步（首次或清除后重新同步）
+python scripts/sync_beancount.py --clear
+
+# 增量同步（不清除现有数据）
+python scripts/sync_beancount.py
+```
+
+同步脚本会读取 `data/ledger/main.beancount` 中的账本数据，并将交易元数据写入 SQLite 数据库。
 
 停止服务：
 ```bash
