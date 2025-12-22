@@ -76,8 +76,13 @@ class TransactionRepositoryImpl(TransactionRepository):
             )
             postings.append(posting)
         
-        # 生成唯一 ID（基于日期和描述的哈希）
-        transaction_id = self._generate_transaction_id(entry.date, entry.narration)
+        # 生成唯一 ID（基于完整交易内容的哈希）
+        transaction_id = self._generate_transaction_id(
+            entry.date, 
+            entry.narration, 
+            entry.payee, 
+            entry.postings
+        )
         
         # 转换 Flag
         flag = TransactionFlag.CLEARED if entry.flag == "*" else TransactionFlag.PENDING
@@ -131,19 +136,40 @@ class TransactionRepositoryImpl(TransactionRepository):
             postings=postings
         )
     
-    def _generate_transaction_id(self, txn_date: date, description: str) -> str:
+    def _generate_transaction_id(
+        self, 
+        txn_date: date, 
+        description: str, 
+        payee: Optional[str] = None,
+        postings: Optional[List] = None
+    ) -> str:
         """
         生成交易 ID
+        
+        基于交易的完整内容生成稳定的哈希值，确保每次加载后相同的交易会获得相同的 ID。
         
         Args:
             txn_date: 交易日期
             description: 交易描述
+            payee: 交易方
+            postings: 记账分录列表
             
         Returns:
             唯一的交易 ID
         """
-        # 使用 UUID 确保唯一性
-        unique_str = f"{txn_date.isoformat()}_{description}_{uuid.uuid4().hex[:8]}"
+        # 使用交易的完整内容生成稳定的哈希
+        content_parts = [
+            txn_date.isoformat(),
+            description or "",
+            payee or ""
+        ]
+        
+        # 包含分录信息以区分相同日期、描述的不同交易
+        if postings:
+            for p in postings:
+                content_parts.append(f"{p.account}:{p.units.number}:{p.units.currency}")
+        
+        unique_str = "|".join(content_parts)
         return uuid.uuid5(uuid.NAMESPACE_DNS, unique_str).hex
     
     def reload(self):

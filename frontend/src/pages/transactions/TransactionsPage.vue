@@ -373,8 +373,7 @@ function navigateToAdd() {
 }
 
 function viewTransaction(transaction: Transaction) {
-  // TODO: 实现交易详情页
-  console.log('View transaction:', transaction)
+  router.push(`/transactions/${transaction.id}`)
 }
 
 function getTransactionClass(transaction: Transaction): string {
