@@ -64,6 +64,7 @@
       <!-- 分类 (非转账) -->
       <f7-list-item
         v-if="formData.type !== 'transfer'"
+        class="account-item"
         link="#"
         title="分类"
         :after="formatAccountDisplay(formData.category) || '请选择'"
