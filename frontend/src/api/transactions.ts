@@ -10,8 +10,10 @@ export type Transaction = {
     id: string
     date: string
     description?: string
+    payee?: string
     postings: Posting[]
     tags?: string[]
+    transaction_type?: 'expense' | 'income' | 'transfer' | 'opening' | 'other'
     created_at?: string
     updated_at?: string
 }
@@ -25,20 +27,18 @@ export type CreateTransactionRequest = {
 }
 
 export type TransactionsQuery = {
-    page?: number
-    per_page?: number
+    limit?: number
+    offset?: number
     start_date?: string
     end_date?: string
     account?: string
     description?: string
-    type?: 'expense' | 'income' | 'transfer'
+    transaction_type?: 'expense' | 'income' | 'transfer'
 }
 
 export type TransactionsResponse = {
     transactions: Transaction[]
     total: number
-    page: number
-    per_page: number
 }
 
 export type TransactionStatistics = {

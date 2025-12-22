@@ -134,20 +134,26 @@ def list_transactions(
         # 解析标签
         tag_list = tags.split(",") if tags else None
         
-        transactions = transaction_service.get_transactions(
+        # 先获取所有符合条件的交易（不分页），用于计算 total
+        all_transactions = transaction_service.get_transactions(
             start_date=start_date,
             end_date=end_date,
             account=account,
             transaction_type=transaction_type,
             tags=tag_list,
             description=description,
-            limit=limit,
-            offset=offset
+            limit=None,  # 不限制
+            offset=None  # 不偏移
         )
         
+        total = len(all_transactions)
+        
+        # 应用分页
+        paginated = all_transactions[offset:offset + limit] if limit else all_transactions[offset:]
+        
         return {
-            "transactions": transactions,
-            "total": len(transactions)
+            "transactions": paginated,
+            "total": total
         }
     except ValueError as e:
         raise HTTPException(

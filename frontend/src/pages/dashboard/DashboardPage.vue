@@ -227,7 +227,7 @@ onMounted(() => { loadDashboardData() })
 .dashboard-page {
   min-height: 100vh;
   background: #f2f2f7;
-  padding: 0 2px 8px;
+  padding: 0 0px 8px;
 }
 
 .page-header {

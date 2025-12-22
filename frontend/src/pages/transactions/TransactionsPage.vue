@@ -1,90 +1,113 @@
 <template>
   <div class="transactions-page">
+    <!-- 顶部标题 -->
     <div class="page-header">
-      <h1>交易记录</h1>
-      <button @click="navigateToAdd" class="add-btn">+ 记一笔</button>
+      <h1>流水</h1>
     </div>
-    
+
     <!-- 筛选器 -->
-    <div class="filters">
-      <div class="filter-tabs">
-        <button
-          v-for="filter in typeFilters"
+    <div class="filter-section">
+      <f7-segmented strong tag="div" class="type-filter">
+        <f7-button 
+          v-for="filter in typeFilters" 
           :key="filter.value"
+          :active="currentTypeFilter === filter.value"
           @click="selectTypeFilter(filter.value)"
-          class="filter-tab"
-          :class="{ active: currentTypeFilter === filter.value }"
         >
           {{ filter.label }}
-        </button>
-      </div>
+        </f7-button>
+      </f7-segmented>
       
-      <div class="date-filter">
-        <input
-          v-model="dateRange.start"
-          type="date"
-          class="date-input"
-          placeholder="开始日期"
-        />
-        <span class="date-separator">-</span>
-        <input
-          v-model="dateRange.end"
-          type="date"
-          class="date-input"
-          placeholder="结束日期"
-        />
-        <button @click="applyFilters" class="filter-apply-btn">筛选</button>
-        <button @click="clearFilters" class="filter-clear-btn">清空</button>
+      <div class="date-filter-row">
+        <f7-button 
+          fill 
+          small 
+          :color="hasDateFilter ? 'blue' : 'gray'" 
+          @click="openDateRangePicker"
+          class="date-range-btn"
+        >
+          <f7-icon ios="f7:calendar" size="16" style="margin-right: 4px;"></f7-icon>
+          {{ dateRangeText }}
+        </f7-button>
+        <f7-button v-if="hasDateFilter" fill small color="red" @click="clearDateFilter" class="clear-date-btn">
+          <f7-icon ios="f7:xmark" size="16"></f7-icon>
+        </f7-button>
       </div>
     </div>
-    
-    <!-- 交易列表 -->
-    <div v-if="loading && transactions.length === 0" class="loading">
-      加载中...
+
+    <!-- 加载状态 -->
+    <div v-if="loading && transactions.length === 0" class="loading-container">
+      <f7-preloader></f7-preloader>
     </div>
     
+    <!-- 空状态 -->
     <div v-else-if="transactions.length === 0" class="empty-state">
       <div class="empty-icon">📝</div>
       <div class="empty-text">暂无交易记录</div>
-      <button @click="navigateToAdd" class="empty-action-btn">开始记账</button>
+      <f7-button fill round @click="navigateToAdd" class="empty-action-btn">
+        开始记账
+      </f7-button>
     </div>
     
-    <div v-else class="transaction-list">
-      <div
-        v-for="transaction in transactions"
-        :key="transaction.id"
-        class="transaction-item"
-        @click="viewTransaction(transaction)"
-      >
-        <div class="transaction-main">
-          <div class="transaction-left">
-            <div class="transaction-category">
-              {{ getCategory(transaction) }}
-            </div>
-            <div class="transaction-desc">{{ transaction.description }}</div>
-            <div class="transaction-date">{{ formatDate(transaction.date) }}</div>
-          </div>
-          <div class="transaction-right">
-            <div class="transaction-amount" :class="getAmountClass(transaction)">
-              {{ formatAmount(transaction) }}
-            </div>
-          </div>
+    <!-- 交易列表 -->
+    <div v-else class="transactions-content" ref="scrollContent">
+      <div v-for="group in groupedTransactions" :key="group.date" class="transaction-group">
+        <!-- 日期分组头 -->
+        <div class="date-group-header">
+          <span class="date-title">{{ formatGroupDate(group.date) }}</span>
+          <span class="day-summary" :class="getDaySummaryClass(group.total)">
+            {{ formatDayTotal(group.total) }}
+          </span>
         </div>
+        
+        <!-- 该日期的交易列表 - 独立的圆角卡片 -->
+        <f7-list media-list dividers-ios strong inset class="transaction-list">
+          <f7-list-item
+            v-for="transaction in group.items"
+            :key="transaction.id"
+            link="#"
+            @click="viewTransaction(transaction)"
+            class="transaction-item"
+            :class="getTransactionClass(transaction)"
+          >
+            <template #media>
+              <div class="transaction-icon" :class="getIconClass(transaction)">
+                <f7-icon :ios="getIcon(transaction)" size="20"></f7-icon>
+              </div>
+            </template>
+            <template #title>
+              <span class="transaction-title">{{ getDisplayTitle(transaction) }}</span>
+            </template>
+            <template #subtitle>
+              <span class="transaction-category">{{ getCategory(transaction) }}</span>
+            </template>
+            <template #after>
+              <span class="transaction-amount" :class="getAmountClass(transaction)">
+                {{ formatAmount(transaction) }}
+              </span>
+            </template>
+          </f7-list-item>
+        </f7-list>
       </div>
       
-      <!-- 加载更多 -->
-      <div v-if="hasMore" class="load-more">
-        <button @click="loadMore" :disabled="loading" class="load-more-btn">
-          {{ loading ? '加载中...' : '加载更多' }}
-        </button>
+      <!-- 加载更多指示器 -->
+      <div v-if="hasMore" class="load-more-indicator" ref="loadMoreTrigger">
+        <f7-preloader v-if="loadingMore"></f7-preloader>
+        <span v-else class="load-more-text">上滑加载更多</span>
+      </div>
+      
+      <!-- 没有更多数据 -->
+      <div v-else-if="transactions.length > 0" class="no-more-data">
+        <span>— 没有更多了 —</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { f7 } from 'framework7-vue'
 import { useTransactionStore } from '../../stores/transaction'
 import { type Transaction, type TransactionsQuery } from '../../api/transactions'
 
@@ -92,8 +115,9 @@ const router = useRouter()
 const transactionStore = useTransactionStore()
 
 const loading = ref(false)
-const currentPage = ref(1)
-const perPage = 20
+const loadingMore = ref(false)
+const pageSize = 20
+const loadMoreTrigger = ref<HTMLElement | null>(null)
 
 const typeFilters = [
   { value: 'all', label: '全部' },
@@ -115,34 +139,149 @@ const hasMore = computed(() => {
   return transactions.value.length < total.value
 })
 
+const hasDateFilter = computed(() => {
+  return dateRange.value.start !== '' || dateRange.value.end !== ''
+})
+
+const dateRangeText = computed(() => {
+  if (dateRange.value.start && dateRange.value.end) {
+    return `${formatShortDate(dateRange.value.start)} - ${formatShortDate(dateRange.value.end)}`
+  } else if (dateRange.value.start) {
+    return `${formatShortDate(dateRange.value.start)} 起`
+  } else if (dateRange.value.end) {
+    return `至 ${formatShortDate(dateRange.value.end)}`
+  }
+  return '选择日期范围'
+})
+
+function formatShortDate(dateStr: string): string {
+  const parts = dateStr.split('-')
+  return `${parts[1]}/${parts[2]}`
+}
+
+// 按日期分组交易
+interface TransactionGroup {
+  date: string
+  items: Transaction[]
+  total: number
+}
+
+const groupedTransactions = computed<TransactionGroup[]>(() => {
+  const groups: Record<string, TransactionGroup> = {}
+  
+  for (const transaction of transactions.value) {
+    const date = transaction.date
+    if (!groups[date]) {
+      groups[date] = { date, items: [], total: 0 }
+    }
+    groups[date].items.push(transaction)
+    
+    // 计算当日总额
+    const amount = getTransactionAmount(transaction)
+    groups[date].total += amount
+  }
+  
+  // 按日期降序排列
+  return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date))
+})
+
+function getTransactionAmount(transaction: Transaction): number {
+  if (transaction.postings.length === 0) return 0
+  const posting = transaction.postings[0]!
+  const amount = Number(posting.amount)
+  
+  // 支出为负，收入为正
+  if (posting.account.startsWith('Expenses')) {
+    return -Math.abs(amount)
+  } else if (posting.account.startsWith('Income')) {
+    return Math.abs(amount)
+  }
+  return 0 // 转账不计入
+}
+
+// 日期范围选择器
+let dateRangeCalendar: any = null
+
+function openDateRangePicker() {
+  // 销毁旧日历以确保新配置生效
+  if (dateRangeCalendar) {
+    dateRangeCalendar.destroy()
+    dateRangeCalendar = null
+  }
+  
+  dateRangeCalendar = f7.calendar.create({
+    openIn: 'customModal',
+    rangePicker: true,
+    header: true,
+    headerPlaceholder: '选择日期范围',
+    toolbar: true,
+    toolbarCloseText: '完成',
+    monthPicker: true,
+    yearPicker: true,
+    closeByOutsideClick: true,
+    cssClass: 'date-range-calendar',
+    on: {
+      change: function (calendar: any, value: unknown) {
+        const values = value as Date[]
+        // 当选择了两个日期（完整的日期范围）时，自动关闭日历
+        if (values && values.length === 2 && values[0] && values[1]) {
+          dateRange.value.start = formatDateValue(values[0])
+          dateRange.value.end = formatDateValue(values[1])
+          calendar.close()
+          applyFilters()
+        }
+      }
+    }
+  })
+  
+  // 设置初始值
+  if (dateRange.value.start && dateRange.value.end) {
+    dateRangeCalendar.setValue([
+      new Date(dateRange.value.start),
+      new Date(dateRange.value.end)
+    ])
+  }
+  
+  dateRangeCalendar.open()
+}
+
+function formatDateValue(d: Date): string {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function selectTypeFilter(filter: string) {
+  if (currentTypeFilter.value === filter) return
   currentTypeFilter.value = filter
-  currentPage.value = 1
-  loadTransactions()
+  loadTransactions(true)
 }
 
 function applyFilters() {
-  currentPage.value = 1
-  loadTransactions()
+  loadTransactions(true)
 }
 
-function clearFilters() {
-  currentTypeFilter.value = 'all'
+function clearDateFilter() {
   dateRange.value = { start: '', end: '' }
-  currentPage.value = 1
-  loadTransactions()
+  loadTransactions(true)
 }
 
-async function loadTransactions() {
-  loading.value = true
+async function loadTransactions(reset: boolean = false) {
+  if (reset) {
+    loading.value = true
+  } else {
+    loadingMore.value = true
+  }
+  
   try {
     const query: TransactionsQuery = {
-      page: currentPage.value,
-      per_page: perPage
+      limit: pageSize,
+      offset: reset ? 0 : transactions.value.length
     }
     
     if (currentTypeFilter.value !== 'all') {
-      query.type = currentTypeFilter.value as any
+      query.transaction_type = currentTypeFilter.value as 'expense' | 'income' | 'transfer'
     }
     
     if (dateRange.value.start) {
@@ -153,15 +292,80 @@ async function loadTransactions() {
       query.end_date = dateRange.value.end
     }
     
-    await transactionStore.fetchTransactions(query)
+    await transactionStore.fetchTransactions(query, !reset)
   } finally {
     loading.value = false
+    loadingMore.value = false
+    
+    // 重新设置观察器
+    if (reset) {
+      await nextTick()
+      setupIntersectionObserver()
+    }
   }
 }
 
+// 使用 IntersectionObserver 实现无限滚动
+let observer: IntersectionObserver | null = null
+
+function setupIntersectionObserver() {
+  // 清除旧的 observer
+  if (observer) {
+    observer.disconnect()
+  }
+  
+  // 创建新的 observer
+  observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting && hasMore.value && !loadingMore.value && !loading.value) {
+        loadMore()
+      }
+    })
+  }, {
+    root: null, // 使用视口作为 root，兼容 Framework7 tab 嵌套
+    rootMargin: '200px',
+    threshold: 0
+  })
+  
+  // 监听加载更多触发器
+  if (loadMoreTrigger.value) {
+    observer.observe(loadMoreTrigger.value)
+  }
+}
+
+// 监听 hasMore 变化，更新 observer
+watch(hasMore, async (newVal) => {
+  if (newVal) {
+    await nextTick()
+    setupIntersectionObserver()
+  }
+})
+
 async function loadMore() {
-  currentPage.value++
-  await loadTransactions()
+  if (loadingMore.value || !hasMore.value) return
+  
+  loadingMore.value = true
+  
+  try {
+    const query: TransactionsQuery = {
+      limit: pageSize,
+      offset: transactions.value.length
+    }
+    
+    if (currentTypeFilter.value !== 'all') {
+      query.transaction_type = currentTypeFilter.value as 'expense' | 'income' | 'transfer'
+    }
+    if (dateRange.value.start) {
+      query.start_date = dateRange.value.start
+    }
+    if (dateRange.value.end) {
+      query.end_date = dateRange.value.end
+    }
+    
+    await transactionStore.fetchTransactions(query, true) // append mode
+  } finally {
+    loadingMore.value = false
+  }
 }
 
 function navigateToAdd() {
@@ -171,6 +375,36 @@ function navigateToAdd() {
 function viewTransaction(transaction: Transaction) {
   // TODO: 实现交易详情页
   console.log('View transaction:', transaction)
+}
+
+function getTransactionClass(transaction: Transaction): string {
+  const type = transaction.transaction_type
+  if (type === 'income') return 'income-item'
+  if (type === 'expense') return 'expense-item'
+  if (type === 'transfer') return 'transfer-item'
+  return ''
+}
+
+function getIcon(transaction: Transaction): string {
+  const type = transaction.transaction_type
+  if (type === 'income') return 'f7:arrow_down_circle'
+  if (type === 'expense') return 'f7:arrow_up_circle'
+  if (type === 'transfer') return 'f7:arrow_right_arrow_left_circle'
+  return 'f7:doc_text'
+}
+
+function getIconClass(transaction: Transaction): string {
+  const type = transaction.transaction_type
+  if (type === 'income') return 'income-icon'
+  if (type === 'expense') return 'expense-icon'
+  if (type === 'transfer') return 'transfer-icon'
+  return ''
+}
+
+function getDisplayTitle(transaction: Transaction): string {
+  if (transaction.payee) return transaction.payee
+  if (transaction.description) return transaction.description
+  return getCategory(transaction)
 }
 
 function getCategory(transaction: Transaction): string {
@@ -192,7 +426,7 @@ function getAmountClass(transaction: Transaction): string {
   const account = transaction.postings[0]!.account
   if (account.startsWith('Income')) return 'positive'
   if (account.startsWith('Expenses')) return 'negative'
-  return ''
+  return 'neutral'
 }
 
 function formatAmount(transaction: Transaction): string {
@@ -200,143 +434,117 @@ function formatAmount(transaction: Transaction): string {
   
   const posting = transaction.postings[0]!
   const amount = Math.abs(Number(posting.amount))
-  const sign = posting.account.startsWith('Income') ? '+' : '-'
+  const sign = posting.account.startsWith('Income') ? '+' : 
+               posting.account.startsWith('Expenses') ? '-' : ''
   
   return `${sign}¥${amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-function formatDate(dateStr: string): string {
+function formatGroupDate(dateStr: string): string {
   const date = new Date(dateStr)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+  
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  const weekDay = weekDays[date.getDay()]
+  
+  if (dateStr === formatDateValue(today)) {
+    return `今天 ${month}月${day}日`
+  } else if (dateStr === formatDateValue(yesterday)) {
+    return `昨天 ${month}月${day}日`
+  }
+  
+  return `${month}月${day}日 ${weekDay}`
 }
 
-onMounted(() => {
-  loadTransactions()
+function getDaySummaryClass(total: number): string {
+  if (total > 0) return 'positive'
+  if (total < 0) return 'negative'
+  return ''
+}
+
+function formatDayTotal(total: number): string {
+  if (total === 0) return ''
+  const sign = total > 0 ? '+' : ''
+  return `${sign}¥${total.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+onMounted(async () => {
+  await loadTransactions(true)
+})
+
+onUnmounted(() => {
+  if (observer) {
+    observer.disconnect()
+  }
+  if (dateRangeCalendar) {
+    dateRangeCalendar.destroy()
+  }
 })
 </script>
 
 <style scoped>
 .transactions-page {
-  padding: 20px;
-  max-width: 800px;
-  margin: 0 auto;
+  min-height: 100vh;
+  background: #f2f2f7;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
+  padding: 12px 16px 8px;
+  position: sticky;
+  top: 0;
+  background: #f2f2f7;
+  z-index: 10;
 }
 
 .page-header h1 {
-  font-size: 28px;
+  font-size: 34px;
   font-weight: 700;
-  color: #333;
+  color: #000;
   margin: 0;
+  letter-spacing: -0.4px;
 }
 
-.add-btn {
-  padding: 10px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
+/* 筛选区域 */
+.filter-section {
+  padding: 0 16px 12px;
+  background: #f2f2f7;
 }
 
-.add-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+.type-filter {
+  margin-bottom: 12px;
 }
 
-.filters {
-  background: white;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 20px;
-  border: 1px solid #e0e0e0;
-}
-
-.filter-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.filter-tab {
-  flex: 1;
-  padding: 8px 16px;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.filter-tab.active {
-  background: #667eea;
-  color: white;
-  border-color: #667eea;
-}
-
-.date-filter {
+.date-filter-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.date-input {
+.date-range-btn {
   flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 14px;
 }
 
-.date-separator {
-  color: #999;
+.clear-date-btn {
+  flex-shrink: 0;
+  width: 36px;
+  padding: 0;
 }
 
-.filter-apply-btn,
-.filter-clear-btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
+/* 加载状态 */
+.loading-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
 }
 
-.filter-apply-btn {
-  background: #667eea;
-  color: white;
-}
-
-.filter-apply-btn:hover {
-  background: #5568d3;
-}
-
-.filter-clear-btn {
-  background: #f5f5f5;
-  color: #666;
-}
-
-.filter-clear-btn:hover {
-  background: #e0e0e0;
-}
-
-.loading {
-  text-align: center;
-  padding: 40px 20px;
-  color: #999;
-  font-size: 16px;
-}
-
+/* 空状态 */
 .empty-state {
   text-align: center;
   padding: 60px 20px;
@@ -349,114 +557,196 @@ onMounted(() => {
 
 .empty-text {
   font-size: 16px;
-  color: #999;
+  color: #8e8e93;
   margin-bottom: 24px;
 }
 
 .empty-action-btn {
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
+  display: inline-block;
 }
 
-.empty-action-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+/* 交易内容区 */
+.transactions-content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 16px 80px;
 }
 
 .transaction-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  margin: 0;
+  --f7-list-inset-side-margin: 0;
 }
 
-.transaction-item {
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 12px;
-  padding: 16px;
-  cursor: pointer;
-  transition: all 0.2s;
+/* 交易分组 */
+.transaction-group {
+  margin-bottom: 16px;
 }
 
-.transaction-item:hover {
-  border-color: #667eea;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
-  transform: translateY(-1px);
-}
-
-.transaction-main {
+/* 日期分组头 */
+.date-group-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding: 8px 0;
 }
 
-.transaction-left {
-  flex: 1;
+.date-title {
+  font-size: 13px;
+  color: #8e8e93;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.day-summary {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.day-summary.positive {
+  color: #34c759;
+}
+
+.day-summary.negative {
+  color: #ff3b30;
+}
+
+/* 交易项 */
+.transaction-item {
+  --f7-list-item-padding-horizontal: 16px;
+}
+
+.transaction-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.transaction-icon.expense-icon {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
+}
+
+.transaction-icon.income-icon {
+  background: rgba(52, 199, 89, 0.12);
+  color: #34c759;
+}
+
+.transaction-icon.transfer-icon {
+  background: rgba(0, 122, 255, 0.12);
+  color: #007aff;
+}
+
+.transaction-title {
+  font-size: 16px;
+  font-weight: 500;
+  color: #000;
 }
 
 .transaction-category {
-  display: inline-block;
-  padding: 4px 8px;
-  background: #f0f0f0;
-  color: #666;
-  border-radius: 4px;
-  font-size: 12px;
-  margin-bottom: 8px;
-}
-
-.transaction-desc {
-  font-size: 16px;
-  font-weight: 500;
-  color: #333;
-  margin-bottom: 4px;
-}
-
-.transaction-date {
-  font-size: 12px;
-  color: #999;
+  font-size: 13px;
+  color: #8e8e93;
 }
 
 .transaction-amount {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 600;
 }
 
 .transaction-amount.positive {
-  color: #4caf50;
+  color: #34c759;
 }
 
 .transaction-amount.negative {
-  color: #f44336;
+  color: #ff3b30;
 }
 
-.load-more {
+.transaction-amount.neutral {
+  color: #007aff;
+}
+
+/* 加载更多 */
+.load-more-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  min-height: 60px;
+}
+
+.load-more-text {
+  font-size: 13px;
+  color: #8e8e93;
+}
+
+.no-more-data {
   text-align: center;
   padding: 20px;
+  color: #8e8e93;
+  font-size: 13px;
 }
 
-.load-more-btn {
-  padding: 10px 24px;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
+/* 暗黑模式 */
+@media (prefers-color-scheme: dark) {
+  .transactions-page {
+    background: #000;
+  }
+  
+  .page-header {
+    background: #000;
+  }
+  
+  .page-header h1 {
+    color: #fff;
+  }
+  
+  .filter-section {
+    background: #000;
+  }
+  
+  .date-group-header {
+    background: #000 !important;
+  }
+  
+  .transaction-title {
+    color: #fff;
+  }
+  
+  .transaction-icon.expense-icon {
+    background: rgba(255, 69, 58, 0.18);
+    color: #ff453a;
+  }
+  
+  .transaction-icon.income-icon {
+    background: rgba(48, 209, 88, 0.18);
+    color: #30d158;
+  }
+  
+  .transaction-icon.transfer-icon {
+    background: rgba(10, 132, 255, 0.18);
+    color: #0a84ff;
+  }
+  
+  .transaction-amount.positive {
+    color: #30d158;
+  }
+  
+  .transaction-amount.negative {
+    color: #ff453a;
+  }
+  
+  .transaction-amount.neutral {
+    color: #0a84ff;
+  }
 }
+</style>
 
-.load-more-btn:hover:not(:disabled) {
-  background: #f5f5f5;
-}
-
-.load-more-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+<!-- 全局样式，用于隐藏日历 header 中的关闭按钮 -->
+<style>
+.date-range-calendar .calendar-header .calendar-header-close {
+  display: none !important;
 }
 </style>

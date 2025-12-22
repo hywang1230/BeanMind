@@ -154,8 +154,11 @@ class TransactionApplicationService:
             # 按描述搜索
             transactions = self.transaction_repository.find_by_description(description)
         else:
-            # 查询所有
-            transactions = self.transaction_repository.find_all(user_id, limit, offset)
+            # 查询所有（不分页，分页由上层处理）
+            transactions = self.transaction_repository.find_all(user_id, None, None)
+        
+        # 按日期倒序排序
+        transactions.sort(key=lambda t: t.date, reverse=True)
         
         return [self._transaction_to_dto(txn) for txn in transactions]
     

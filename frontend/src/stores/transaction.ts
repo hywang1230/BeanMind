@@ -35,11 +35,17 @@ export const useTransactionStore = defineStore('transaction', () => {
     }
 
     // API Actions
-    async function fetchTransactions(query: TransactionsQuery = {}) {
+    async function fetchTransactions(query: TransactionsQuery = {}, append: boolean = false) {
         loading.value = true
         try {
             const response = await transactionsApi.getTransactions(query)
-            transactions.value = response.transactions
+            if (append) {
+                // 追加模式：用于无限滚动加载更多
+                transactions.value = [...transactions.value, ...response.transactions]
+            } else {
+                // 替换模式：用于初始加载或筛选条件变更
+                transactions.value = response.transactions
+            }
             total.value = response.total
             return response
         } catch (error) {
