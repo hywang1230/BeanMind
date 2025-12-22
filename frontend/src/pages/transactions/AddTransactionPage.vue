@@ -1,174 +1,196 @@
 <template>
-  <div class="add-transaction-page">
-    <div class="page-header">
-      <button @click="goBack" class="back-btn">← 返回</button>
-      <h1>记一笔</h1>
-      <div class="header-spacer"></div>
-    </div>
-    
-    <form @submit.prevent="handleSubmit" class="transaction-form">
-      <!-- 交易类型 -->
-      <div class="form-section">
-        <div class="type-tabs">
-          <button
-            v-for="type in transactionTypes"
-            :key="type.value"
-            type="button"
-            @click="selectType(type.value)"
-            class="type-tab"
-            :class="{ active: formData.type === type.value }"
-          >
-            {{ type.label }}
-          </button>
-        </div>
-      </div>
-      
-      <!-- 金额输入 -->
-      <div class="form-section">
-        <label class="form-label">金额</label>
-        <AmountInput
-          v-model="formData.amount"
-          :currency="formData.currency"
-          placeholder="请输入金额"
-        />
-      </div>
-      
-      <!-- 分类选择 -->
-      <div v-if="formData.type !== 'transfer'" class="form-section">
-        <label class="form-label">分类</label>
-        <CategoryPicker
-          v-model="formData.category"
-          :type="formData.type"
-        />
-      </div>
-      
-      <!-- 账户选择 -->
-      <div class="form-section">
-        <label class="form-label">
-          {{ formData.type === 'transfer' ? '转出账户' : '账户' }}
-        </label>
-        <AccountPicker
-          v-model="formData.fromAccount"
-          :account-type="formData.type === 'income' ? 'Assets' : undefined"
-          placeholder="选择账户"
-        />
-      </div>
-      
-      <!-- 转账目标账户 -->
-      <div v-if="formData.type === 'transfer'" class="form-section">
-        <label class="form-label">转入账户</label>
-        <AccountPicker
-          v-model="formData.toAccount"
-          account-type="Assets"
-          placeholder="选择账户"
-        />
-      </div>
-      
-      <!-- 日期 -->
-      <div class="form-section">
-        <label class="form-label">日期</label>
-        <input
-          v-model="formData.date"
-          type="date"
-          class="form-input"
-          required
-        />
-      </div>
-      
-      <!-- 备注 -->
-      <div class="form-section">
-        <label class="form-label">备注</label>
-        <input
-          v-model="formData.description"
-          type="text"
-          class="form-input"
-          placeholder="添加备注（可选）"
-        />
-      </div>
-      
-      <!-- 标签 -->
-      <div class="form-section">
-        <label class="form-label">标签</label>
-        <div class="tags-input">
-          <div class="tag-list">
-            <span
-              v-for="(tag, index) in formData.tags"
-              :key="index"
-              class="tag"
-            >
-              {{ tag }}
-              <button
-                type="button"
-                @click="removeTag(index)"
-                class="tag-remove"
-              >
-                ×
-              </button>
-            </span>
-          </div>
-          <input
-            v-model="newTag"
-            type="text"
-            class="tag-input"
-            placeholder="添加标签"
-            @keyup.enter="addTag"
-          />
-        </div>
-      </div>
-      
-      <!-- 错误消息 -->
-      <div v-if="error" class="error-message">
-        {{ error }}
-      </div>
-      
-      <!-- 提交按钮 -->
-      <button
-        type="submit"
-        class="submit-btn"
-        :disabled="loading || !isFormValid"
+  <f7-page name="add-transaction">
+    <f7-navbar>
+      <f7-nav-left>
+        <f7-link @click="goBack">
+          <f7-icon ios="f7:chevron_left" md="material:arrow_back" />
+        </f7-link>
+      </f7-nav-left>
+      <f7-nav-title>记一笔</f7-nav-title>
+      <f7-nav-right>
+        <f7-link @click="handleSubmit" :class="{ disabled: !isFormValid }">保存</f7-link>
+      </f7-nav-right>
+    </f7-navbar>
+
+    <f7-block class="no-padding-vertical margin-vertical">
+      <f7-segmented strong tag="div">
+        <f7-button :active="formData.type === 'expense'" @click="selectType('expense')">支出</f7-button>
+        <f7-button :active="formData.type === 'income'" @click="selectType('income')">收入</f7-button>
+        <f7-button :active="formData.type === 'transfer'" @click="selectType('transfer')">转账</f7-button>
+      </f7-segmented>
+    </f7-block>
+
+    <f7-list strong-ios dividers-ios inset-ios form>
+      <!-- 金额 -->
+      <f7-list-input
+        label="金额"
+        type="number"
+        placeholder="0.00"
+        :value="formData.amount"
+        @input="formData.amount = Number($event.target.value)"
+        required
+        clear-button
+        class="amount-input"
       >
-        {{ loading ? '保存中...' : '保存' }}
-      </button>
-    </form>
-  </div>
+        <template #media>
+          <i class="icon f7-icons">money_yen_circle_fill</i>
+        </template>
+      </f7-list-input>
+
+      <!-- 分类 (非转账) -->
+      <f7-list-item
+        v-if="formData.type !== 'transfer'"
+        link="#"
+        title="分类"
+        :after="formData.category || '请选择'"
+        @click="openCategoryPicker"
+      >
+        <template #media>
+          <i class="icon f7-icons">folder_fill</i>
+        </template>
+      </f7-list-item>
+
+      <!-- 账户/转出账户 -->
+      <f7-list-item
+        link="#"
+        :title="formData.type === 'transfer' ? '转出账户' : '账户'"
+        :after="formData.fromAccount || '请选择'"
+        @click="openFromAccountPicker"
+      >
+        <template #media>
+          <i class="icon f7-icons">creditcard_fill</i>
+        </template>
+      </f7-list-item>
+
+      <!-- 转入账户 -->
+      <f7-list-item
+        v-if="formData.type === 'transfer'"
+        link="#"
+        title="转入账户"
+        :after="formData.toAccount || '请选择'"
+        @click="openToAccountPicker"
+      >
+        <template #media>
+          <i class="icon f7-icons">arrow_right_circle_fill</i>
+        </template>
+      </f7-list-item>
+
+      <!-- 日期 -->
+      <f7-list-input
+        label="日期"
+        type="date"
+        :value="formData.date"
+        @input="formData.date = $event.target.value"
+        placeholder="选择日期"
+      >
+        <template #media>
+          <i class="icon f7-icons">calendar_today</i>
+        </template>
+      </f7-list-input>
+
+      <!-- 备注 -->
+      <f7-list-input
+        label="备注"
+        type="textarea"
+        :value="formData.description"
+        @input="formData.description = $event.target.value"
+        placeholder="添加备注（可选）"
+        resizable
+      >
+        <template #media>
+          <i class="icon f7-icons">pencil_circle</i>
+        </template>
+      </f7-list-input>
+
+      <!-- 标签 -->
+      <f7-list-input
+        label="标签"
+        type="text"
+        :value="formData.tagString"
+        @input="formData.tagString = $event.target.value"
+        placeholder="标签用空格分隔"
+        info="例如: 旅行 餐饮"
+      >
+        <template #media>
+          <i class="icon f7-icons">tag_fill</i>
+        </template>
+      </f7-list-input>
+    </f7-list>
+
+    <f7-block v-if="error" class="text-color-red text-align-center">
+      {{ error }}
+    </f7-block>
+
+    <f7-block>
+        <f7-button large fill @click="handleSubmit" :loading="loading">保存</f7-button>
+    </f7-block>
+
+    <!-- Pickers -->
+    <AccountSelectionPopup
+      v-model:opened="showCategoryPicker"
+      title="选择分类"
+      :root-types="categoryRoots"
+      @select="onCategorySelect"
+    />
+
+    <AccountSelectionPopup
+      v-model:opened="showFromAccountPicker"
+      :title="formData.type === 'transfer' ? '选择转出账户' : '选择账户'"
+      :root-types="accountRoots"
+      @select="onFromAccountSelect"
+    />
+
+    <AccountSelectionPopup
+      v-model:opened="showToAccountPicker"
+      title="选择转入账户"
+      :root-types="['Assets', 'Liabilities']"
+      @select="onToAccountSelect"
+    />
+
+  </f7-page>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTransactionStore } from '../../stores/transaction'
-import { type CreateTransactionRequest, type Posting } from '../../api/transactions'
-import AmountInput from '../../components/AmountInput.vue'
-import CategoryPicker from '../../components/CategoryPicker.vue'
-import AccountPicker from '../../components/AccountPicker.vue'
+import type { CreateTransactionRequest, Posting } from '../../api/transactions'
+import AccountSelectionPopup from '../../components/AccountSelectionPopup.vue'
 
 const router = useRouter()
 const transactionStore = useTransactionStore()
 
-const transactionTypes = [
-  { value: 'expense', label: '支出' },
-  { value: 'income', label: '收入' },
-  { value: 'transfer', label: '转账' }
-]
+// State
+const loading = ref(false)
+const error = ref('')
+const showCategoryPicker = ref(false)
+const showFromAccountPicker = ref(false)
+const showToAccountPicker = ref(false)
 
 const formData = ref({
   type: 'expense' as 'expense' | 'income' | 'transfer',
-  amount: 0,
+  amount: undefined as number | undefined,
   currency: 'CNY',
   category: '',
   fromAccount: '',
   toAccount: '',
   date: new Date().toISOString().split('T')[0],
   description: '',
-  tags: [] as string[]
+  tagString: ''
 })
 
-const newTag = ref('')
-const loading = ref(false)
-const error = ref('')
+// Computed Props for Picker Roots
+const categoryRoots = computed(() => {
+  return formData.value.type === 'expense' ? ['Expenses'] : ['Income']
+})
+
+const accountRoots = computed(() => {
+  // Generally select Assets or Liabilities
+  return ['Assets', 'Liabilities', 'Equity']
+})
 
 const isFormValid = computed(() => {
-  if (formData.value.amount <= 0) return false
+  if (!formData.value.amount || formData.value.amount <= 0) return false
   if (!formData.value.date) return false
   if (!formData.value.fromAccount) return false
   
@@ -179,272 +201,94 @@ const isFormValid = computed(() => {
   }
 })
 
+// Navigation
+function goBack() {
+  router.back()
+}
+
+// Types
 function selectType(type: 'expense' | 'income' | 'transfer') {
   formData.value.type = type
-  formData.value.category = ''
-  formData.value.fromAccount = ''
-  formData.value.toAccount = ''
-}
-
-function addTag() {
-  if (newTag.value.trim() && !formData.value.tags.includes(newTag.value.trim())) {
-    formData.value.tags.push(newTag.value.trim())
-    newTag.value = ''
+  // Reset conflicting fields if needed
+  if (type === 'transfer') {
+      formData.value.category = ''
+  } else if (type === 'expense' && formData.value.category.startsWith('Income')) {
+      formData.value.category = ''
+  } else if (type === 'income' && formData.value.category.startsWith('Expenses')) {
+      formData.value.category = ''
   }
 }
 
-function removeTag(index: number) {
-  formData.value.tags.splice(index, 1)
-}
+// Picker Handlers
+function openCategoryPicker() { showCategoryPicker.value = true }
+function openFromAccountPicker() { showFromAccountPicker.value = true }
+function openToAccountPicker() { showToAccountPicker.value = true }
 
+function onCategorySelect(val: string) { formData.value.category = val }
+function onFromAccountSelect(val: string) { formData.value.fromAccount = val }
+function onToAccountSelect(val: string) { formData.value.toAccount = val }
+
+// Submission Logic
 function buildPostings(): Posting[] {
-  const postings: Posting[] = []
-  
+  const posts: Posting[] = []
+  const amt = formData.value.amount || 0
+  const currency = formData.value.currency
+
   if (formData.value.type === 'expense') {
-    // 支出：从资产账户扣除，增加支出账户
-    postings.push({
-      account: formData.value.category,
-      amount: formData.value.amount,
-      currency: formData.value.currency
-    })
-    postings.push({
-      account: formData.value.fromAccount,
-      amount: -formData.value.amount,
-      currency: formData.value.currency
-    })
+    // Expense: +Expense, -Asset
+    posts.push({ account: formData.value.category, amount: amt, currency })
+    posts.push({ account: formData.value.fromAccount, amount: -amt, currency })
   } else if (formData.value.type === 'income') {
-    // 收入：增加资产账户，增加收入账户（负数）
-    postings.push({
-      account: formData.value.fromAccount,
-      amount: formData.value.amount,
-      currency: formData.value.currency
-    })
-    postings.push({
-      account: formData.value.category,
-      amount: -formData.value.amount,
-      currency: formData.value.currency
-    })
+    // Income: +Asset, -Income
+    posts.push({ account: formData.value.fromAccount, amount: amt, currency })
+    posts.push({ account: formData.value.category, amount: -amt, currency })
   } else if (formData.value.type === 'transfer') {
-    // 转账：从一个账户转到另一个账户
-    postings.push({
-      account: formData.value.fromAccount,
-      amount: -formData.value.amount,
-      currency: formData.value.currency
-    })
-    postings.push({
-      account: formData.value.toAccount,
-      amount: formData.value.amount,
-      currency: formData.value.currency
-    })
+    // Transfer: -From, +To
+    posts.push({ account: formData.value.fromAccount, amount: -amt, currency })
+    posts.push({ account: formData.value.toAccount, amount: amt, currency })
   }
-  
-  return postings
+  return posts
 }
 
 async function handleSubmit() {
   if (!isFormValid.value) {
-    error.value = '请填写所有必填字段'
-    return
+      error.value = '请填写所有必填项'
+      return 
   }
-  
+
   loading.value = true
   error.value = ''
-  
-  try {
-    const request: CreateTransactionRequest = {
-      date: formData.value.date,
-      description: formData.value.description || `${transactionTypes.find(t => t.value === formData.value.type)?.label}`,
-      postings: buildPostings(),
-      tags: formData.value.tags.length > 0 ? formData.value.tags : undefined
-    }
-    
-    await transactionStore.createTransaction(request)
-    
-    // 成功后返回列表页
-    router.push('/transactions')
-  } catch (err: any) {
-    error.value = err.message || '保存失败，请重试'
-  } finally {
-    loading.value = false
-  }
-}
 
-function goBack() {
-  router.back()
+  try {
+      const tags = formData.value.tagString
+        .split(' ')
+        .map(t => t.trim())
+        .filter(t => t.length > 0)
+
+      const request: CreateTransactionRequest = {
+          date: formData.value.date,
+          description: formData.value.description || `${formData.value.type === 'expense' ? '支出' : formData.value.type === 'income' ? '收入' : '转账'}`,
+          postings: buildPostings(),
+          tags: tags.length > 0 ? tags : undefined
+      }
+
+      await transactionStore.createTransaction(request)
+      router.back()
+  } catch (err: any) {
+      console.error(err)
+      error.value = err.message || '保存失败'
+  } finally {
+      loading.value = false
+  }
 }
 </script>
 
 <style scoped>
-.add-transaction-page {
-  padding: 20px;
-  max-width: 600px;
-  margin: 0 auto;
+.amount-input {
+  font-size: 1.2em;
 }
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.page-header h1 {
-  font-size: 24px;
-  font-weight: 700;
-  color: #333;
-  margin: 0;
-}
-
-.back-btn {
-  padding: 8px 12px;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.back-btn:hover {
-  background: #f5f5f5;
-}
-
-.header-spacer {
-  width: 80px;
-}
-
-.transaction-form {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.form-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.form-label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
-}
-
-.type-tabs {
-  display: flex;
-  gap: 8px;
-}
-
-.type-tab {
-  flex: 1;
-  padding: 12px 16px;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 16px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.type-tab.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border-color: transparent;
-}
-
-.form-input {
-  padding: 12px 16px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 0.2s;
-}
-
-.form-input:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.tags-input {
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 12px;
-  background: white;
-}
-
-.tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  background: #e0e0e0;
-  border-radius: 4px;
-  font-size: 14px;
-  color: #333;
-}
-
-.tag-remove {
-  background: none;
-  border: none;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-  color: #999;
-  padding: 0;
-}
-
-.tag-remove:hover {
-  color: #333;
-}
-
-.tag-input {
-  width: 100%;
-  border: none;
-  outline: none;
-  font-size: 14px;
-  padding: 4px 0;
-}
-
-.error-message {
-  padding: 12px 16px;
-  background: #fee;
-  color: #c33;
-  border-radius: 8px;
-  font-size: 14px;
-  text-align: center;
-}
-
-.submit-btn {
-  padding: 14px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.submit-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.submit-btn:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.submit-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.margin-vertical {
+    margin-top: 16px;
+    margin-bottom: 16px;
 }
 </style>
