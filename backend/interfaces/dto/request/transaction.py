@@ -67,7 +67,7 @@ class CreateTransactionRequest(BaseModel):
         }
     """
     date: str = Field(..., description="交易日期（YYYY-MM-DD 格式）")
-    description: str = Field(..., min_length=1, description="交易描述")
+    description: Optional[str] = Field(None, description="交易描述")
     postings: List[PostingRequest] = Field(..., min_length=2, description="记账分录列表（至少2个）")
     payee: Optional[str] = Field(None, description="收付款方")
     tags: Optional[List[str]] = Field(None, description="标签列表")
@@ -96,7 +96,7 @@ class UpdateTransactionRequest(BaseModel):
     所有字段都是可选的，只更新提供的字段。
     """
     date: Optional[str] = Field(None, description="交易日期")
-    description: Optional[str] = Field(None, min_length=1, description="交易描述")
+    description: Optional[str] = Field(None, description="交易描述")
     postings: Optional[List[PostingRequest]] = Field(None, min_length=2, description="记账分录列表")
     payee: Optional[str] = Field(None, description="收付款方")
     tags: Optional[List[str]] = Field(None, description="标签列表")

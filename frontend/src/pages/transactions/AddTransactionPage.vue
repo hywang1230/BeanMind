@@ -517,7 +517,7 @@ async function handleSubmit() {
 
       const request: CreateTransactionRequest = {
           date: formData.value.date,
-          description: formData.value.description || `${formData.value.type === 'expense' ? '支出' : formData.value.type === 'income' ? '收入' : '转账'}`,
+          description: formData.value.description || undefined,
           payee: formData.value.payee || undefined,
           postings: buildPostings(),
           tags: tags.length > 0 ? tags : undefined

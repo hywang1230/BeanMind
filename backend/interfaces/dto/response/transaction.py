@@ -42,7 +42,7 @@ class TransactionResponse(BaseModel):
     """
     id: str = Field(..., description="交易 ID")
     date: str = Field(..., description="交易日期")
-    description: str = Field(..., description="交易描述")
+    description: Optional[str] = Field(None, description="交易描述")
     payee: Optional[str] = Field(None, description="收付款方")
     flag: Optional[str] = Field(None, description="标记")
     postings: List[PostingResponse] = Field(..., description="记账分录列表")

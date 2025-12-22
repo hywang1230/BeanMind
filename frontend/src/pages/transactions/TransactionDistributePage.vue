@@ -458,7 +458,7 @@ async function submitTransaction() {
 
         const request: CreateTransactionRequest = {
             date: draft.date,
-            description: draft.description || `${draft.type === 'expense' ? '支出' : draft.type === 'income' ? '收入' : '转账'}`,
+            description: draft.description || undefined,
             payee: draft.payee || undefined,
             postings: buildFinalPostings(),
             tags: tags.length > 0 ? tags : undefined

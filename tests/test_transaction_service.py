@@ -58,14 +58,16 @@ class TestTransactionService:
         # 验证 repository.create 被调用
         mock_transaction_repository.create.assert_called_once()
     
-    def test_create_transaction_empty_description(self, service, valid_postings):
-        """测试创建交易（空描述）"""
-        with pytest.raises(ValueError, match="交易描述不能为空"):
-            service.create_transaction(
-                txn_date=date(2025, 1, 15),
-                description="",
-                postings=valid_postings
-            )
+    def test_create_transaction_empty_description(self, service, valid_postings, mock_transaction_repository):
+        """测试创建交易（空描述，应该成功）"""
+        service.create_transaction(
+            txn_date=date(2025, 1, 15),
+            description="",
+            postings=valid_postings
+        )
+        
+        # 验证 repository.create 被调用（空描述应该可以正常创建）
+        mock_transaction_repository.create.assert_called_once()
     
     def test_create_transaction_insufficient_postings(self, service):
         """测试创建交易（记账分录不足）"""

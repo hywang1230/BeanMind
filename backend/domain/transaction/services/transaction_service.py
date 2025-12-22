@@ -41,7 +41,7 @@ class TransactionService:
     def create_transaction(
         self,
         txn_date: date,
-        description: str,
+        description: Optional[str],
         postings: List[Posting],
         payee: Optional[str] = None,
         tags: Optional[List[str]] = None,
@@ -97,7 +97,7 @@ class TransactionService:
         # 6. 保存到仓储
         return self.transaction_repository.create(transaction, user_id=user_id)
     
-    def _validate_basic_info(self, txn_date: date, description: str):
+    def _validate_basic_info(self, txn_date: date, description: Optional[str]):
         """
         验证交易基本信息
         
@@ -110,13 +110,6 @@ class TransactionService:
         """
         if not txn_date:
             raise ValueError("交易日期不能为空")
-        
-        if not description or not description.strip():
-            raise ValueError("交易描述不能为空")
-        
-        # 可以添加更多验证，如日期不能是未来日期等
-        # if txn_date > date.today():
-        #     raise ValueError("交易日期不能是未来日期")
     
     def _validate_postings(self, postings: List[Posting]):
         """
