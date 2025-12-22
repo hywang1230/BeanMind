@@ -48,7 +48,7 @@
       </f7-list-item>
 
       <!-- 金额 -->
-      <f7-list-item class="amount-item" title="金额" link="#">
+      <f7-list-item class="amount-item" title="金额">
         <template #media>
           <i class="icon f7-icons">money_yen_circle_fill</i>
         </template>

@@ -38,7 +38,7 @@
             <button class="key-btn number-key" @click="append('.')">.</button>
             <button class="key-btn number-key" @click="append('0')">0</button>
             <button class="key-btn action-key highlight" style="grid-column: span 2" @click="handleOK">
-                {{ isCalculation ? '=' : '确定' }}
+                确定
             </button>
         </div>
     </f7-sheet>
@@ -90,9 +90,7 @@ const displayValue = computed(() => {
     return expression.value || '0.00'
 })
 
-const isCalculation = computed(() => {
-    return expression.value.includes('+') || (expression.value.includes('-') && !expression.value.startsWith('-') && expression.value.lastIndexOf('-') > 0)
-})
+
 
 function openKeypad() {
     isKeypadOpen.value = true
@@ -179,11 +177,7 @@ function calculate() {
 }
 
 function handleOK() {
-    if (isCalculation.value) {
-        calculate()
-    } else {
-        closeKeypad()
-    }
+    closeKeypad()
 }
 
 </script>
