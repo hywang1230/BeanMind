@@ -42,7 +42,9 @@
         <div class="monthly-row">
           <div class="monthly-item">
             <div class="monthly-label">收入</div>
-            <div class="monthly-value income">+¥{{ formatNumber(monthlyData.income) }}</div>
+            <div class="monthly-value" :class="monthlyData.income >= 0 ? 'income' : 'expense'">
+              {{ monthlyData.income >= 0 ? '+' : '-' }}¥{{ formatNumber(monthlyData.income) }}
+            </div>
           </div>
           <div class="monthly-item">
             <div class="monthly-label">支出</div>
@@ -100,7 +102,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import VueApexCharts from 'vue3-apexcharts'
-import { transactionsApi } from '../../api/transactions'
 import { statisticsApi, type AssetOverview, type CategoryStatistics, type MonthlyTrend } from '../../api/statistics'
 
 const apexchart = VueApexCharts
@@ -159,7 +160,7 @@ const chartOptions = computed(() => {
     },
     tooltip: {
       theme: isDark ? 'dark' : 'light',
-      y: { formatter: (v: number) => `¥${formatNumber(v)}` }
+      y: { formatter: (v: number) => `${v >= 0 ? '' : '-'}¥${formatNumber(v)}` }
     },
     legend: {
       position: 'top' as const,
@@ -192,29 +193,24 @@ function formatNumber(num: number | undefined | null): string {
 async function loadDashboardData() {
   loading.value = true
   try {
-    const [assets, monthlyStats, categories, trend] = await Promise.all([
+    const [assets, categories, trend] = await Promise.all([
       statisticsApi.getAssetOverview().catch(() => ({
         net_assets: 0, total_assets: 0, total_liabilities: 0, currency: 'CNY'
       })),
-      (async () => {
-        const now = new Date()
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-        return await transactionsApi.getStatistics(
-          startOfMonth.toISOString().split('T')[0],
-          endOfMonth.toISOString().split('T')[0]
-        )
-      })(),
       statisticsApi.getCategoryStatistics({ type: 'expense', limit: 3 }).catch(() => []),
       statisticsApi.getMonthlyTrend({ months: 6 }).catch(() => [])
     ])
     
     assetData.value = assets
+    
+    // 从 trend 数据获取本月概览（最后一个月即为当前月）
+    const currentMonthTrend = trend.length > 0 ? trend[trend.length - 1] : null
     monthlyData.value = {
-      income: monthlyStats.total_income,
-      expense: Math.abs(monthlyStats.total_expense),
-      net: monthlyStats.net_amount
+      income: currentMonthTrend?.income || 0,
+      expense: Math.abs(currentMonthTrend?.expense || 0),
+      net: currentMonthTrend?.net || 0
     }
+    
     topCategories.value = categories
     trendData.value = trend
   } catch (error) {

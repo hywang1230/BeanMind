@@ -388,7 +388,11 @@ class TransactionRepositoryImpl(TransactionRepository):
         for t in transactions:
             t_type = t.detect_transaction_type()
             
-            for currency in t.get_currencies():
+            # 遍历每个 posting，根据账户类型直接累加
+            for posting in t.postings:
+                currency = posting.currency
+                amount = posting.amount
+                
                 if currency not in by_currency:
                     by_currency[currency] = {"income": Decimal(0), "expense": Decimal(0)}
                 if currency not in income_total:
@@ -396,15 +400,17 @@ class TransactionRepositoryImpl(TransactionRepository):
                 if currency not in expense_total:
                     expense_total[currency] = Decimal(0)
                 
-                # 计算总金额
-                total = t.get_total_amount(currency) / 2  # 除以2因为借贷平衡
-                
-                if t_type == TransactionType.INCOME:
-                    by_currency[currency]["income"] += total
-                    income_total[currency] += total
-                elif t_type == TransactionType.EXPENSE:
-                    by_currency[currency]["expense"] += total
-                    expense_total[currency] += total
+                # 根据账户类型累加
+                # Income 账户：Beancount 中收入为负数表示流入，取反后为正数
+                # 投资亏损时 Income 账户为正数，取反后为负数（正确反映亏损）
+                if posting.account.startswith("Income:"):
+                    income_amount = -amount  # 取反
+                    by_currency[currency]["income"] += income_amount
+                    income_total[currency] += income_amount
+                # Expenses 账户：Beancount 中支出为正数表示流出
+                elif posting.account.startswith("Expenses:"):
+                    by_currency[currency]["expense"] += amount
+                    expense_total[currency] += amount
         
         # 转换 Decimal 为 float 便于 JSON 序列化
         return {

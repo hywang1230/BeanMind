@@ -34,6 +34,40 @@ def get_transaction_service() -> TransactionApplicationService:
     return TransactionApplicationService(transaction_repo, account_repo)
 
 
+def get_exchange_rates(as_of_date: datetime = None) -> dict:
+    """
+    获取所有货币到 CNY 的汇率
+    
+    Args:
+        as_of_date: 截止日期，用于获取该日期或之前最近的汇率
+    
+    Returns:
+        汇率字典 {货币代码: 汇率}，例如 {"USD": 7.13, "CNY": 1}
+    """
+    from decimal import Decimal
+    beancount_service = BeancountService(settings.LEDGER_FILE)
+    # 转换为 date 类型
+    date_obj = as_of_date.date() if as_of_date else None
+    rates = beancount_service.get_all_exchange_rates(to_currency="CNY", as_of_date=date_obj)
+    return {k: float(v) for k, v in rates.items()}
+
+
+def convert_to_cny(amount: float, currency: str, exchange_rates: dict) -> float:
+    """
+    将金额转换为 CNY
+    
+    Args:
+        amount: 原始金额
+        currency: 原始货币
+        exchange_rates: 汇率字典
+    
+    Returns:
+        转换后的 CNY 金额
+    """
+    rate = exchange_rates.get(currency, 1.0)
+    return amount * rate
+
+
 @router.get("/assets", response_model=AssetOverviewResponse)
 async def get_asset_overview(
     account_service: AccountApplicationService = Depends(get_account_service)
@@ -113,7 +147,7 @@ async def get_category_statistics(
     """
     获取支出/收入类别统计
     
-    返回指定类型的类别排名及金额
+    返回指定类型的类别排名及金额（统一转换为 CNY）
     """
     # 设置默认日期范围（本月）
     if not start_date or not end_date:
@@ -126,6 +160,9 @@ async def get_category_statistics(
         
         start_date = start_of_month.strftime("%Y-%m-%d")
         end_date = end_of_month.strftime("%Y-%m-%d")
+    
+    # 获取汇率
+    exchange_rates = get_exchange_rates()
     
     # 获取交易列表
     transactions = transaction_service.get_transactions(
@@ -161,9 +198,12 @@ async def get_category_statistics(
             else:
                 category = "其他"
             
-            # 取绝对值
-            amount = abs(float(posting.get("amount", 0)))
-            total_amount += amount
+            # 获取金额和货币，转换为 CNY
+            raw_amount = float(posting.get("amount", 0))
+            currency = posting.get("currency", "CNY")
+            amount_in_cny = abs(convert_to_cny(raw_amount, currency, exchange_rates))
+            
+            total_amount += amount_in_cny
             
             if category not in category_stats:
                 category_stats[category] = {
@@ -171,7 +211,7 @@ async def get_category_statistics(
                     "count": 0
                 }
             
-            category_stats[category]["amount"] += amount
+            category_stats[category]["amount"] += amount_in_cny
             category_stats[category]["count"] += 1
     
     # 转换为列表并排序
@@ -198,7 +238,7 @@ async def get_monthly_trend(
     """
     获取月度趋势数据
     
-    返回最近 N 个月的收入、支出、净收入趋势
+    返回最近 N 个月的收入、支出、净收入趋势（统一转换为 CNY）
     """
     result = []
     now = datetime.now()
@@ -224,15 +264,27 @@ async def get_monthly_trend(
         start_date = start_of_month.strftime("%Y-%m-%d")
         end_date = end_of_month.strftime("%Y-%m-%d")
         
+        # 获取该月对应的汇率（使用月末日期）
+        exchange_rates = get_exchange_rates(as_of_date=end_of_month)
+        
         # 获取该月统计数据
         stats = transaction_service.get_statistics(start_date, end_date)
         
-        # income_total 和 expense_total 是按货币的字典，取 CNY 或第一个值
+        # income_total 和 expense_total 是按货币的字典
+        # 将所有货币转换为 CNY 后累加
         income_dict = stats.get("income_total", {})
         expense_dict = stats.get("expense_total", {})
         
-        income = float(income_dict.get("CNY", sum(income_dict.values()) if income_dict else 0))
-        expense = float(expense_dict.get("CNY", sum(expense_dict.values()) if expense_dict else 0))
+        # 转换并累加所有货币的收入
+        income = 0.0
+        for currency, amount in income_dict.items():
+            income += convert_to_cny(float(amount), currency, exchange_rates)
+        
+        # 转换并累加所有货币的支出
+        expense = 0.0
+        for currency, amount in expense_dict.items():
+            expense += convert_to_cny(float(amount), currency, exchange_rates)
+        
         net = income - abs(expense)
         
         result.append(MonthlyTrendResponse(
