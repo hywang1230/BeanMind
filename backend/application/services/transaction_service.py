@@ -159,6 +159,15 @@ class TransactionApplicationService:
         
         return [self._transaction_to_dto(txn) for txn in transactions]
     
+    def get_all_payees(self) -> List[str]:
+        """
+        获取所有历史交易方
+        
+        Returns:
+            交易方列表
+        """
+        return self.transaction_repository.get_all_payees()
+    
     def update_transaction(
         self,
         transaction_id: str,

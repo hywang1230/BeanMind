@@ -282,3 +282,13 @@ class TransactionRepository(ABC):
             }
         """
         pass
+
+    @abstractmethod
+    def get_all_payees(self) -> List[str]:
+        """
+        获取所有历史交易方（Payee）
+        
+        Returns:
+            交易方列表（去重）
+        """
+        pass

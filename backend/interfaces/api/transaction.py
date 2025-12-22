@@ -85,6 +85,25 @@ def create_transaction(
             detail=str(e)
         )
 
+@router.get(
+    "/payees",
+    response_model=List[str],
+    summary="获取所有交易方",
+    description="获取历史交易中出现的所有交易方（Payee）",
+    responses={
+        200: {"description": "获取成功", "model": List[str]},
+    }
+)
+def get_payees(
+    transaction_service: TransactionApplicationService = Depends(get_transaction_service)
+):
+    """
+    获取所有交易方
+    
+    返回去重后的所有交易方列表。
+    """
+    return transaction_service.get_all_payees()
+
 
 @router.get(
     "",

@@ -426,3 +426,11 @@ class TransactionRepositoryImpl(TransactionRepository):
             "income_total": {curr: float(val) for curr, val in income_total.items()},
             "expense_total": {curr: float(val) for curr, val in expense_total.items()}
         }
+
+    def get_all_payees(self) -> List[str]:
+        """获取所有历史交易方（Payee）"""
+        payees = set()
+        for t in self._transactions_cache.values():
+            if t.payee:
+                payees.add(t.payee)
+        return sorted(list(payees))

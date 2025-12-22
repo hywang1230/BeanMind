@@ -19,6 +19,7 @@ export type Transaction = {
 export type CreateTransactionRequest = {
     date: string
     description?: string
+    payee?: string
     postings: Posting[]
     tags?: string[]
 }
@@ -79,5 +80,10 @@ export const transactionsApi = {
         if (startDate) params.start_date = startDate
         if (endDate) params.end_date = endDate
         return apiClient.get('/api/transactions/statistics', { params })
+    },
+
+    // 获取所有交易方
+    getPayees(): Promise<string[]> {
+        return apiClient.get('/api/transactions/payees')
     }
 }

@@ -101,6 +101,18 @@
         </template>
       </f7-list-item>
 
+      <!-- 交易方 -->
+      <f7-list-item
+        title="交易方"
+        :after="formData.payee || '请选择'"
+        link="#"
+        @click="openPayeePicker"
+      >
+        <template #media>
+          <i class="icon f7-icons">person_2_fill</i>
+        </template>
+      </f7-list-item>
+
       <!-- 备注 -->
       <f7-list-input
         label="备注"
@@ -138,6 +150,11 @@
       title="选择分类"
       :root-types="categoryRoots"
       @select="onCategorySelect"
+    />
+
+    <PayeeSelectionPopup
+      v-model:opened="showPayeePicker"
+      @select="onPayeeSelect"
     />
 
     <AccountSelectionPopup
@@ -189,6 +206,7 @@ import { useTransactionStore } from '../../stores/transaction'
 import type { CreateTransactionRequest, Posting } from '../../api/transactions'
 import { accountsApi, type Account } from '../../api/accounts'
 import AccountSelectionPopup from '../../components/AccountSelectionPopup.vue'
+import PayeeSelectionPopup from '../../components/PayeeSelectionPopup.vue'
 import AmountInput from '../../components/AmountInput.vue'
 
 const router = useRouter()
@@ -198,6 +216,7 @@ const transactionStore = useTransactionStore()
 const loading = ref(false)
 const error = ref('')
 const showCategoryPicker = ref(false)
+const showPayeePicker = ref(false)
 const showFromAccountPicker = ref(false)
 const showToAccountPicker = ref(false)
 const allAccounts = ref<Account[]>([])
@@ -210,6 +229,7 @@ interface TransactionFormData {
   fromAccount: string[]
   toAccount: string[]
   date: string
+  payee: string
   description: string
   tagString: string
 }
@@ -222,6 +242,7 @@ const formData = ref<TransactionFormData>({
   fromAccount: [],
   toAccount: [],
   date: new Date().toISOString().split('T')[0] ?? '',
+  payee: '',
   description: '',
   tagString: ''
 })
@@ -329,10 +350,12 @@ function selectType(type: 'expense' | 'income' | 'transfer') {
 
 // Picker Handlers
 function openCategoryPicker() { showCategoryPicker.value = true }
+function openPayeePicker() { showPayeePicker.value = true }
 function openFromAccountPicker() { showFromAccountPicker.value = true }
 function openToAccountPicker() { showToAccountPicker.value = true }
 
 function onCategorySelect(val: string[]) { formData.value.category = val }
+function onPayeeSelect(val: string) { formData.value.payee = val }
 function onFromAccountSelect(val: string[]) { formData.value.fromAccount = val }
 function onToAccountSelect(val: string[]) { formData.value.toAccount = val }
 
@@ -455,6 +478,7 @@ async function handleSubmit() {
       const request: CreateTransactionRequest = {
           date: formData.value.date,
           description: formData.value.description || `${formData.value.type === 'expense' ? '支出' : formData.value.type === 'income' ? '收入' : '转账'}`,
+          payee: formData.value.payee || undefined,
           postings: buildPostings(),
           tags: tags.length > 0 ? tags : undefined
       }
