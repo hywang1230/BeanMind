@@ -2,7 +2,7 @@ import apiClient from './client'
 
 export type Account = {
     name: string
-    type: 'Assets' | 'Liabilities' | 'Equity' | 'Income' | 'Expenses'
+    account_type: 'Assets' | 'Liabilities' | 'Equity' | 'Income' | 'Expenses'
     currencies: string[]
     children?: Account[]
 }

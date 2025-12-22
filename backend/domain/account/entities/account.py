@@ -3,6 +3,7 @@
 定义账户的核心属性和业务规则。
 遵循 DDD 原则，不包含任何基础设施依赖。
 """
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -112,24 +113,35 @@ class Account:
         
         账户名称应遵循：
         - 使用冒号分隔的层级结构
-        - 每个层级以大写字母开头
-        - 允许字母、数字、下划线、中划线
+        - 至少两个层级
+        - 第一层级必须是有效的账户类型（Assets, Liabilities, Equity, Income, Expenses）
+        - 第二层必须以大写字母开头
+        - 允许中文、字母、数字、下划线、中划线
         """
         if not name:
             return False
         
         parts = name.split(":")
-        if len(parts) < 1:
+        if len(parts) < 2:
             return False
+        
+        # 验证第一层级是有效的账户类型
+        valid_root_types = {"Assets", "Liabilities", "Equity", "Income", "Expenses"}
+        if parts[0] not in valid_root_types:
+            return False
+        
+        # 验证第二层级是否以大写字母开头
+        if not parts[1] or not parts[1][0].isupper():
+            return False
+        
+        # 允许中文、字母、数字、下划线、中划线的正则表达式
+        valid_pattern = re.compile(r'^[\u4e00-\u9fa5a-zA-Z0-9_-]+$')
         
         for part in parts:
             if not part:
                 return False
-            # 每个部分应以大写字母开头
-            if not part[0].isupper():
-                return False
-            # 允许字母、数字、下划线、中划线
-            if not all(c.isalnum() or c in ('_', '-') for c in part):
+            # 验证每一部分是否符合允许的字符规则
+            if not valid_pattern.match(part):
                 return False
         
         return True

@@ -254,5 +254,103 @@ class BeancountService:
             transactions.append(txn_data)
         
         return transactions
+    
+    def get_exchange_rate(
+        self, 
+        from_currency: str, 
+        to_currency: str, 
+        as_of_date: Optional[date] = None
+    ) -> Optional[Decimal]:
+        """
+        获取汇率
+        
+        从 Beancount 的 price 指令中获取指定日期的最新汇率。
+        
+        Args:
+            from_currency: 源货币（如 USD）
+            to_currency: 目标货币（如 CNY）
+            as_of_date: 截止日期，如果为 None 则使用当前日期
+        
+        Returns:
+            汇率，如果找不到则返回 None
+            
+        Example:
+            get_exchange_rate("USD", "CNY") -> Decimal("7.13")
+            表示 1 USD = 7.13 CNY
+        """
+        from beancount.core.data import Price
+        
+        if as_of_date is None:
+            as_of_date = date.today()
+        
+        # 收集所有符合条件的价格指令
+        matching_prices = []
+        
+        for entry in self.entries:
+            if not isinstance(entry, Price):
+                continue
+            
+            # 跳过超过截止日期的价格
+            if entry.date > as_of_date:
+                continue
+            
+            # 检查是否匹配 from_currency -> to_currency
+            if entry.currency == from_currency and entry.amount.currency == to_currency:
+                matching_prices.append((entry.date, entry.amount.number))
+            # 检查反向汇率 to_currency -> from_currency
+            elif entry.currency == to_currency and entry.amount.currency == from_currency:
+                # 反向汇率需要取倒数
+                if entry.amount.number != 0:
+                    matching_prices.append((entry.date, Decimal(1) / entry.amount.number))
+        
+        if not matching_prices:
+            return None
+        
+        # 按日期排序，取最新的汇率
+        matching_prices.sort(key=lambda x: x[0], reverse=True)
+        return matching_prices[0][1]
+    
+    def get_all_exchange_rates(
+        self, 
+        to_currency: str = "CNY",
+        as_of_date: Optional[date] = None
+    ) -> Dict[str, Decimal]:
+        """
+        获取所有货币到目标货币的最新汇率
+        
+        Args:
+            to_currency: 目标货币（默认 CNY）
+            as_of_date: 截止日期
+        
+        Returns:
+            汇率字典 {货币代码: 汇率}
+            
+        Example:
+            {"USD": Decimal("7.13"), "EUR": Decimal("7.80")}
+        """
+        from beancount.core.data import Price
+        
+        if as_of_date is None:
+            as_of_date = date.today()
+        
+        # 收集所有货币
+        currencies = set()
+        for entry in self.entries:
+            if isinstance(entry, Price):
+                currencies.add(entry.currency)
+                currencies.add(entry.amount.currency)
+        
+        # 获取每种货币到目标货币的汇率
+        rates = {}
+        rates[to_currency] = Decimal(1)  # 目标货币自身汇率为1
+        
+        for currency in currencies:
+            if currency == to_currency:
+                continue
+            rate = self.get_exchange_rate(currency, to_currency, as_of_date)
+            if rate:
+                rates[currency] = rate
+        
+        return rates
 
 

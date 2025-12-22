@@ -42,10 +42,10 @@ class Transaction:
     
     # 必需字段
     date: date = field(metadata={"description": "交易日期"})
-    description: str = field(metadata={"description": "交易描述/摘要"})
     postings: List[Posting] = field(default_factory=list, metadata={"description": "记账分录列表"})
     
     # 可选字段
+    description: Optional[str] = field(default=None, metadata={"description": "交易描述/摘要"})
     payee: Optional[str] = field(default=None, metadata={"description": "收付款方"})
     flag: TransactionFlag = field(default=TransactionFlag.CLEARED, metadata={"description": "交易标记"})
     tags: Set[str] = field(default_factory=set, metadata={"description": "标签集合"})
@@ -66,10 +66,6 @@ class Transaction:
         # 验证日期
         if not self.date:
             raise ValueError("交易日期不能为空")
-        
-        # 验证描述
-        if not self.description or not self.description.strip():
-            raise ValueError("交易描述不能为空")
         
         # 验证至少有两个 Posting（复式记账）
         if len(self.postings) < 2:

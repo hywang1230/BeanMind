@@ -41,13 +41,28 @@ async def get_asset_overview(
     """
     获取资产概览
     
-    返回净资产、总资产、总负债数据
+    返回净资产、总资产、总负债数据（统一转换为 CNY）
+    
+    Beancount 会计恒等式：Assets + Liabilities + Equity = 0
+    - 资产（Assets）：正数表示拥有的价值
+    - 负债（Liabilities）：负数表示欠款
+    - 净资产 = 资产 + 负债（因为负债是负数，所以等价于 资产 - |负债|）
+    
+    多币种处理：使用 beancount 账本中的 price 指令获取汇率，将所有货币转换为 CNY
     """
+    from decimal import Decimal
+    
+    # 获取 Beancount 服务以读取汇率
+    beancount_service = BeancountService(settings.LEDGER_FILE)
+    
+    # 获取所有货币到 CNY 的汇率
+    exchange_rates = beancount_service.get_all_exchange_rates(to_currency="CNY")
+    
     # 获取所有账户
     all_accounts = account_service.get_all_accounts(active_only=False)
     
-    total_assets = 0.0
-    total_liabilities = 0.0
+    total_assets = Decimal("0")
+    total_liabilities = Decimal("0")  # 存储负债原始值（负数）
     
     # 统计资产和负债
     for account_dict in all_accounts:
@@ -56,24 +71,33 @@ async def get_asset_overview(
         # 获取该账户余额
         balances = account_service.get_account_balance(account_name)
         
-        # 累加余额（假设使用第一个货币的余额）
+        # 累加余额
         if balances:
-            # balances 是一个字典，键为货币，值为余额
-            for currency, amount in balances.items():
-                # 资产类账户
+            # balances 是一个字典，键为货币，值为余额字符串
+            for currency, amount_str in balances.items():
+                amount = Decimal(amount_str)
+                
+                # 获取汇率，如果没有则默认为 1（假设是 CNY）
+                rate = exchange_rates.get(currency, Decimal("1"))
+                
+                # 转换为 CNY
+                amount_in_cny = amount * rate
+                
+                # 资产类账户：正数表示拥有的价值
                 if account_name.startswith("Assets:"):
-                    total_assets += float(amount)
-                # 负债类账户（余额通常为负，取绝对值）
+                    total_assets += amount_in_cny
+                # 负债类账户：负数表示欠款，直接累加原始值
                 elif account_name.startswith("Liabilities:"):
-                    total_liabilities += abs(float(amount))
+                    total_liabilities += amount_in_cny
     
-    # 净资产 = 总资产 - 总负债
-    net_assets = total_assets - total_liabilities
+    # 净资产 = 资产 + 负债（负债为负数）
+    net_assets = total_assets + total_liabilities
     
+    # 返回时，负债取绝对值用于展示（用户更容易理解"欠了多少钱"）
     return AssetOverviewResponse(
-        net_assets=net_assets,
-        total_assets=total_assets,
-        total_liabilities=total_liabilities,
+        net_assets=float(net_assets),
+        total_assets=float(total_assets),
+        total_liabilities=float(abs(total_liabilities)),  # 展示为正数
         currency="CNY"
     )
 

@@ -38,7 +38,7 @@
                 @click="selectAccount(account)"
               >
                 <span class="account-name">{{ account.name }}</span>
-                <span class="account-type">{{ account.type }}</span>
+                <span class="account-type">{{ account.account_type }}</span>
               </div>
               
               <div v-if="account.children && account.children.length > 0" class="account-children">
@@ -49,7 +49,7 @@
                   @click="selectAccount(child)"
                 >
                   <span class="account-name">{{ child.name }}</span>
-                  <span class="account-type">{{ child.type }}</span>
+                  <span class="account-type">{{ child.account_type }}</span>
                 </div>
               </div>
             </div>
@@ -86,14 +86,14 @@ const accounts = ref<Account[]>([])
 const filteredAccounts = computed(() => {
   if (!searchQuery.value) {
     return props.accountType
-      ? accounts.value.filter(acc => acc.type === props.accountType)
+      ? accounts.value.filter(acc => acc.account_type === props.accountType)
       : accounts.value
   }
   
   const query = searchQuery.value.toLowerCase()
   return accounts.value
     .filter(acc => {
-      if (props.accountType && acc.type !== props.accountType) {
+      if (props.accountType && acc.account_type !== props.accountType) {
         return false
       }
       return acc.name.toLowerCase().includes(query)

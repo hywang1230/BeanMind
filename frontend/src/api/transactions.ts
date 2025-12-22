@@ -9,7 +9,7 @@ export type Posting = {
 export type Transaction = {
     id: string
     date: string
-    description: string
+    description?: string
     postings: Posting[]
     tags?: string[]
     created_at?: string
@@ -18,7 +18,7 @@ export type Transaction = {
 
 export type CreateTransactionRequest = {
     date: string
-    description: string
+    description?: string
     postings: Posting[]
     tags?: string[]
 }

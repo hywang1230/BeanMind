@@ -13,23 +13,28 @@
     <div v-else class="dashboard-content">
       <!-- 总资产卡片 -->
       <div class="card assets-card">
-        <div class="assets-row">
-          <div class="asset-item">
-            <div class="asset-label">净资产</div>
-            <div class="asset-value primary">¥{{ formatNumber(assetData.net_assets) }}</div>
+        <!-- 净资产 - 主要信息 -->
+        <div class="net-worth-section">
+          <div class="net-worth-label">净资产</div>
+          <div class="net-worth-value" :class="{ negative: assetData.net_assets < 0 }">
+            {{ assetData.net_assets >= 0 ? '' : '-' }}¥{{ formatNumber(assetData.net_assets) }}
           </div>
-          <div class="asset-divider"></div>
-          <div class="asset-item">
-            <div class="asset-label">资产</div>
-            <div class="asset-value">¥{{ formatNumber(assetData.total_assets) }}</div>
+        </div>
+        
+        <!-- 资产与负债 - 次要信息 -->
+        <div class="asset-liability-row">
+          <div class="al-item">
+            <span class="al-label">资产</span>
+            <span class="al-value assets">¥{{ formatNumber(assetData.total_assets) }}</span>
           </div>
-          <div class="asset-divider"></div>
-          <div class="asset-item">
-            <div class="asset-label">负债</div>
-            <div class="asset-value">¥{{ formatNumber(assetData.total_liabilities) }}</div>
+          <div class="al-divider"></div>
+          <div class="al-item">
+            <span class="al-label">负债</span>
+            <span class="al-value liabilities">¥{{ formatNumber(assetData.total_liabilities) }}</span>
           </div>
         </div>
       </div>
+
       
       <!-- 本月概览 -->
       <div class="card">
@@ -289,39 +294,71 @@ onMounted(() => { loadDashboardData() })
 
 /* 资产卡片 */
 .assets-card {
-  padding: 16px;
+  padding: 20px 16px;
 }
 
-.assets-row {
-  display: flex;
-  align-items: center;
-}
-
-.asset-item {
-  flex: 1;
+/* 净资产区域 */
+.net-worth-section {
   text-align: center;
+  margin-bottom: 16px;
 }
 
-.asset-label {
+.net-worth-label {
   font-size: 13px;
   color: #8e8e93;
-  margin-bottom: 4px;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
 }
 
-.asset-value {
-  font-size: 17px;
-  font-weight: 600;
-  color: #000;
-}
-
-.asset-value.primary {
-  font-size: 22px;
+.net-worth-value {
+  font-size: 32px;
+  font-weight: 700;
   color: #007aff;
+  letter-spacing: -0.5px;
 }
 
-.asset-divider {
+.net-worth-value.negative {
+  color: #ff3b30;
+}
+
+/* 资产与负债行 */
+.asset-liability-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 0.5px solid #e5e5ea;
+}
+
+.al-item {
+  flex: 1;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.al-label {
+  font-size: 12px;
+  color: #8e8e93;
+}
+
+.al-value {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.al-value.assets {
+  color: #34c759;
+}
+
+.al-value.liabilities {
+  color: #ff9500;
+}
+
+.al-divider {
   width: 0.5px;
-  height: 36px;
+  height: 28px;
   background: #c6c6c8;
 }
 
@@ -437,14 +474,34 @@ onMounted(() => { loadDashboardData() })
     background: #1c1c1e;
   }
   
-  .asset-value,
+  /* 净资产在暗黑模式下保持原色 */
+  .net-worth-value {
+    color: #0a84ff;
+  }
+  
+  .net-worth-value.negative {
+    color: #ff453a;
+  }
+  
+  .asset-liability-row {
+    border-top-color: #38383a;
+  }
+  
+  .al-value.assets {
+    color: #30d158;
+  }
+  
+  .al-value.liabilities {
+    color: #ff9f0a;
+  }
+  
+  .al-divider {
+    background: #38383a;
+  }
+  
   .monthly-value,
   .top-name {
     color: #fff;
-  }
-  
-  .asset-divider {
-    background: #38383a;
   }
   
   .top-item {

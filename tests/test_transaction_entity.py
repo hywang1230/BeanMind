@@ -97,14 +97,27 @@ class TestTransaction:
                 postings=[]
             )
     
-    def test_description_validation_empty(self):
-        """测试描述验证（空描述）"""
-        with pytest.raises(ValueError, match="交易描述不能为空"):
-            Transaction(
-                date=date.today(),
-                description="",
-                postings=[]
-            )
+    def test_description_optional(self):
+        """测试描述可选（空描述不抛错）"""
+        postings = [
+            Posting(account="Expenses:Food", amount=Decimal("50"), currency="CNY"),
+            Posting(account="Assets:Cash", amount=Decimal("-50"), currency="CNY")
+        ]
+        
+        # 空描述应该不会抛错
+        txn = Transaction(
+            date=date.today(),
+            postings=postings
+        )
+        assert txn.description is None
+        
+        # 空字符串描述也应该允许
+        txn2 = Transaction(
+            date=date.today(),
+            description="",
+            postings=postings
+        )
+        assert txn2.description == ""
     
     def test_postings_validation_insufficient(self):
         """测试记账分录验证（少于两个）"""

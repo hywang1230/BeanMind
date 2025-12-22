@@ -53,7 +53,7 @@ const accounts = ref<Account[]>([])
 
 const filteredAccounts = computed(() => {
   if (!props.rootTypes || props.rootTypes.length === 0) return accounts.value
-  return accounts.value.filter(acc => props.rootTypes?.includes(acc.type))
+  return accounts.value.filter(acc => props.rootTypes?.includes(acc.account_type))
 })
 
 async function loadAccounts() {

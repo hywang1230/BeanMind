@@ -179,7 +179,7 @@ const creatingAccount = ref(false)
 const createError = ref('')
 
 function getAccountsByType(type: string): Account[] {
-  return accounts.value.filter(acc => acc.type === type)
+  return accounts.value.filter(acc => acc.account_type === type)
 }
 
 function getShortName(fullName: string): string {

@@ -149,30 +149,30 @@ class TestAccount:
     
     def test_get_parent_account(self):
         """测试获取父账户"""
-        # 有父账户
+        # 有父账户（三层）
         account = Account(
             name="Assets:Bank:Checking",
             account_type=AccountType.ASSETS
         )
         assert account.get_parent_account() == "Assets:Bank"
         
-        # 根账户没有父账户
-        root_account = Account(
-            name="Assets",
+        # 两层账户的父账户是根账户
+        level2_account = Account(
+            name="Assets:Bank",
             account_type=AccountType.ASSETS
         )
-        assert root_account.get_parent_account() is None
+        assert level2_account.get_parent_account() == "Assets"
     
     def test_get_depth(self):
         """测试获取账户深度"""
-        root = Account(name="Assets", account_type=AccountType.ASSETS)
-        assert root.get_depth() == 1
-        
         level2 = Account(name="Assets:Bank", account_type=AccountType.ASSETS)
         assert level2.get_depth() == 2
         
         level3 = Account(name="Assets:Bank:Checking", account_type=AccountType.ASSETS)
         assert level3.get_depth() == 3
+        
+        level4 = Account(name="Assets:Bank:Checking:Main", account_type=AccountType.ASSETS)
+        assert level4.get_depth() == 4
     
     def test_add_currency(self):
         """测试添加货币"""
