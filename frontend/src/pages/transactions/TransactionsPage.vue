@@ -76,10 +76,10 @@
               </div>
             </template>
             <template #title>
-              <span class="transaction-title">{{ getDisplayTitle(transaction) }}</span>
+              <span class="transaction-title">{{ getCategory(transaction) }}</span>
             </template>
             <template #subtitle>
-              <span class="transaction-category">{{ getCategory(transaction) }}</span>
+              <span class="transaction-desc">{{ getDisplayDescription(transaction) }}</span>
             </template>
             <template #after>
               <span class="transaction-amount" :class="getAmountClass(transaction)">
@@ -401,10 +401,11 @@ function getIconClass(transaction: Transaction): string {
   return ''
 }
 
-function getDisplayTitle(transaction: Transaction): string {
-  if (transaction.payee) return transaction.payee
-  if (transaction.description) return transaction.description
-  return getCategory(transaction)
+function getDisplayDescription(transaction: Transaction): string {
+  const parts: string[] = []
+  if (transaction.payee) parts.push(transaction.payee)
+  if (transaction.description) parts.push(transaction.description)
+  return parts.join(' - ') || ''
 }
 
 function getCategory(transaction: Transaction): string {
@@ -588,7 +589,7 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 8px 4px;
 }
 
 .date-title {
@@ -646,7 +647,7 @@ onUnmounted(() => {
   color: #000;
 }
 
-.transaction-category {
+.transaction-desc {
   font-size: 13px;
   color: #8e8e93;
 }
