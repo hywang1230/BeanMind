@@ -23,9 +23,10 @@
     <f7-list strong-ios dividers-ios inset-ios form>
       <!-- 账户/转出账户 -->
       <f7-list-item
+        class="account-item"
         link="#"
         :title="formData.type === 'transfer' ? '转出账户' : '账户'"
-        :after="formData.fromAccount || '请选择'"
+        :after="formatAccountDisplay(formData.fromAccount) || '请选择'"
         @click="openFromAccountPicker"
       >
         <template #media>
@@ -62,9 +63,10 @@
       <!-- 转入账户 -->
       <f7-list-item
         v-if="formData.type === 'transfer'"
+        class="account-item"
         link="#"
         title="转入账户"
-        :after="formData.toAccount || '请选择'"
+        :after="formatAccountDisplay(formData.toAccount) || '请选择'"
         @click="openToAccountPicker"
       >
         <template #media>
@@ -76,8 +78,7 @@
       <f7-list-input
         label="日期"
         type="date"
-        :value="formData.date"
-        @input="formData.date = $event.target.value"
+        v-model:value="formData.date"
         placeholder="选择日期"
       >
         <template #media>
@@ -89,8 +90,7 @@
       <f7-list-input
         label="备注"
         type="textarea"
-        :value="formData.description"
-        @input="formData.description = $event.target.value"
+        v-model:value="formData.description"
         placeholder="添加备注（可选）"
         resizable
       >
@@ -103,8 +103,7 @@
       <f7-list-input
         label="标签"
         type="text"
-        :value="formData.tagString"
-        @input="formData.tagString = $event.target.value"
+        v-model:value="formData.tagString"
         placeholder="标签用空格分隔"
         info="例如: 旅行 餐饮"
       >
@@ -163,14 +162,26 @@ const showCategoryPicker = ref(false)
 const showFromAccountPicker = ref(false)
 const showToAccountPicker = ref(false)
 
-const formData = ref({
-  type: 'expense' as 'expense' | 'income' | 'transfer',
-  amount: undefined as number | undefined,
+interface TransactionFormData {
+  type: 'expense' | 'income' | 'transfer'
+  amount: number | undefined
+  currency: string
+  category: string
+  fromAccount: string
+  toAccount: string
+  date: string
+  description: string
+  tagString: string
+}
+
+const formData = ref<TransactionFormData>({
+  type: 'expense',
+  amount: undefined,
   currency: 'CNY',
   category: '',
   fromAccount: '',
   toAccount: '',
-  date: new Date().toISOString().split('T')[0],
+  date: new Date().toISOString().split('T')[0] ?? '',
   description: '',
   tagString: ''
 })
@@ -181,8 +192,8 @@ const categoryRoots = computed(() => {
 })
 
 const accountRoots = computed(() => {
-  // Generally select Assets or Liabilities
-  return ['Assets', 'Liabilities', 'Equity']
+  // 只选择资产和负债账户
+  return ['Assets', 'Liabilities']
 })
 
 const isFormValid = computed(() => {
@@ -224,6 +235,15 @@ function openToAccountPicker() { showToAccountPicker.value = true }
 function onCategorySelect(val: string) { formData.value.category = val }
 function onFromAccountSelect(val: string) { formData.value.fromAccount = val }
 function onToAccountSelect(val: string) { formData.value.toAccount = val }
+
+/**
+ * 格式化账户名称显示
+ * 返回完整路径，CSS 会处理从左侧截断
+ */
+function formatAccountDisplay(accountName: string): string {
+  if (!accountName) return ''
+  return accountName
+}
 
 // Submission Logic
 function buildPostings(): Posting[] {
@@ -289,5 +309,22 @@ async function handleSubmit() {
 .margin-vertical {
     margin-top: 16px;
     margin-bottom: 16px;
+}
+
+/* 账户名称显示优化：保持标题不被隐藏，账户名从左侧截断 */
+.account-item :deep(.item-after) {
+  /* 允许右侧内容收缩，但设置最大宽度 */
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* 使用 direction: rtl 让截断发生在左侧，保留右侧内容 */
+  direction: rtl;
+  text-align: left;
+}
+
+/* 确保标题不会被压缩 */
+.account-item :deep(.item-title) {
+  flex-shrink: 0;
 }
 </style>
