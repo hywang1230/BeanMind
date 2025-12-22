@@ -176,20 +176,20 @@ function viewTransaction(transaction: Transaction) {
 function getCategory(transaction: Transaction): string {
   if (transaction.postings.length === 0) return '未分类'
   
-  const account = transaction.postings[0].account
+  const account = transaction.postings[0]!.account
   const parts = account.split(':')
   
   if (parts.length >= 2) {
-    return parts[parts.length - 1]
+    return parts[parts.length - 1]!
   }
   
-  return parts[0]
+  return parts[0]!
 }
 
 function getAmountClass(transaction: Transaction): string {
   if (transaction.postings.length === 0) return ''
   
-  const account = transaction.postings[0].account
+  const account = transaction.postings[0]!.account
   if (account.startsWith('Income')) return 'positive'
   if (account.startsWith('Expenses')) return 'negative'
   return ''
@@ -198,8 +198,8 @@ function getAmountClass(transaction: Transaction): string {
 function formatAmount(transaction: Transaction): string {
   if (transaction.postings.length === 0) return '¥0.00'
   
-  const posting = transaction.postings[0]
-  const amount = Math.abs(posting.amount)
+  const posting = transaction.postings[0]!
+  const amount = Math.abs(Number(posting.amount))
   const sign = posting.account.startsWith('Income') ? '+' : '-'
   
   return `${sign}¥${amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

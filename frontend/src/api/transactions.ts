@@ -2,7 +2,7 @@ import apiClient from './client'
 
 export type Posting = {
     account: string
-    amount: number
+    amount: string
     currency: string
 }
 

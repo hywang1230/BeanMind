@@ -420,26 +420,26 @@ function buildFinalPostings(): Posting[] {
     if (draft.type === 'expense') {
         // Expense: +Category, -Account
         draft.category.forEach(cat => {
-            posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, 1), currency })
+            posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, 1).toFixed(2), currency })
         })
         draft.fromAccount.forEach(acc => {
-            posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, -1), currency })
+            posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, -1).toFixed(2), currency })
         })
     } else if (draft.type === 'income') {
         // Income: +Account, -Category
         draft.fromAccount.forEach(acc => {
-             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, 1), currency })
+             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, 1).toFixed(2), currency })
         })
         draft.category.forEach(cat => {
-             posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, -1), currency })
+             posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, -1).toFixed(2), currency })
         })
     } else if (draft.type === 'transfer') {
         // Transfer: -From, +To
          draft.fromAccount.forEach(acc => {
-             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, -1), currency })
+             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, -1).toFixed(2), currency })
         })
         draft.toAccount.forEach(acc => {
-             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, 1), currency })
+             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, 1).toFixed(2), currency })
         })
     }
     

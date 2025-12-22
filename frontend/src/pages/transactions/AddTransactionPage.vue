@@ -442,26 +442,26 @@ function buildPostings(): Posting[] {
     // Expense: +Expense, -Asset
     // Split Category or Account
     formData.value.category.forEach(cat => {
-      posts.push({ account: cat, amount: amt / catCount, currency })
+      posts.push({ account: cat, amount: (amt / catCount).toFixed(2), currency })
     })
     formData.value.fromAccount.forEach(acc => {
-      posts.push({ account: acc, amount: -amt / fromCount, currency })
+      posts.push({ account: acc, amount: (-amt / fromCount).toFixed(2), currency })
     })
   } else if (formData.value.type === 'income') {
     // Income: +Asset, -Income
     formData.value.fromAccount.forEach(acc => {
-      posts.push({ account: acc, amount: amt / fromCount, currency })
+      posts.push({ account: acc, amount: (amt / fromCount).toFixed(2), currency })
     })
     formData.value.category.forEach(cat => {
-      posts.push({ account: cat, amount: -amt / catCount, currency })
+      posts.push({ account: cat, amount: (-amt / catCount).toFixed(2), currency })
     })
   } else if (formData.value.type === 'transfer') {
     // Transfer: -From, +To
     formData.value.fromAccount.forEach(acc => {
-      posts.push({ account: acc, amount: -amt / fromCount, currency })
+      posts.push({ account: acc, amount: (-amt / fromCount).toFixed(2), currency })
     })
     formData.value.toAccount.forEach(acc => {
-      posts.push({ account: acc, amount: amt / toCount, currency })
+      posts.push({ account: acc, amount: (amt / toCount).toFixed(2), currency })
     })
   }
   return posts
