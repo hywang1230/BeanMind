@@ -20,6 +20,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../pages/transactions/AddTransactionPage.vue'),
         meta: { requiresAuth: true }
     },
+    {
+        path: '/transactions/distribute',
+        name: 'TransactionDistribute',
+        component: () => import('../pages/transactions/TransactionDistributePage.vue'),
+        meta: { requiresAuth: true }
+    },
     // 保留这些页面在主布局外（如果需要单独访问）
     {
         path: '/accounts',

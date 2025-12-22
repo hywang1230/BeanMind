@@ -2,14 +2,39 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { transactionsApi, type Transaction, type TransactionsQuery, type CreateTransactionRequest } from '../api/transactions'
 
+export interface TransactionDraft {
+    type: 'expense' | 'income' | 'transfer'
+    amount: number | undefined
+    currency: string
+    category: string[]
+    fromAccount: string[]
+    toAccount: string[]
+    date: string
+    payee: string
+    description: string
+    tagString: string
+    categoryDistributions?: Record<string, number>
+    accountDistributions?: Record<string, number>
+}
+
 export const useTransactionStore = defineStore('transaction', () => {
     // 状态
     const transactions = ref<Transaction[]>([])
     const currentTransaction = ref<Transaction | null>(null)
+    const transactionDraft = ref<TransactionDraft | null>(null)
     const total = ref(0)
     const loading = ref(false)
 
-    // 操作
+    // Draft Actions
+    function setTransactionDraft(draft: TransactionDraft) {
+        transactionDraft.value = draft
+    }
+
+    function clearTransactionDraft() {
+        transactionDraft.value = null
+    }
+
+    // API Actions
     async function fetchTransactions(query: TransactionsQuery = {}) {
         loading.value = true
         try {
@@ -93,12 +118,15 @@ export const useTransactionStore = defineStore('transaction', () => {
     return {
         transactions,
         currentTransaction,
+        transactionDraft,
         total,
         loading,
         fetchTransactions,
         fetchTransaction,
         createTransaction,
         updateTransaction,
-        deleteTransaction
+        deleteTransaction,
+        setTransactionDraft,
+        clearTransactionDraft
     }
 })

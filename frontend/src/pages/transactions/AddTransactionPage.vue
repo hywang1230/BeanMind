@@ -8,7 +8,7 @@
       </f7-nav-left>
       <f7-nav-title>记一笔</f7-nav-title>
       <f7-nav-right>
-        <f7-link @click="handleSubmit" :class="{ disabled: !isFormValid || loading }">{{ loading ? '保存中' : '保存' }}</f7-link>
+        <f7-link @click="handleSubmit" :class="{ disabled: loading }" :style="{ opacity: (!isFormValid || loading) ? 0.5 : 1 }">{{ loading ? '保存中' : (isMultiSelect ? '下一步' : '保存') }}</f7-link>
       </f7-nav-right>
     </f7-navbar>
 
@@ -202,7 +202,7 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import { f7 } from 'framework7-vue'
 import { useRouter } from 'vue-router'
-import { useTransactionStore } from '../../stores/transaction'
+import { useTransactionStore, type TransactionDraft } from '../../stores/transaction'
 import type { CreateTransactionRequest, Posting } from '../../api/transactions'
 import { accountsApi, type Account } from '../../api/accounts'
 import AccountSelectionPopup from '../../components/AccountSelectionPopup.vue'
@@ -249,6 +249,12 @@ const formData = ref<TransactionFormData>({
 
 // Lifecycle
 onMounted(async () => {
+  // Restore from draft if exists
+  const draft = transactionStore.transactionDraft
+  if (draft) {
+      formData.value = { ...draft }
+  }
+
   try {
     const res = await accountsApi.getAccounts()
     if (Array.isArray(res)) {
@@ -333,6 +339,7 @@ const isFormValid = computed(() => {
 
 // Navigation
 function goBack() {
+  transactionStore.clearTransactionDraft()
   router.back()
 }
 
@@ -460,10 +467,43 @@ function buildPostings(): Posting[] {
   return posts
 }
 
+const isMultiSelect = computed(() => {
+  if (formData.value.type === 'transfer') {
+      return formData.value.fromAccount.length > 1 || formData.value.toAccount.length > 1
+  }
+  return formData.value.category.length > 1 || formData.value.fromAccount.length > 1
+})
+
 async function handleSubmit() {
   if (!isFormValid.value) {
-      error.value = '请填写所有必填项'
+      f7.toast.show({ text: '请填写所有必填项', position: 'center', closeTimeout: 2000 })
       return 
+  }
+
+  if (isMultiSelect.value) {
+      // Create draft
+      const draft: TransactionDraft = {
+          ...formData.value,
+          amount: formData.value.amount || 0, // Ensure number
+          categoryDistributions: transactionStore.transactionDraft?.categoryDistributions || {},
+          accountDistributions: transactionStore.transactionDraft?.accountDistributions || {}
+      }
+      transactionStore.setTransactionDraft(draft)
+
+      // Navigate
+      if (formData.value.type !== 'transfer' && formData.value.category.length > 1) {
+           router.push({ path: '/transactions/distribute', query: { type: 'category' } })
+      } else if (formData.value.type === 'transfer') {
+           if (formData.value.fromAccount.length > 1) {
+                router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from' } })
+           } else {
+                router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to' } })
+           }
+      } else {
+           // Expense/Income with multiple accounts
+           router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from' } })
+      }
+      return
   }
 
   loading.value = true
