@@ -4,12 +4,22 @@
     :toggle="hasChildren"
     :opened="account.opened"
     @click="onItemClick"
+    :class="{ 'selected-item': isSelected }"
   >
+    <template #content-start v-if="isMultiSelect && !hasChildren">
+      <f7-checkbox
+        :checked="isSelected"
+        @change="onItemClick"
+      />
+    </template>
+    
     <template v-if="hasChildren">
       <AccountTreeItem
         v-for="child in account.children"
         :key="child.name"
         :account="child"
+        :is-multi-select="isMultiSelect"
+        :selected-names="selectedNames"
         @select="(name: string) => $emit('select', name)"
       />
     </template>
@@ -30,6 +40,8 @@ interface AccountTreeNode {
 
 const props = defineProps<{
   account: AccountTreeNode
+  isMultiSelect?: boolean
+  selectedNames?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -38,22 +50,31 @@ const emit = defineEmits<{
 
 const hasChildren = computed(() => props.account.children && props.account.children.length > 0)
 
+const isSelected = computed(() => {
+  return props.selectedNames?.includes(props.account.name) || false
+})
+
 const displayName = computed(() => {
   const parts = props.account.name.split(':')
   return parts[parts.length - 1]
 })
 
-function onItemClick(e: MouseEvent) {
-  // 如果点击的是展开/折叠按钮，不做任何处理（让 Framework7 处理展开/折叠）
-  if (e.target && (e.target as HTMLElement).closest('.treeview-toggle')) {
+function onItemClick(e?: Event) {
+  // 如果是 Framework7 的 toggle 点击，不触发选择
+  if (e && e.target && (e.target as HTMLElement).closest('.treeview-toggle')) {
     return
   }
   
-  // 只有叶子节点（没有子节点）才能被选中
+  // 只有叶子节点才能被选中
   if (!hasChildren.value) {
     emit('select', props.account.name)
   }
-  // 如果有子节点，点击不触发选择，用户需要点击箭头来展开
 }
 </script>
+
+<style scoped>
+.selected-item {
+  background-color: var(--f7-theme-color-prev-light, rgba(0, 122, 255, 0.1));
+}
+</style>
 

@@ -34,17 +34,31 @@
         </template>
       </f7-list-item>
 
+      <!-- 币种 -->
+      <f7-list-item
+        title="币种"
+        :after="formData.currency"
+        :link="availableCurrencies.length > 1 ? '#' : undefined"
+        class="currency-trigger"
+        @click="openCurrencyPopover"
+      >
+        <template #media>
+          <i class="icon f7-icons">money_dollar_circle_fill</i>
+        </template>
+      </f7-list-item>
+
       <!-- 金额 -->
       <f7-list-item class="amount-item" title="金额" link="#">
         <template #media>
           <i class="icon f7-icons">money_yen_circle_fill</i>
         </template>
-        <template #after>
-            <AmountInput
+        <div class="amount-row">
+          <AmountInput
             v-model="formData.amount"
             :allow-negative="formData.type !== 'transfer'"
-            />
-        </template>
+            :currency="formData.currency"
+          />
+        </div>
       </f7-list-item>
 
       <!-- 分类 (非转账) -->
@@ -52,7 +66,7 @@
         v-if="formData.type !== 'transfer'"
         link="#"
         title="分类"
-        :after="formData.category || '请选择'"
+        :after="formatAccountDisplay(formData.category) || '请选择'"
         @click="openCategoryPicker"
       >
         <template #media>
@@ -117,8 +131,6 @@
       {{ error }}
     </f7-block>
 
-
-
     <!-- Pickers -->
     <AccountSelectionPopup
       v-model:opened="showCategoryPicker"
@@ -141,14 +153,39 @@
       @select="onToAccountSelect"
     />
 
+    <!-- Currency Popover -->
+    <f7-popover
+      class="currency-popover"
+      :opened="showCurrencyPopover"
+      @popover:closed="showCurrencyPopover = false"
+      target-el=".currency-trigger"
+    >
+      <f7-list>
+        <f7-list-item
+          v-for="curr in availableCurrencies"
+          :key="curr"
+          :title="curr"
+          link="#"
+          popover-close
+          @click="onCurrencySelect(curr)"
+        >
+          <template #media>
+             <f7-icon v-if="formData.currency === curr" f7="checkmark_alt" size="20" color="blue"></f7-icon>
+             <span v-else style="width: 20px; display: inline-block;"></span>
+          </template>
+        </f7-list-item>
+      </f7-list>
+    </f7-popover>
+
   </f7-page>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTransactionStore } from '../../stores/transaction'
 import type { CreateTransactionRequest, Posting } from '../../api/transactions'
+import { accountsApi, type Account } from '../../api/accounts'
 import AccountSelectionPopup from '../../components/AccountSelectionPopup.vue'
 import AmountInput from '../../components/AmountInput.vue'
 
@@ -161,14 +198,15 @@ const error = ref('')
 const showCategoryPicker = ref(false)
 const showFromAccountPicker = ref(false)
 const showToAccountPicker = ref(false)
+const allAccounts = ref<Account[]>([])
 
 interface TransactionFormData {
   type: 'expense' | 'income' | 'transfer'
   amount: number | undefined
   currency: string
-  category: string
-  fromAccount: string
-  toAccount: string
+  category: string[]
+  fromAccount: string[]
+  toAccount: string[]
   date: string
   description: string
   tagString: string
@@ -178,13 +216,75 @@ const formData = ref<TransactionFormData>({
   type: 'expense',
   amount: undefined,
   currency: 'CNY',
-  category: '',
-  fromAccount: '',
-  toAccount: '',
+  category: [],
+  fromAccount: [],
+  toAccount: [],
   date: new Date().toISOString().split('T')[0] ?? '',
   description: '',
   tagString: ''
 })
+
+// Lifecycle
+onMounted(async () => {
+  try {
+    const res = await accountsApi.getAccounts()
+    if (Array.isArray(res)) {
+      allAccounts.value = res
+    } else if (res && (res as any).accounts) {
+      allAccounts.value = (res as any).accounts
+    }
+  } catch (err) {
+    console.error('Failed to load accounts for currency calculation', err)
+  }
+})
+
+// Helpers
+function getSelectedAccountsInfo(names: string[]) {
+  return allAccounts.value.filter(acc => names.includes(acc.name))
+}
+
+const DEFAULT_CURRENCIES = ['CNY', 'USD', 'HKD']
+
+// Currency Logic
+const availableCurrencies = computed(() => {
+  const selectedNames = [
+    ...formData.value.fromAccount,
+    ...formData.value.toAccount,
+    ...formData.value.category
+  ]
+  if (selectedNames.length === 0) return DEFAULT_CURRENCIES
+  
+  const accountsInfo = getSelectedAccountsInfo(selectedNames)
+  if (accountsInfo.length === 0) return DEFAULT_CURRENCIES
+  
+  // Intersection of currencies
+  // Special case: if account.currencies is empty, it maintains all DEFAULT_CURRENCIES
+  let common: string[] | null = null
+
+  for (const acc of accountsInfo) {
+    const accCurrs = (acc.currencies && acc.currencies.length > 0) ? acc.currencies : DEFAULT_CURRENCIES
+    if (common === null) {
+      common = [...accCurrs]
+    } else {
+      common = common.filter(c => accCurrs.includes(c))
+    }
+  }
+  
+  return common || []
+})
+
+watch(availableCurrencies, (newVal) => {
+  if (newVal && newVal.length > 0) {
+    if (!newVal.includes(formData.value.currency)) {
+      // Prefer CNY if available, else first one
+      if (newVal.includes('CNY')) {
+        formData.value.currency = 'CNY'
+      } else {
+        formData.value.currency = newVal[0] || 'CNY'
+      }
+    }
+  }
+}, { immediate: true })
 
 // Computed Props for Picker Roots
 const categoryRoots = computed(() => {
@@ -192,7 +292,6 @@ const categoryRoots = computed(() => {
 })
 
 const accountRoots = computed(() => {
-  // 只选择资产和负债账户
   return ['Assets', 'Liabilities']
 })
 
@@ -200,12 +299,12 @@ const isFormValid = computed(() => {
   if (formData.value.amount === undefined || formData.value.amount === 0) return false
   if (formData.value.type === 'transfer' && formData.value.amount < 0) return false
   if (!formData.value.date) return false
-  if (!formData.value.fromAccount) return false
+  if (formData.value.fromAccount.length === 0) return false
   
   if (formData.value.type === 'transfer') {
-    return !!formData.value.toAccount
+    return formData.value.toAccount.length > 0
   } else {
-    return !!formData.value.category
+    return formData.value.category.length > 0
   }
 })
 
@@ -217,13 +316,12 @@ function goBack() {
 // Types
 function selectType(type: 'expense' | 'income' | 'transfer') {
   formData.value.type = type
-  // Reset conflicting fields if needed
   if (type === 'transfer') {
-      formData.value.category = ''
-  } else if (type === 'expense' && formData.value.category.startsWith('Income')) {
-      formData.value.category = ''
-  } else if (type === 'income' && formData.value.category.startsWith('Expenses')) {
-      formData.value.category = ''
+      formData.value.category = []
+  } else if (type === 'expense' && formData.value.category.some(c => c.startsWith('Income'))) {
+      formData.value.category = []
+  } else if (type === 'income' && formData.value.category.some(c => c.startsWith('Expenses'))) {
+      formData.value.category = []
   }
 }
 
@@ -232,39 +330,67 @@ function openCategoryPicker() { showCategoryPicker.value = true }
 function openFromAccountPicker() { showFromAccountPicker.value = true }
 function openToAccountPicker() { showToAccountPicker.value = true }
 
-function onCategorySelect(val: string) { formData.value.category = val }
-function onFromAccountSelect(val: string) { formData.value.fromAccount = val }
-function onToAccountSelect(val: string) { formData.value.toAccount = val }
+function onCategorySelect(val: string[]) { formData.value.category = val }
+function onFromAccountSelect(val: string[]) { formData.value.fromAccount = val }
+function onToAccountSelect(val: string[]) { formData.value.toAccount = val }
 
-/**
- * 格式化账户名称显示
- * 返回完整路径，CSS 会处理从左侧截断
- */
-function formatAccountDisplay(accountName: string): string {
-  if (!accountName) return ''
-  return accountName
+function formatAccountDisplay(names: string | string[]): string {
+  if (!names) return ''
+  if (Array.isArray(names)) {
+    return names.join(', ')
+  }
+  return names
 }
 
 // Submission Logic
+// Submission Logic
+const showCurrencyPopover = ref(false)
+
+function openCurrencyPopover() {
+  if (availableCurrencies.value.length > 1) {
+    showCurrencyPopover.value = true
+  }
+}
+
+function onCurrencySelect(curr: string) {
+  formData.value.currency = curr
+  showCurrencyPopover.value = false
+}
+
 function buildPostings(): Posting[] {
   const posts: Posting[] = []
   const amt = formData.value.amount || 0
   const currency = formData.value.currency
 
+  const fromCount = formData.value.fromAccount.length
+  const toCount = formData.value.toAccount.length
+  const catCount = formData.value.category.length
+
   if (formData.value.type === 'expense') {
     // Expense: +Expense, -Asset
-    // If amt is negative (e.g. refund), logic holds: -Expense, +Asset.
-    posts.push({ account: formData.value.category, amount: amt, currency })
-    posts.push({ account: formData.value.fromAccount, amount: -amt, currency })
+    // Split Category or Account
+    formData.value.category.forEach(cat => {
+      posts.push({ account: cat, amount: amt / catCount, currency })
+    })
+    formData.value.fromAccount.forEach(acc => {
+      posts.push({ account: acc, amount: -amt / fromCount, currency })
+    })
   } else if (formData.value.type === 'income') {
     // Income: +Asset, -Income
-    // If amt is negative (correction), logic holds: -Asset, +Income.
-    posts.push({ account: formData.value.fromAccount, amount: amt, currency })
-    posts.push({ account: formData.value.category, amount: -amt, currency })
+    formData.value.fromAccount.forEach(acc => {
+      posts.push({ account: acc, amount: amt / fromCount, currency })
+    })
+    formData.value.category.forEach(cat => {
+      posts.push({ account: cat, amount: -amt / catCount, currency })
+    })
   } else if (formData.value.type === 'transfer') {
     // Transfer: -From, +To
-    posts.push({ account: formData.value.fromAccount, amount: -amt, currency })
-    posts.push({ account: formData.value.toAccount, amount: amt, currency })
+    formData.value.fromAccount.forEach(acc => {
+      posts.push({ account: acc, amount: -amt / fromCount, currency })
+    })
+    formData.value.toAccount.forEach(acc => {
+      posts.push({ account: acc, amount: amt / toCount, currency })
+    })
   }
   return posts
 }
@@ -303,28 +429,43 @@ async function handleSubmit() {
 </script>
 
 <style scoped>
-.amount-input {
-  font-size: 1.2em;
-}
 .margin-vertical {
     margin-top: 16px;
     margin-bottom: 16px;
 }
 
+.amount-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.currency-badge, .currency-badge-fixed {
+  background: var(--f7-theme-color);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  font-weight: bold;
+}
+
+.currency-badge-fixed {
+  background: var(--f7-list-item-after-text-color, #8e8e93);
+}
+
 /* 账户名称显示优化：保持标题不被隐藏，账户名从左侧截断 */
 .account-item :deep(.item-after) {
-  /* 允许右侧内容收缩，但设置最大宽度 */
   max-width: 70%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  /* 使用 direction: rtl 让截断发生在左侧，保留右侧内容 */
   direction: rtl;
   text-align: left;
 }
 
-/* 确保标题不会被压缩 */
 .account-item :deep(.item-title) {
   flex-shrink: 0;
 }
 </style>
+

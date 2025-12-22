@@ -2,7 +2,7 @@
   <div class="amount-input-container">
     <!-- Display Area (Click to open keypad) -->
     <div class="amount-display" @click="openKeypad" :class="{ 'focused': isKeypadOpen }">
-      <span class="currency-symbol">¥</span>
+      <span class="currency-symbol">{{ currencySymbol }}</span>
       <span class="value-text">{{ displayValue }}</span>
       <span class="cursor" v-if="isKeypadOpen">|</span>
     </div>
@@ -51,16 +51,30 @@ import { ref, computed, watch } from 'vue'
 interface Props {
   modelValue?: number
   allowNegative?: boolean
+  currency?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
   modelValue: 0,
-  allowNegative: true
+  allowNegative: true,
+  currency: 'CNY'
 })
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: number): void
 }>()
+
+const currencySymbol = computed(() => {
+  const symbols: Record<string, string> = {
+    'CNY': '¥',
+    'USD': '$',
+    'HKD': 'HK$',
+    'EUR': '€',
+    'JPY': '¥',
+    'GBP': '£'
+  }
+  return symbols[props.currency || 'CNY'] || props.currency || ''
+})
 
 const isKeypadOpen = ref(false)
 const expression = ref('')
