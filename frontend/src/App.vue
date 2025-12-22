@@ -1,9 +1,19 @@
 <template>
-  <router-view />
+  <f7-app v-bind="f7params">
+    <f7-view main class="safe-areas">
+      <router-view />
+    </f7-view>
+  </f7-app>
 </template>
 
 <script setup lang="ts">
-// Main App component
+import { f7App, f7View } from 'framework7-vue';
+
+const f7params = {
+  name: 'BeanMind',
+  theme: 'auto',
+  darkMode: 'auto',
+};
 </script>
 
 <style>

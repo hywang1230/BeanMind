@@ -2,7 +2,7 @@
   <div class="dashboard-page">
     <!-- 顶部标题 -->
     <div class="page-header">
-      <h1>概览</h1>
+      <h1>首页</h1>
     </div>
     
     <!-- 加载状态 -->
@@ -226,7 +226,7 @@ onMounted(() => { loadDashboardData() })
 .dashboard-page {
   min-height: 100vh;
   background: #f2f2f7;
-  padding: 0 16px 16px;
+  padding: 0 8px 8px;
 }
 
 .page-header {
@@ -263,11 +263,13 @@ onMounted(() => { loadDashboardData() })
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
+
 .dashboard-content {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 2px;
 }
+
 
 /* iOS 风格卡片 */
 .card {

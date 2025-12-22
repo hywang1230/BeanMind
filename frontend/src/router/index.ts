@@ -9,40 +9,16 @@ const routes: RouteRecordRaw[] = [
     },
     {
         path: '/',
+        name: 'Main',
         component: () => import('../layouts/MainLayout.vue'),
-        redirect: '/dashboard',
-        children: [
-            {
-                path: 'dashboard',
-                name: 'Dashboard',
-                component: () => import('../pages/dashboard/DashboardPage.vue'),
-                meta: { requiresAuth: true }
-            },
-            {
-                path: 'transactions',
-                name: 'Transactions',
-                component: () => import('../pages/transactions/TransactionsPage.vue'),
-                meta: { requiresAuth: true }
-            },
-            {
-                path: 'transactions/add',
-                name: 'AddTransaction',
-                component: () => import('../pages/transactions/AddTransactionPage.vue'),
-                meta: { requiresAuth: true }
-            },
-            {
-                path: 'reports',
-                name: 'Reports',
-                component: () => import('../pages/reports/ReportsPage.vue'),
-                meta: { requiresAuth: true }
-            },
-            {
-                path: 'settings',
-                name: 'Settings',
-                component: () => import('../pages/settings/SettingsPage.vue'),
-                meta: { requiresAuth: true }
-            }
-        ]
+        meta: { requiresAuth: true },
+        alias: ['/dashboard', '/transactions', '/reports', '/settings']
+    },
+    {
+        path: '/transactions/add',
+        name: 'AddTransaction',
+        component: () => import('../pages/transactions/AddTransactionPage.vue'),
+        meta: { requiresAuth: true }
     },
     // 保留这些页面在主布局外（如果需要单独访问）
     {
@@ -87,7 +63,7 @@ router.beforeEach(async (to) => {
     if (authStore.authMode === 'none') {
         // 如果访问登录页，重定向到首页
         if (to.path === '/login') {
-            return '/dashboard'
+            return '/'
         }
         return true
     }
@@ -96,7 +72,7 @@ router.beforeEach(async (to) => {
     if (to.meta.requiresAuth && !authStore.isAuthenticated) {
         return '/login'
     } else if (to.path === '/login' && authStore.isAuthenticated) {
-        return '/dashboard'
+        return '/'
     }
 
     return true
