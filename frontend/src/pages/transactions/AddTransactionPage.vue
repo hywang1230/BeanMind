@@ -22,20 +22,18 @@
 
     <f7-list strong-ios dividers-ios inset-ios form>
       <!-- 金额 -->
-      <f7-list-input
-        label="金额"
-        type="number"
-        placeholder="0.00"
-        :value="formData.amount"
-        @input="formData.amount = Number($event.target.value)"
-        required
-        clear-button
-        class="amount-input"
-      >
+      <!-- 金额 -->
+      <f7-list-item class="amount-item" title="金额" link="#">
         <template #media>
           <i class="icon f7-icons">money_yen_circle_fill</i>
         </template>
-      </f7-list-input>
+        <template #after>
+            <AmountInput
+            v-model="formData.amount"
+            :allow-negative="formData.type !== 'transfer'"
+            />
+        </template>
+      </f7-list-item>
 
       <!-- 分类 (非转账) -->
       <f7-list-item
@@ -154,6 +152,7 @@ import { useRouter } from 'vue-router'
 import { useTransactionStore } from '../../stores/transaction'
 import type { CreateTransactionRequest, Posting } from '../../api/transactions'
 import AccountSelectionPopup from '../../components/AccountSelectionPopup.vue'
+import AmountInput from '../../components/AmountInput.vue'
 
 const router = useRouter()
 const transactionStore = useTransactionStore()
@@ -188,7 +187,8 @@ const accountRoots = computed(() => {
 })
 
 const isFormValid = computed(() => {
-  if (!formData.value.amount || formData.value.amount <= 0) return false
+  if (formData.value.amount === undefined || formData.value.amount === 0) return false
+  if (formData.value.type === 'transfer' && formData.value.amount < 0) return false
   if (!formData.value.date) return false
   if (!formData.value.fromAccount) return false
   
@@ -234,10 +234,12 @@ function buildPostings(): Posting[] {
 
   if (formData.value.type === 'expense') {
     // Expense: +Expense, -Asset
+    // If amt is negative (e.g. refund), logic holds: -Expense, +Asset.
     posts.push({ account: formData.value.category, amount: amt, currency })
     posts.push({ account: formData.value.fromAccount, amount: -amt, currency })
   } else if (formData.value.type === 'income') {
     // Income: +Asset, -Income
+    // If amt is negative (correction), logic holds: -Asset, +Income.
     posts.push({ account: formData.value.fromAccount, amount: amt, currency })
     posts.push({ account: formData.value.category, amount: -amt, currency })
   } else if (formData.value.type === 'transfer') {
