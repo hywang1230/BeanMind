@@ -8,7 +8,7 @@
       </f7-nav-left>
       <f7-nav-title>记一笔</f7-nav-title>
       <f7-nav-right>
-        <f7-link @click="handleSubmit" :class="{ disabled: !isFormValid }">保存</f7-link>
+        <f7-link @click="handleSubmit" :class="{ disabled: !isFormValid || loading }">{{ loading ? '保存中' : '保存' }}</f7-link>
       </f7-nav-right>
     </f7-navbar>
 
@@ -121,9 +121,7 @@
       {{ error }}
     </f7-block>
 
-    <f7-block>
-        <f7-button large fill @click="handleSubmit" :loading="loading">保存</f7-button>
-    </f7-block>
+
 
     <!-- Pickers -->
     <AccountSelectionPopup
