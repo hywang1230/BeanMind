@@ -12,12 +12,15 @@
     "test:run": "vitest run"
   },
   "dependencies": {
+    "apexcharts": "^5.3.6",
     "axios": "^1.13.2",
     "framework7": "^9.0.2",
+    "framework7-icons": "^5.0.5",
     "framework7-vue": "^9.0.2",
     "pinia": "^3.0.4",
     "vue": "^3.5.24",
-    "vue-router": "^4.6.4"
+    "vue-router": "^4.6.4",
+    "vue3-apexcharts": "^1.10.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

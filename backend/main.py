@@ -27,10 +27,12 @@ app.add_middleware(
 from backend.interfaces.api import auth as auth_api
 from backend.interfaces.api import account as account_api
 from backend.interfaces.api import transaction as transaction_api
+from backend.interfaces.api import statistics as statistics_api
 
 app.include_router(auth_api.router)
 app.include_router(account_api.router)
 app.include_router(transaction_api.router)
+app.include_router(statistics_api.router)
 
 
 @app.get("/")

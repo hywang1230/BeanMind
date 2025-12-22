@@ -5,6 +5,10 @@
 from pathlib import Path
 from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import model_validator
+
+# 项目根目录（backend 目录的父目录）
+PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 
 
 class Settings(BaseSettings):
@@ -58,6 +62,22 @@ class Settings(BaseSettings):
         extra="ignore",
     )
     
+    @model_validator(mode='after')
+    def resolve_paths(self) -> 'Settings':
+        """将相对路径转换为基于项目根目录的绝对路径"""
+        # 如果路径是相对路径，转换为基于项目根目录的绝对路径
+        if not self.DATA_DIR.is_absolute():
+            object.__setattr__(self, 'DATA_DIR', (PROJECT_ROOT / self.DATA_DIR).resolve())
+        if not self.LEDGER_FILE.is_absolute():
+            object.__setattr__(self, 'LEDGER_FILE', (PROJECT_ROOT / self.LEDGER_FILE).resolve())
+        if not self.DATABASE_FILE.is_absolute():
+            object.__setattr__(self, 'DATABASE_FILE', (PROJECT_ROOT / self.DATABASE_FILE).resolve())
+        if not self.LOCAL_BACKUP_DIR.is_absolute():
+            object.__setattr__(self, 'LOCAL_BACKUP_DIR', (PROJECT_ROOT / self.LOCAL_BACKUP_DIR).resolve())
+        if not self.AGENTUNIVERSE_CONFIG.is_absolute():
+            object.__setattr__(self, 'AGENTUNIVERSE_CONFIG', (PROJECT_ROOT / self.AGENTUNIVERSE_CONFIG).resolve())
+        return self
+    
     # ==================== 辅助方法 ====================
     @property
     def cors_origins_list(self) -> list[str]:
@@ -84,4 +104,5 @@ settings = Settings()
 
 # 应用启动时确保目录存在
 settings.ensure_directories()
+
 
