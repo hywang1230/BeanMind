@@ -90,23 +90,23 @@
       </f7-list-item>
 
       <!-- 日期 -->
-      <f7-list-input
-        label="日期"
-        type="date"
-        v-model:value="formData.date"
-        placeholder="选择日期"
+      <f7-list-item
+        title="日期"
+        :after="formData.date"
+        link="#"
+        @click="openCalendar"
       >
         <template #media>
           <i class="icon f7-icons">calendar_today</i>
         </template>
-      </f7-list-input>
+      </f7-list-item>
 
       <!-- 备注 -->
       <f7-list-input
         label="备注"
         type="textarea"
         v-model:value="formData.description"
-        placeholder="添加备注（可选）"
+        placeholder="添加备注"
         resizable
       >
         <template #media>
@@ -182,7 +182,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
+import { f7 } from 'framework7-vue'
 import { useRouter } from 'vue-router'
 import { useTransactionStore } from '../../stores/transaction'
 import type { CreateTransactionRequest, Posting } from '../../api/transactions'
@@ -343,7 +344,47 @@ function formatAccountDisplay(names: string | string[]): string {
   return names
 }
 
-// Submission Logic
+// Calendar Logic
+let calendarInstance: any = null
+
+function openCalendar() {
+  const currentDateStr = formData.value.date || new Date().toISOString().split('T')[0] || ''
+  const parts = currentDateStr.split('-').map(Number)
+  const y = parts[0] || new Date().getFullYear()
+  const m = parts[1] || (new Date().getMonth() + 1)
+  const d = parts[2] || new Date().getDate()
+  const currentDate = new Date(y, m - 1, d)
+
+  if (!calendarInstance) {
+    calendarInstance = f7.calendar.create({
+      closeOnSelect: true,
+      value: [currentDate],
+      on: {
+        change: function (_calendar: any, values: unknown) {
+          const dateValues = values as Date[]
+          if (dateValues && dateValues[0]) {
+            const d = dateValues[0]
+            const year = d.getFullYear()
+            const month = String(d.getMonth() + 1).padStart(2, '0')
+            const day = String(d.getDate()).padStart(2, '0')
+            formData.value.date = `${year}-${month}-${day}`
+          }
+        }
+      }
+    })
+  } else {
+    calendarInstance.setValue([currentDate])
+  }
+  calendarInstance.open()
+}
+
+onBeforeUnmount(() => {
+  if (calendarInstance) {
+    calendarInstance.destroy()
+    calendarInstance = null
+  }
+})
+
 // Submission Logic
 const showCurrencyPopover = ref(false)
 
