@@ -329,7 +329,10 @@ function redistribute(changedItem: string) {
     // Calculate sum of items up to including changedItem (locked)
     let lockedSum = 0
     for (let i = 0; i <= idx; i++) {
-        lockedSum += Number(distributions.value[list[i]] || 0)
+        const item = list[i]
+        if (item) {
+            lockedSum += Number(distributions.value[item] || 0)
+        }
     }
 
     const remaining = totalAmount.value - lockedSum
@@ -341,6 +344,8 @@ function redistribute(changedItem: string) {
 
     for (let i = idx + 1; i < list.length; i++) {
         const item = list[i]
+        if (!item) continue
+        
         if (i === list.length - 1) {
             // Last item takes dust
             // Total remaining exactly
