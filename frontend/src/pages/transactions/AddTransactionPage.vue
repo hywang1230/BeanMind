@@ -21,7 +21,18 @@
     </f7-block>
 
     <f7-list strong-ios dividers-ios inset-ios form>
-      <!-- 金额 -->
+      <!-- 账户/转出账户 -->
+      <f7-list-item
+        link="#"
+        :title="formData.type === 'transfer' ? '转出账户' : '账户'"
+        :after="formData.fromAccount || '请选择'"
+        @click="openFromAccountPicker"
+      >
+        <template #media>
+          <i class="icon f7-icons">creditcard_fill</i>
+        </template>
+      </f7-list-item>
+
       <!-- 金额 -->
       <f7-list-item class="amount-item" title="金额" link="#">
         <template #media>
@@ -45,18 +56,6 @@
       >
         <template #media>
           <i class="icon f7-icons">folder_fill</i>
-        </template>
-      </f7-list-item>
-
-      <!-- 账户/转出账户 -->
-      <f7-list-item
-        link="#"
-        :title="formData.type === 'transfer' ? '转出账户' : '账户'"
-        :after="formData.fromAccount || '请选择'"
-        @click="openFromAccountPicker"
-      >
-        <template #media>
-          <i class="icon f7-icons">creditcard_fill</i>
         </template>
       </f7-list-item>
 
