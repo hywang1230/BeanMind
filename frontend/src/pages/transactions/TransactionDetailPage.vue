@@ -155,11 +155,9 @@ function goBack() {
 }
 
 function editTransaction() {
-  // TODO: 实现编辑功能
-  f7.toast.show({
-    text: '编辑功能即将推出',
-    closeTimeout: 2000
-  })
+  if (transaction.value) {
+    router.push(`/transactions/${transaction.value.id}/edit`)
+  }
 }
 
 async function loadTransaction() {
@@ -264,8 +262,7 @@ function formatDateTime(dateTimeStr: string): string {
 }
 
 function formatAccountName(account: string): string {
-  const parts = account.split(':')
-  return parts[parts.length - 1] || account
+  return account
 }
 
 function getPostingIcon(posting: Posting): string {

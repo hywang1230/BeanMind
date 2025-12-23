@@ -27,6 +27,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true }
     },
     {
+        path: '/transactions/:id/edit',
+        name: 'EditTransaction',
+        component: () => import('../pages/transactions/EditTransactionPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
         path: '/transactions/:id',
         name: 'TransactionDetail',
         component: () => import('../pages/transactions/TransactionDetailPage.vue'),

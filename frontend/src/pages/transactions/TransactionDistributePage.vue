@@ -110,7 +110,22 @@ const currentExpression = ref('')
 const type = computed(() => route.query.type as 'category' | 'account') // 'category' or 'account'
 const loading = ref(false)
 
+// 检测是否为编辑模式
+const isEditMode = computed(() => route.query.mode === 'edit')
+const editTransactionId = ref<string | null>(null)
+
 // Init check
+onMounted(() => {
+    // 从 sessionStorage 读取编辑的交易 ID
+    const storedId = sessionStorage.getItem('editTransactionId')
+    if (storedId) {
+        editTransactionId.value = storedId
+    }
+    
+    // 初始化分配
+    initDistributions()
+})
+
 if (!draft) {
     router.replace('/transactions/add')
 }
@@ -170,11 +185,6 @@ function initDistributions() {
 }
 
 watch(() => route.query, () => {
-    initDistributions()
-})
-
-// Initialize distributions
-onMounted(() => {
     initDistributions()
 })
 
@@ -385,21 +395,22 @@ async function handleNext() {
     if (isLastStep.value) {
         await submitTransaction()
     } else {
-        // Navigate to next
+        // Navigate to next, 保持编辑模式
+        const modeQuery = isEditMode.value ? { mode: 'edit' } : {}
         if (type.value === 'category') {
              // Next is Account. Which side?
              if (draft.type === 'transfer') {
                   if (draft.fromAccount.length > 1) {
-                      router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from' } })
+                      router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', ...modeQuery } })
                   } else {
-                      router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to' } })
+                      router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', ...modeQuery } })
                   }
              } else {
-                  router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from' } }) // Expense/Income uses fromAccount
+                  router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', ...modeQuery } }) // Expense/Income uses fromAccount
              }
         } else if (type.value === 'account') {
              if (route.query.side === 'from' && draft.type === 'transfer' && draft.toAccount.length > 1) {
-                  router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to' } })
+                  router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', ...modeQuery } })
              }
         }
     }
@@ -473,8 +484,19 @@ async function submitTransaction() {
             tags: tags.length > 0 ? tags : undefined
         }
 
-        await transactionStore.createTransaction(request)
+        if (isEditMode.value && editTransactionId.value) {
+            // 编辑模式：更新交易
+            await transactionStore.updateTransaction(editTransactionId.value, request)
+            f7.toast.show({ text: '交易已更新', position: 'center', closeTimeout: 2000 })
+        } else {
+            // 新建模式：创建交易
+            await transactionStore.createTransaction(request)
+        }
+        
         transactionStore.clearTransactionDraft()
+        // 清除 sessionStorage 中的编辑 ID
+        sessionStorage.removeItem('editTransactionId')
+        
         // 标记交易列表需要刷新
         uiStore.markTransactionsNeedsRefresh()
         // Go back to where? Ideally dash or transaction list.
