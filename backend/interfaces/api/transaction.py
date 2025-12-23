@@ -106,6 +106,31 @@ def get_payees(
 
 
 @router.get(
+    "/exchange-rates",
+    response_model=dict,
+    summary="获取汇率",
+    description="获取所有货币到 CNY 的汇率",
+    responses={
+        200: {"description": "获取成功", "model": dict},
+    }
+)
+def get_exchange_rates():
+    """
+    获取所有货币到 CNY 的汇率
+    
+    基于 Beancount 账本中的 price 指令获取最新汇率。
+    用于多币种交易金额的转换和汇总显示。
+    
+    Returns:
+        汇率字典，例如 {"USD": 7.13, "CNY": 1, "EUR": 7.80}
+    """
+    beancount_service = BeancountService(settings.LEDGER_FILE)
+    rates = beancount_service.get_all_exchange_rates(to_currency="CNY")
+    # 转换 Decimal 为 float 以便 JSON 序列化
+    return {k: float(v) for k, v in rates.items()}
+
+
+@router.get(
     "",
     response_model=TransactionListResponse,
     summary="获取交易列表",

@@ -295,4 +295,3 @@ async def get_monthly_trend(
         ))
     
     return result
-

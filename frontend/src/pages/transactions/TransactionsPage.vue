@@ -110,7 +110,7 @@ import { useRouter } from 'vue-router'
 import { f7 } from 'framework7-vue'
 import { useTransactionStore } from '../../stores/transaction'
 import { useUIStore } from '../../stores/ui'
-import { type Transaction, type TransactionsQuery } from '../../api/transactions'
+import { type Transaction, type TransactionsQuery, transactionsApi } from '../../api/transactions'
 
 const router = useRouter()
 const transactionStore = useTransactionStore()
@@ -120,6 +120,29 @@ const loading = ref(false)
 const loadingMore = ref(false)
 const pageSize = 20
 const loadMoreTrigger = ref<HTMLElement | null>(null)
+
+// 汇率数据（货币 -> CNY 的汇率）
+const exchangeRates = ref<Record<string, number>>({ CNY: 1 })
+
+// 货币符号映射
+const currencySymbols: Record<string, string> = {
+  CNY: '¥',
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  HKD: 'HK$',
+  TWD: 'NT$',
+  KRW: '₩',
+  SGD: 'S$',
+  AUD: 'A$',
+  CAD: 'C$',
+}
+
+// 获取货币符号
+function getCurrencySymbol(currency: string): string {
+  return currencySymbols[currency] || currency + ' '
+}
 
 const typeFilters = [
   { value: 'all', label: '全部' },
@@ -187,7 +210,7 @@ const groupedTransactions = computed<TransactionGroup[]>(() => {
   return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date))
 })
 
-// 辅助函数：获取用于显示的金额值（正负号）
+// 辅助函数：获取用于显示的金额值（正负号），不进行汇率转换
 function getDisplayAmountValue(transaction: Transaction): number {
   if (transaction.postings.length === 0) return 0
   
@@ -222,13 +245,53 @@ function getDisplayAmountValue(transaction: Transaction): number {
   return totalAmount
 }
 
-function getTransactionAmount(transaction: Transaction): number {
+// 获取交易的主要货币（用于显示）
+function getTransactionCurrency(transaction: Transaction): string {
+  if (transaction.postings.length === 0) return 'CNY'
+  
+  // 优先获取分类账户（Expenses/Income）的货币
+  for (const posting of transaction.postings) {
+    if (posting.account.startsWith('Expenses:') || posting.account.startsWith('Income:')) {
+      return posting.currency || 'CNY'
+    }
+  }
+  
+  // 如果没有分类账户，取第一个 posting 的货币
+  return transaction.postings[0]?.currency || 'CNY'
+}
+
+// 获取用于日汇总的金额（已转换为 CNY）
+function getTransactionAmountInCNY(transaction: Transaction): number {
+  if (transaction.postings.length === 0) return 0
+  
   // 日汇总：只计算收入和支出，转账不参与
   if (transaction.transaction_type === 'transfer') {
     return 0
   }
-  return getDisplayAmountValue(transaction)
+  
+  let totalAmountInCNY = 0
+  
+  for (const posting of transaction.postings) {
+    const amount = Number(posting.amount)
+    const currency = posting.currency || 'CNY'
+    const rate = exchangeRates.value[currency] || 1
+    
+    if (posting.account.startsWith('Income:')) {
+      // Beancount 中 Income 账户：负数表示收入（盈利）
+      totalAmountInCNY += -amount * rate  // 转换为 CNY
+    } else if (posting.account.startsWith('Expenses:')) {
+      totalAmountInCNY += -amount * rate  // 转换为 CNY
+    }
+  }
+  
+  return totalAmountInCNY
 }
+
+function getTransactionAmount(transaction: Transaction): number {
+  // 日汇总：只计算收入和支出，转账不参与，使用 CNY 汇总
+  return getTransactionAmountInCNY(transaction)
+}
+
 
 // 日期范围选择器
 let dateRangeCalendar: any = null
@@ -550,12 +613,16 @@ function getAmountClass(transaction: Transaction): string {
 function formatAmount(transaction: Transaction): string {
   if (transaction.postings.length === 0) return '¥0.00'
   
+  // 获取交易的主要币种
+  const currency = getTransactionCurrency(transaction)
+  const symbol = getCurrencySymbol(currency)
+  
   // 使用统一的金额计算逻辑
   const amount = getDisplayAmountValue(transaction)
   const displayAmount = Math.abs(amount)
   
   // 不显示 +/- 符号，只用颜色区分
-  return `¥${displayAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `${symbol}${displayAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function formatGroupDate(dateStr: string): string {
@@ -590,7 +657,21 @@ function formatDayTotal(total: number): string {
   return `¥${Math.abs(total).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
+// 加载汇率数据
+async function loadExchangeRates() {
+  try {
+    const rates = await transactionsApi.getExchangeRates()
+    exchangeRates.value = { CNY: 1, ...rates }
+  } catch (error) {
+    console.error('加载汇率失败:', error)
+    // 保持默认汇率
+  }
+}
+
 onMounted(async () => {
+  // 加载汇率数据（用于多币种转换）
+  await loadExchangeRates()
+  
   // 检查是否需要刷新数据（在删除、新增、编辑操作后）
   const needsRefresh = uiStore.checkAndClearTransactionsRefresh()
   

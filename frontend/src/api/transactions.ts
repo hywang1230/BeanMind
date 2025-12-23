@@ -85,5 +85,10 @@ export const transactionsApi = {
     // 获取所有交易方
     getPayees(): Promise<string[]> {
         return apiClient.get('/api/transactions/payees')
+    },
+
+    // 获取汇率（货币到 CNY）
+    getExchangeRates(): Promise<Record<string, number>> {
+        return apiClient.get('/api/transactions/exchange-rates')
     }
 }
