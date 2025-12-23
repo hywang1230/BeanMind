@@ -463,6 +463,7 @@ async function loadMore() {
 }
 
 function navigateToAdd() {
+  uiStore.markForTabRestore()
   router.push('/transactions/add')
 }
 

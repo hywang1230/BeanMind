@@ -619,16 +619,16 @@ async function handleSubmit() {
 
       // Navigate
       if (formData.value.type !== 'transfer' && formData.value.category.length > 1) {
-           router.push({ path: '/transactions/distribute', query: { type: 'category', mode: 'edit' } })
+           router.push({ path: '/transactions/distribute', query: { type: 'category', mode: 'edit', depth: 2 } })
       } else if (formData.value.type === 'transfer') {
            if (formData.value.fromAccount.length > 1) {
-                router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', mode: 'edit' } })
+                router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', mode: 'edit', depth: 2 } })
            } else {
-                router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', mode: 'edit' } })
+                router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', mode: 'edit', depth: 2 } })
            }
       } else {
            // Expense/Income with multiple accounts
-           router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', mode: 'edit' } })
+           router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', mode: 'edit', depth: 2 } })
       }
       return
   }

@@ -116,6 +116,7 @@ function onTabClick(tabId: string) {
 }
 
 function handleAddClick() {
+  uiStore.markForTabRestore();
   router.push('/transactions/add');
 }
 </script>

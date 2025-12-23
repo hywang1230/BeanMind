@@ -108,6 +108,7 @@ const currentEditingItem = ref<string | null>(null)
 const currentExpression = ref('')
 
 const type = computed(() => route.query.type as 'category' | 'account') // 'category' or 'account'
+const currentDepth = computed(() => Number(route.query.depth) || 1)
 const loading = ref(false)
 
 // 检测是否为编辑模式
@@ -401,16 +402,16 @@ async function handleNext() {
              // Next is Account. Which side?
              if (draft.type === 'transfer') {
                   if (draft.fromAccount.length > 1) {
-                      router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', ...modeQuery } })
+                      router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', ...modeQuery, depth: currentDepth.value + 1 } })
                   } else {
-                      router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', ...modeQuery } })
+                      router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', ...modeQuery, depth: currentDepth.value + 1 } })
                   }
              } else {
-                  router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', ...modeQuery } }) // Expense/Income uses fromAccount
+                  router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', ...modeQuery, depth: currentDepth.value + 1 } }) // Expense/Income uses fromAccount
              }
         } else if (type.value === 'account') {
              if (route.query.side === 'from' && draft.type === 'transfer' && draft.toAccount.length > 1) {
-                  router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', ...modeQuery } })
+                  router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', ...modeQuery, depth: currentDepth.value + 1 } })
              }
         }
     }
@@ -506,11 +507,8 @@ async function submitTransaction() {
         // 标记交易列表需要刷新
         uiStore.markTransactionsNeedsRefresh()
         // Go back to where? Ideally dash or transaction list.
-        // AddTransactionPage was pushed from List or Dash.
-        // Distribute Page is pushed from Add.
-        // History: [..., List, Add, Distribute]
-        // We want to go back to List.
-        router.push('/transactions') // Safer
+        // Use depth to go back to origin (skipping Add/Edit pages)
+        router.go(-currentDepth.value)
     } catch (err: any) {
         console.error(err)
         f7.toast.show({ text: err.message || '保存失败', position: 'center', closeTimeout: 2000 })
