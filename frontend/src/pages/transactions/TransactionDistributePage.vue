@@ -427,7 +427,7 @@ function buildFinalPostings(): Posting[] {
     // 如果只有单个项目且没有分配记录，使用总金额
     const getAmt = (item: string, distMap: Record<string, number> | undefined, itemList: string[], sign: number = 1) => {
         if (distMap && distMap[item] !== undefined) {
-            return distMap[item] * sign
+             return distMap[item] * sign
         }
         // 单项目情况：使用总金额
         if (itemList.length === 1) {
@@ -438,7 +438,9 @@ function buildFinalPostings(): Posting[] {
     }
 
     if (draft.type === 'expense') {
-        // Expense: +Category, -Account
+        // Expense: 
+        // Category -> Same sign as distribution (Total Amount)
+        // Account -> Opposite sign to distribution (e.g. Expense 100 -> Account -100)
         draft.category.forEach(cat => {
             posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, draft.category, 1).toFixed(2), currency })
         })
@@ -446,7 +448,9 @@ function buildFinalPostings(): Posting[] {
             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, draft.fromAccount, -1).toFixed(2), currency })
         })
     } else if (draft.type === 'income') {
-        // Income: +Account, -Category
+        // Income:
+        // Asset (FromAccount) -> Same sign as distribution (Total Amount) e.g. 100 -> Asset 100
+        // Income (Category) -> Opposite sign (e.g. 100 -> Income -100)
         draft.fromAccount.forEach(acc => {
              posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, draft.fromAccount, 1).toFixed(2), currency })
         })
@@ -454,7 +458,9 @@ function buildFinalPostings(): Posting[] {
              posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, draft.category, -1).toFixed(2), currency })
         })
     } else if (draft.type === 'transfer') {
-        // Transfer: -From, +To
+        // Transfer: 
+        // From -> Opposite (100 -> -100)
+        // To -> Same (100 -> 100)
          draft.fromAccount.forEach(acc => {
              posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, draft.fromAccount, -1).toFixed(2), currency })
         })

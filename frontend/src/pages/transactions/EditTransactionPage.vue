@@ -298,44 +298,42 @@ function parseTransactionToForm(transaction: Transaction) {
     
     if (txnType === 'expense') {
       // 支出类：
-      // - Expenses 账户金额为正，取正值作为分类金额
-      // - Assets/Liabilities 账户金额为负，取绝对值作为账户金额
+      // - Expenses 账户金额为正（或负，退款），直接作为分类金额（保持符号）
+      // - Assets/Liabilities 账户金额为负（或正，退款），需要取反以匹配 "支出金额" 的概念（Total Amount）
+      //   例如：消费 100。Total 100。Liab -100。Store -> 100。
+      //   例如：退款 -6。Total -6。Liab +6。Store -> -6。
       if (posting.account.startsWith('Expenses:')) {
         categories.push(posting.account)
-        // 支出类分类金额：保留原符号（支持负数支出，如退款）
         originalCategoryDistributions.value[posting.account] = amount
         totalAmount += amount
       } else if (posting.account.startsWith('Assets:') || posting.account.startsWith('Liabilities:')) {
         fromAccounts.push(posting.account)
-        // 支出类账户金额：取对应的绝对值
-        originalAccountDistributions.value[posting.account] = Math.abs(amount)
+        originalAccountDistributions.value[posting.account] = -amount
       }
     } else if (txnType === 'income') {
       // 收入类：
-      // - Income 账户金额为负（如 -100），需要取相反数（100）
-      // - Assets/Liabilities 账户金额为正（如 100），需要取相反数（-100 的绝对值）
-      // 但在分配页面显示时，totalAmount 应该是正数，分类/账户分配也是正数
-      // 用户需求：收入类金额取相反数 -> 即 totalAmount = 收入类汇总金额的相反数
+      // - Income 账户金额通常为负。Total Amount 为正。
+      //   例如：收入 100。Total 100。Income -100。Store -> 100 (-(-100))。
+      // - Assets 账户金额为正。Total 100。Asset 100。Store -> 100。
       if (posting.account.startsWith('Income:')) {
         categories.push(posting.account)
-        // 收入类分类金额：Income posting 金额为负（如 -100），取相反数（100）
-        originalCategoryDistributions.value[posting.account] = -amount  // 相反数
-        totalAmount += -amount  // 累加相反数
+        originalCategoryDistributions.value[posting.account] = -amount
+        totalAmount += -amount
       } else if (posting.account.startsWith('Assets:') || posting.account.startsWith('Liabilities:')) {
         fromAccounts.push(posting.account)
-        // 收入类账户金额：Asset/Liability posting 金额为正（如 100），取相反数（-100）
-        // 但分配页面显示的是绝对值，所以这里也取相反数的绝对值，即原值
-        originalAccountDistributions.value[posting.account] = amount  // 保持原值（正数）
+        originalAccountDistributions.value[posting.account] = amount
       }
     } else if (txnType === 'transfer') {
-      // 转账：从账户为负，到账户为正
+      // 转账：
+      // From: negative. Store -> positive (abs).
+      // To: positive. Store -> positive (abs).
+      // Total Amount is positive.
       if (amount < 0) {
         fromAccounts.push(posting.account)
         originalAccountDistributions.value[posting.account] = Math.abs(amount)
         totalAmount += Math.abs(amount)
       } else {
         toAccounts.push(posting.account)
-        // 转入账户的分配也保存
         originalAccountDistributions.value[posting.account] = Math.abs(amount)
       }
     }
