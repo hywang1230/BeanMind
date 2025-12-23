@@ -187,18 +187,47 @@ const groupedTransactions = computed<TransactionGroup[]>(() => {
   return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date))
 })
 
-function getTransactionAmount(transaction: Transaction): number {
+// 辅助函数：获取用于显示的金额值（正负号）
+function getDisplayAmountValue(transaction: Transaction): number {
   if (transaction.postings.length === 0) return 0
-  const posting = transaction.postings[0]!
-  const amount = Number(posting.amount)
   
-  // 支出为负，收入为正
-  if (posting.account.startsWith('Expenses')) {
-    return -Math.abs(amount)
-  } else if (posting.account.startsWith('Income')) {
-    return Math.abs(amount)
+  let totalAmount = 0
+  let hasCategory = false
+  
+  for (const posting of transaction.postings) {
+    const amount = Number(posting.amount)
+    if (posting.account.startsWith('Income:')) {
+      // Beancount 中 Income 账户：负数表示收入（盈利）
+      totalAmount += -amount  // 取反，负数变正数表示收入
+      hasCategory = true
+    } else if (posting.account.startsWith('Expenses:')) {
+      totalAmount += -amount  // 取反，正数变负数表示支出
+      hasCategory = true
+    }
   }
-  return 0 // 转账不计入
+  
+  // 如果没有分类账户（转账），取负数一方的金额汇总，然后取相反数
+  if (!hasCategory && transaction.postings.length > 0) {
+    let negativeTotal = 0
+    for (const posting of transaction.postings) {
+      const amount = Number(posting.amount)
+      if (amount < 0) {
+        negativeTotal += amount  // 累加负数金额
+      }
+    }
+    // 取相反数作为显示金额（转账不参与日汇总，返回0用于汇总，但显示时用正数）
+    return -negativeTotal
+  }
+  
+  return totalAmount
+}
+
+function getTransactionAmount(transaction: Transaction): number {
+  // 日汇总：只计算收入和支出，转账不参与
+  if (transaction.transaction_type === 'transfer') {
+    return 0
+  }
+  return getDisplayAmountValue(transaction)
 }
 
 // 日期范围选择器
@@ -477,34 +506,59 @@ function getDisplayDescription(transaction: Transaction): string {
 function getCategory(transaction: Transaction): string {
   if (transaction.postings.length === 0) return '未分类'
   
-  const account = transaction.postings[0]!.account
-  const parts = account.split(':')
+  // 提取所有非资产/负债账户（即分类账户）的名称
+  const categories: string[] = []
   
-  if (parts.length >= 2) {
-    return parts[parts.length - 1]!
+  for (const posting of transaction.postings) {
+    const account = posting.account
+    // 只显示支出和收入分类，跳过资产和负债账户
+    if (account.startsWith('Expenses:') || account.startsWith('Income:')) {
+      const parts = account.split(':')
+      if (parts.length >= 2) {
+        categories.push(parts[parts.length - 1]!)
+      } else {
+        categories.push(parts[0]!)
+      }
+    }
   }
   
-  return parts[0]!
+  if (categories.length === 0) {
+    // 如果没有找到分类账户，使用第一个账户
+    const account = transaction.postings[0]!.account
+    const parts = account.split(':')
+    return parts.length >= 2 ? parts[parts.length - 1]! : parts[0]!
+  }
+  
+  return categories.join(', ')
 }
 
 function getAmountClass(transaction: Transaction): string {
   if (transaction.postings.length === 0) return ''
   
-  const account = transaction.postings[0]!.account
-  if (account.startsWith('Income')) return 'positive'
-  if (account.startsWith('Expenses')) return 'negative'
+  // 转账用蓝色
+  if (transaction.transaction_type === 'transfer') {
+    return 'neutral'
+  }
+  
+  // 收入/支出根据金额正负决定颜色
+  const amount = getDisplayAmountValue(transaction)
+  if (amount > 0) return 'positive'
+  if (amount < 0) return 'negative'
   return 'neutral'
 }
 
 function formatAmount(transaction: Transaction): string {
   if (transaction.postings.length === 0) return '¥0.00'
   
-  const posting = transaction.postings[0]!
-  const amount = Math.abs(Number(posting.amount))
-  const sign = posting.account.startsWith('Income') ? '+' : 
-               posting.account.startsWith('Expenses') ? '-' : ''
+  // 使用统一的金额计算逻辑
+  const amount = getDisplayAmountValue(transaction)
+  const displayAmount = Math.abs(amount)
   
-  return `${sign}¥${amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  // 转账不显示 +/- 符号
+  const sign = transaction.transaction_type === 'transfer' ? '' : 
+               (amount > 0 ? '+' : amount < 0 ? '-' : '')
+  
+  return `${sign}¥${displayAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function formatGroupDate(dateStr: string): string {
