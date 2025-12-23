@@ -216,15 +216,46 @@ function getAmountClass(): string {
 function formatTotalAmount(): string {
   if (!transaction.value || transaction.value.postings.length === 0) return '¥0.00'
   
-  const posting = transaction.value.postings[0]!
-  const amount = Math.abs(Number(posting.amount))
-  const currency = posting.currency || 'CNY'
+  const type = transaction.value.transaction_type
+  let totalAmount = 0
+  let currency = 'CNY'
+  
+  if (type === 'expense') {
+    // 支出：汇总所有 Expenses 账户的金额（保留原始符号）
+    for (const posting of transaction.value.postings) {
+      if (posting.account.startsWith('Expenses')) {
+        totalAmount += Number(posting.amount)
+        currency = posting.currency || 'CNY'
+      }
+    }
+  } else if (type === 'income') {
+    // 收入：汇总所有 Income 账户的金额，然后取相反数
+    // Beancount 中 Income 账户：负数表示正常收入，正数表示亏损
+    // 显示时取反：负数变正数（正常收入），正数变负数（亏损）
+    for (const posting of transaction.value.postings) {
+      if (posting.account.startsWith('Income')) {
+        totalAmount += Number(posting.amount)
+        currency = posting.currency || 'CNY'
+      }
+    }
+    totalAmount = -totalAmount  // 取相反数
+  } else {
+    // 转账或其他：取第一个正数金额
+    for (const posting of transaction.value.postings) {
+      const amount = Number(posting.amount)
+      if (amount > 0) {
+        totalAmount = amount
+        currency = posting.currency || 'CNY'
+        break
+      }
+    }
+  }
+  
   const symbol = getCurrencySymbol(currency)
+  // 根据实际金额正负自动添加符号
+  const sign = totalAmount >= 0 ? '+' : ''
   
-  const sign = transaction.value.transaction_type === 'income' ? '+' : 
-               transaction.value.transaction_type === 'expense' ? '-' : ''
-  
-  return `${sign}${symbol}${amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  return `${sign}${symbol}${totalAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function getCurrencySymbol(currency: string): string {

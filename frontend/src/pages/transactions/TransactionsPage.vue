@@ -554,11 +554,8 @@ function formatAmount(transaction: Transaction): string {
   const amount = getDisplayAmountValue(transaction)
   const displayAmount = Math.abs(amount)
   
-  // 转账不显示 +/- 符号
-  const sign = transaction.transaction_type === 'transfer' ? '' : 
-               (amount > 0 ? '+' : amount < 0 ? '-' : '')
-  
-  return `${sign}¥${displayAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  // 不显示 +/- 符号，只用颜色区分
+  return `¥${displayAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function formatGroupDate(dateStr: string): string {
@@ -589,8 +586,8 @@ function getDaySummaryClass(total: number): string {
 
 function formatDayTotal(total: number): string {
   if (total === 0) return ''
-  const sign = total > 0 ? '+' : ''
-  return `${sign}¥${total.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  // 不显示 +/- 符号，只用颜色区分
+  return `¥${Math.abs(total).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 onMounted(async () => {
