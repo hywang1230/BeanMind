@@ -409,39 +409,46 @@ function buildFinalPostings(): Posting[] {
     if (!draft) return []
     const posts: Posting[] = []
     const currency = draft.currency
+    const totalAmount = draft.amount || 0
     
     // Helper to get amount for an item
-    const getAmt = (item: string, distMap?: Record<string, number>, sign: number = 1) => {
+    // 如果分配记录存在，使用分配的金额
+    // 如果只有单个项目且没有分配记录，使用总金额
+    const getAmt = (item: string, distMap: Record<string, number> | undefined, itemList: string[], sign: number = 1) => {
         if (distMap && distMap[item] !== undefined) {
             return distMap[item] * sign
         }
-        // Fallback: Equal split (shouldn't happen if we validated)
+        // 单项目情况：使用总金额
+        if (itemList.length === 1) {
+            return totalAmount * sign
+        }
+        // Fallback: 不应该发生
         return 0
     }
 
     if (draft.type === 'expense') {
         // Expense: +Category, -Account
         draft.category.forEach(cat => {
-            posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, 1).toFixed(2), currency })
+            posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, draft.category, 1).toFixed(2), currency })
         })
         draft.fromAccount.forEach(acc => {
-            posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, -1).toFixed(2), currency })
+            posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, draft.fromAccount, -1).toFixed(2), currency })
         })
     } else if (draft.type === 'income') {
         // Income: +Account, -Category
         draft.fromAccount.forEach(acc => {
-             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, 1).toFixed(2), currency })
+             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, draft.fromAccount, 1).toFixed(2), currency })
         })
         draft.category.forEach(cat => {
-             posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, -1).toFixed(2), currency })
+             posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, draft.category, -1).toFixed(2), currency })
         })
     } else if (draft.type === 'transfer') {
         // Transfer: -From, +To
          draft.fromAccount.forEach(acc => {
-             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, -1).toFixed(2), currency })
+             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, draft.fromAccount, -1).toFixed(2), currency })
         })
         draft.toAccount.forEach(acc => {
-             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, 1).toFixed(2), currency })
+             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, draft.toAccount, 1).toFixed(2), currency })
         })
     }
     
