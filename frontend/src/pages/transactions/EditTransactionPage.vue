@@ -297,24 +297,35 @@ function parseTransactionToForm(transaction: Transaction) {
     currency = posting.currency || 'CNY'
     
     if (txnType === 'expense') {
-      // 支出：Expenses 账户金额为正，Assets/Liabilities 为负
+      // 支出类：
+      // - Expenses 账户金额为正，取正值作为分类金额
+      // - Assets/Liabilities 账户金额为负，取绝对值作为账户金额
       if (posting.account.startsWith('Expenses:')) {
         categories.push(posting.account)
-        originalCategoryDistributions.value[posting.account] = Math.abs(amount)
-        totalAmount += Math.abs(amount)
+        // 支出类分类金额：保留原符号（支持负数支出，如退款）
+        originalCategoryDistributions.value[posting.account] = amount
+        totalAmount += amount
       } else if (posting.account.startsWith('Assets:') || posting.account.startsWith('Liabilities:')) {
         fromAccounts.push(posting.account)
+        // 支出类账户金额：取对应的绝对值
         originalAccountDistributions.value[posting.account] = Math.abs(amount)
       }
     } else if (txnType === 'income') {
-      // 收入：Income 账户金额为负，Assets/Liabilities 为正
+      // 收入类：
+      // - Income 账户金额为负（如 -100），需要取相反数（100）
+      // - Assets/Liabilities 账户金额为正（如 100），需要取相反数（-100 的绝对值）
+      // 但在分配页面显示时，totalAmount 应该是正数，分类/账户分配也是正数
+      // 用户需求：收入类金额取相反数 -> 即 totalAmount = 收入类汇总金额的相反数
       if (posting.account.startsWith('Income:')) {
         categories.push(posting.account)
-        originalCategoryDistributions.value[posting.account] = Math.abs(amount)
-        totalAmount += Math.abs(amount)
+        // 收入类分类金额：Income posting 金额为负（如 -100），取相反数（100）
+        originalCategoryDistributions.value[posting.account] = -amount  // 相反数
+        totalAmount += -amount  // 累加相反数
       } else if (posting.account.startsWith('Assets:') || posting.account.startsWith('Liabilities:')) {
         fromAccounts.push(posting.account)
-        originalAccountDistributions.value[posting.account] = Math.abs(amount)
+        // 收入类账户金额：Asset/Liability posting 金额为正（如 100），取相反数（-100）
+        // 但分配页面显示的是绝对值，所以这里也取相反数的绝对值，即原值
+        originalAccountDistributions.value[posting.account] = amount  // 保持原值（正数）
       }
     } else if (txnType === 'transfer') {
       // 转账：从账户为负，到账户为正
@@ -333,12 +344,10 @@ function parseTransactionToForm(transaction: Transaction) {
   formData.value.category = categories
   formData.value.fromAccount = fromAccounts
   formData.value.toAccount = toAccounts
-  // 支出交易金额为负数，收入和转账为正数
-  if (txnType === 'expense') {
-    formData.value.amount = -totalAmount
-  } else {
-    formData.value.amount = totalAmount
-  }
+  
+  // 表单中的金额始终为正数，符号由 buildPostings 根据交易类型决定
+  formData.value.amount = totalAmount
+  
   formData.value.currency = currency
 }
 

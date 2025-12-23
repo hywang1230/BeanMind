@@ -76,13 +76,18 @@ class TransactionRepositoryImpl(TransactionRepository):
             )
             postings.append(posting)
         
-        # 生成唯一 ID（基于完整交易内容的哈希）
-        transaction_id = self._generate_transaction_id(
-            entry.date, 
-            entry.narration, 
-            entry.payee, 
-            entry.postings
-        )
+        # 确定交易 ID
+        # 1. 优先使用元数据中存储的持久化 ID
+        if entry.meta and 'id' in entry.meta:
+            transaction_id = entry.meta['id']
+        else:
+            # 2. 如果没有持久化 ID，则生成基于内容的哈希 ID（兼容旧数据）
+            transaction_id = self._generate_transaction_id(
+                entry.date, 
+                entry.narration, 
+                entry.payee, 
+                entry.postings
+            )
         
         # 转换 Flag
         flag = TransactionFlag.CLEARED if entry.flag == "*" else TransactionFlag.PENDING
@@ -125,8 +130,19 @@ class TransactionRepositoryImpl(TransactionRepository):
         # 转换 Flag
         flag = transaction.flag.value if transaction.flag else "*"
         
+        # 准备元数据，确保包含 ID 以实现持久化
+        meta = transaction.meta.copy() if transaction.meta else {}
+        if transaction.id:
+            meta['id'] = transaction.id
+        
+        # 移除内部使用的位置信息，避免写回文件
+        if 'filename' in meta:
+            del meta['filename']
+        if 'lineno' in meta:
+            del meta['lineno']
+
         return BeancountTransaction(
-            meta=transaction.meta or {},
+            meta=meta,
             date=transaction.date,
             flag=flag,
             payee=transaction.payee or "",
@@ -167,7 +183,12 @@ class TransactionRepositoryImpl(TransactionRepository):
         # 包含分录信息以区分相同日期、描述的不同交易
         if postings:
             for p in postings:
-                content_parts.append(f"{p.account}:{p.units.number}:{p.units.currency}")
+                # For BeancountPosting objects, access units.number and units.currency
+                if hasattr(p, 'units') and hasattr(p.units, 'number') and hasattr(p.units, 'currency'):
+                    content_parts.append(f"{p.account}:{p.units.number}:{p.units.currency}")
+                # For domain Posting objects, access amount and currency directly
+                elif hasattr(p, 'amount') and hasattr(p, 'currency'):
+                    content_parts.append(f"{p.account}:{p.amount}:{p.currency}")
         
         unique_str = "|".join(content_parts)
         return uuid.uuid5(uuid.NAMESPACE_DNS, unique_str).hex
@@ -335,20 +356,105 @@ class TransactionRepositoryImpl(TransactionRepository):
         """
         更新交易
         
-        注意：Beancount 不支持直接修改交易。
-        这个方法需要重写整个文件或使用其他策略。
-        目前的简化实现只更新缓存。
+        策略：
+        1. 根据元数据中的位置信息删除原有交易
+        2. 将更新后的交易写入（可能是新文件）
+        3. 更新缓存和元数据
         """
         if not self.exists(transaction.id):
             raise ValueError(f"交易 '{transaction.id}' 不存在")
+            
+        # 获取原有交易的元数据（位置信息）
+        # 尝试从传入的对象获取，如果缺失则回退到缓存查找
+        if not transaction.meta or 'filename' not in transaction.meta or 'lineno' not in transaction.meta:
+            cached_txn = self._transactions_cache.get(transaction.id)
+            if cached_txn and cached_txn.meta and 'filename' in cached_txn.meta:
+                # 复制元数据位置信息
+                if not transaction.meta:
+                    transaction.meta = {}
+                transaction.meta['filename'] = cached_txn.meta['filename']
+                transaction.meta['lineno'] = cached_txn.meta['lineno']
+            else:
+                raise ValueError("无法定位原始交易文件位置，更新失败")
+            
+        filename = transaction.meta['filename']
+        lineno = transaction.meta['lineno']
         
-        # 更新缓存
-        self._transactions_cache[transaction.id] = transaction
+        # 获取关联的用户ID（从DB元数据）
+        metadata = self.db_session.query(TransactionMetadata).filter_by(
+            beancount_id=transaction.id
+        ).first()
+        user_id = metadata.user_id if metadata else None
         
-        # 警告：实际文件未更新
-        # 在生产环境中，需要实现文件重写逻辑
+        # 1. 从文件中删除原交易
+        if not self._remove_transaction_from_file(filename, lineno):
+             raise ValueError(f"无法从文件中删除原交易: {filename}:{lineno}")
+             
+        # 2. 删除旧的元数据
+        if metadata:
+            self.db_session.delete(metadata)
+            self.db_session.flush()
+            
+        # 3. 创建新交易（写入文件的同时生成新 ID，创建新元数据）
+        # 注意：不再清除 transaction.id，而是将其作为 persistent ID 写入新条目的元数据
+        try:
+            new_transaction = self.create(transaction, user_id)
+        except Exception as e:
+            raise RuntimeError(f"更新交易失败（旧数据已删除，新数据写入失败）: {e}")
         
-        return transaction
+        return new_transaction
+
+    def _remove_transaction_from_file(self, filename: str, lineno: int) -> bool:
+        """
+        从文件中删除指定行号的交易块
+        
+        Args:
+            filename: 文件路径
+            lineno: 交易起始行号（1-based）
+        """
+        path = Path(filename)
+        if not path.exists():
+            return False
+            
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                
+            if lineno < 1 or lineno > len(lines):
+                return False
+                
+            # Beancount lineno 是 1-based，转换为 list index
+            start_idx = lineno - 1
+            
+            # 确定交易块的结束位置
+            end_idx = start_idx + 1
+            while end_idx < len(lines):
+                line = lines[end_idx]
+                stripped = line.strip()
+                
+                # 空行视为 Entry 结束符
+                if not stripped:
+                    break
+                    
+                # 缩进的行属于当前 Entry
+                if line[0] == ' ' or line[0] == '\t':
+                    end_idx += 1
+                    continue
+                
+                # 非缩进且非空行，说明是下一个 Entry
+                break
+            
+            # 删除内容
+            del lines[start_idx:end_idx]
+            
+            # 写回文件
+            with open(path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+                
+            return True
+            
+        except Exception as e:
+            return False
     
     def delete(self, transaction_id: str) -> bool:
         """
