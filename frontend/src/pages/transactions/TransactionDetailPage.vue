@@ -140,9 +140,11 @@ import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { f7 } from 'framework7-vue'
 import { transactionsApi, type Transaction, type Posting } from '../../api/transactions'
+import { useUIStore } from '../../stores/ui'
 
 const router = useRouter()
 const route = useRoute()
+const uiStore = useUIStore()
 
 const loading = ref(true)
 const error = ref('')
@@ -305,6 +307,8 @@ function confirmDelete() {
     async () => {
       try {
         await transactionsApi.deleteTransaction(transaction.value!.id)
+        // 标记交易列表需要刷新
+        uiStore.markTransactionsNeedsRefresh()
         f7.toast.show({
           text: '交易已删除',
           closeTimeout: 2000

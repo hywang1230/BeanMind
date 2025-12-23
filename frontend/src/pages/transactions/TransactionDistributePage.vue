@@ -92,12 +92,14 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useTransactionStore } from '../../stores/transaction'
+import { useUIStore } from '../../stores/ui'
 import type { CreateTransactionRequest, Posting } from '../../api/transactions'
 import { f7 } from 'framework7-vue'
 
 const router = useRouter()
 const route = useRoute()
 const transactionStore = useTransactionStore()
+const uiStore = useUIStore()
 const draft = transactionStore.transactionDraft
 
 // Keypad State
@@ -466,12 +468,13 @@ async function submitTransaction() {
 
         await transactionStore.createTransaction(request)
         transactionStore.clearTransactionDraft()
+        // 标记交易列表需要刷新
+        uiStore.markTransactionsNeedsRefresh()
         // Go back to where? Ideally dash or transaction list.
         // AddTransactionPage was pushed from List or Dash.
         // Distribute Page is pushed from Add.
         // History: [..., List, Add, Distribute]
         // We want to go back to List.
-        // router.go(-2) might work, or push to list.
         router.push('/transactions') // Safer
     } catch (err: any) {
         console.error(err)

@@ -354,12 +354,112 @@ class TransactionRepositoryImpl(TransactionRepository):
         """
         删除交易
         
-        注意：Beancount 不支持直接删除交易。
-        这个方法需要重写整个文件。
-        目前的简化实现只从缓存中删除。
+        从 Beancount 文件和 SQLite 数据库中删除交易。
         """
         if not self.exists(transaction_id):
             return False
+        
+        # 获取交易实体
+        transaction = self._transactions_cache[transaction_id]
+        
+        # 根据交易日期确定年份文件
+        year = transaction.date.year
+        year_file = self.beancount_service.get_year_file_path(year)
+        
+        if not year_file.exists():
+            # 文件不存在，可能在主文件中
+            year_file = self.beancount_service.ledger_path
+        
+        # 读取文件内容
+        with open(year_file, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        # 查找并删除交易块
+        # 交易格式类似于:
+        # 2025-12-23 * "Payee" "Description"
+        #   Account:One  100 CNY
+        #   Account:Two  -100 CNY
+        
+        lines = content.split("\n")
+        new_lines = []
+        skip_until_next_entry = False
+        found = False
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            # 检查是否是交易行的开始（日期开头）
+            if line and len(line) >= 10 and line[0].isdigit():
+                # 可能是一个新的 entry（交易、余额等）
+                # 检查是否是我们要删除的交易
+                if self._is_target_transaction(lines, i, transaction):
+                    # 跳过这个交易块
+                    skip_until_next_entry = True
+                    found = True
+                    i += 1
+                    continue
+            
+            if skip_until_next_entry:
+                # 检查是否到达下一个 entry
+                if line and len(line) >= 10 and line[0].isdigit():
+                    # 这是一个新的 entry，停止跳过
+                    skip_until_next_entry = False
+                    new_lines.append(line)
+                elif line.strip() == "" and i + 1 < len(lines):
+                    # 空行，检查下一行是否是新 entry
+                    next_line = lines[i + 1]
+                    if next_line and len(next_line) >= 10 and next_line[0].isdigit():
+                        skip_until_next_entry = False
+                        # 不加入这个空行，让下一个 entry 保持正常间距
+                # 如果仍在跳过中，不添加此行
+            else:
+                new_lines.append(line)
+            
+            i += 1
+        
+        if not found:
+            # 尝试在主文件中查找
+            if year_file != self.beancount_service.ledger_path:
+                main_file = self.beancount_service.ledger_path
+                with open(main_file, "r", encoding="utf-8") as f:
+                    content = f.read()
+                
+                lines = content.split("\n")
+                new_lines = []
+                skip_until_next_entry = False
+                
+                i = 0
+                while i < len(lines):
+                    line = lines[i]
+                    
+                    if line and len(line) >= 10 and line[0].isdigit():
+                        if self._is_target_transaction(lines, i, transaction):
+                            skip_until_next_entry = True
+                            found = True
+                            i += 1
+                            continue
+                    
+                    if skip_until_next_entry:
+                        if line and len(line) >= 10 and line[0].isdigit():
+                            skip_until_next_entry = False
+                            new_lines.append(line)
+                        elif line.strip() == "" and i + 1 < len(lines):
+                            next_line = lines[i + 1]
+                            if next_line and len(next_line) >= 10 and next_line[0].isdigit():
+                                skip_until_next_entry = False
+                    else:
+                        new_lines.append(line)
+                    
+                    i += 1
+                
+                if found:
+                    year_file = main_file
+        
+        if found:
+            # 写回文件
+            with open(year_file, "w", encoding="utf-8") as f:
+                f.write("\n".join(new_lines))
         
         # 从缓存中删除
         del self._transactions_cache[transaction_id]
@@ -372,8 +472,71 @@ class TransactionRepositoryImpl(TransactionRepository):
             self.db_session.delete(metadata)
             self.db_session.commit()
         
-        # 警告：实际文件未更新
-        # 在生产环境中，需要实现文件重写逻辑
+        # 重新加载
+        self.reload()
+        
+        return True
+    
+    def _is_target_transaction(self, lines: list, start_index: int, transaction: Transaction) -> bool:
+        """
+        检查从 start_index 开始的交易块是否是目标交易
+        
+        Args:
+            lines: 文件行列表
+            start_index: 交易开始行的索引
+            transaction: 目标交易实体
+            
+        Returns:
+            是否匹配
+        """
+        line = lines[start_index]
+        
+        # 检查日期
+        if not line.startswith(transaction.date.isoformat()):
+            return False
+        
+        # 检查是否是交易（包含 * 或 !）
+        if " * " not in line and " ! " not in line:
+            return False
+        
+        # 检查描述/narration
+        description = transaction.description or ""
+        if description and f'"{description}"' not in line:
+            return False
+        
+        # 检查 Payee（如果有）
+        payee = transaction.payee or ""
+        if payee and f'"{payee}"' not in line:
+            return False
+        
+        # 收集交易块的所有 posting 行
+        posting_lines = []
+        for j in range(start_index + 1, len(lines)):
+            posting_line = lines[j]
+            if posting_line.strip() == "":
+                break
+            if posting_line and posting_line[0].isdigit():
+                break
+            if posting_line.startswith("  ") or posting_line.startswith("\t"):
+                posting_lines.append(posting_line.strip())
+        
+        # 检查 postings 数量是否匹配
+        if len(posting_lines) != len(transaction.postings):
+            return False
+        
+        # 检查每个 posting 的账户和金额
+        for posting in transaction.postings:
+            found_match = False
+            for pl in posting_lines:
+                if posting.account in pl:
+                    # 检查金额
+                    amount_str = str(posting.amount)
+                    # 处理可能的格式差异（如 100.00 vs 100）
+                    if amount_str in pl or f"{posting.amount:.2f}" in pl:
+                        found_match = True
+                        break
+            if not found_match:
+                return False
         
         return True
     

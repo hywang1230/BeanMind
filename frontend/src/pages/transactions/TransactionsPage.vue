@@ -540,13 +540,21 @@ function formatDayTotal(total: number): string {
 }
 
 onMounted(async () => {
-  // 只有在 store 中没有数据时才加载（避免返回时重复加载）
-  if (transactionStore.transactions.length === 0) {
-    await loadTransactions(true)
-  } else {
+  // 检查是否需要刷新数据（在删除、新增、编辑操作后）
+  const needsRefresh = uiStore.checkAndClearTransactionsRefresh()
+  
+  if (needsRefresh) {
     // 恢复筛选条件
     restoreFilters()
-    // 恢复滚动位置
+    // 重新加载数据（保留筛选条件）
+    await loadTransactions(true)
+    // 不恢复滚动位置，因为数据已经变化了
+  } else if (transactionStore.transactions.length === 0) {
+    // 首次加载
+    await loadTransactions(true)
+  } else {
+    // 正常返回，恢复筛选条件和滚动位置
+    restoreFilters()
     restoreScrollPosition()
     // 重新设置 IntersectionObserver（返回页面时原来的 observer 已失效）
     await nextTick()

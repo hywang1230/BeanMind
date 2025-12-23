@@ -203,6 +203,7 @@ import { ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import { f7 } from 'framework7-vue'
 import { useRouter } from 'vue-router'
 import { useTransactionStore, type TransactionDraft } from '../../stores/transaction'
+import { useUIStore } from '../../stores/ui'
 import type { CreateTransactionRequest, Posting } from '../../api/transactions'
 import { accountsApi, type Account } from '../../api/accounts'
 import AccountSelectionPopup from '../../components/AccountSelectionPopup.vue'
@@ -211,6 +212,7 @@ import AmountInput from '../../components/AmountInput.vue'
 
 const router = useRouter()
 const transactionStore = useTransactionStore()
+const uiStore = useUIStore()
 
 // State
 const loading = ref(false)
@@ -524,6 +526,8 @@ async function handleSubmit() {
       }
 
       await transactionStore.createTransaction(request)
+      // 标记交易列表需要刷新
+      uiStore.markTransactionsNeedsRefresh()
       router.back()
   } catch (err: any) {
       console.error(err)

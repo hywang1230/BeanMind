@@ -32,6 +32,9 @@ export const useUIStore = defineStore('ui', () => {
         dateRange: { start: '', end: '' }
     })
 
+    // 是否需要刷新交易列表数据（在删除、新增、编辑操作后）
+    const transactionsNeedsRefresh = ref<boolean>(false)
+
     /**
      * 设置当前激活的 Tab
      */
@@ -84,18 +87,37 @@ export const useUIStore = defineStore('ui', () => {
         return shouldRestore
     }
 
+    /**
+     * 标记交易列表需要刷新
+     */
+    function markTransactionsNeedsRefresh() {
+        transactionsNeedsRefresh.value = true
+    }
+
+    /**
+     * 检查并清除交易列表刷新标记
+     */
+    function checkAndClearTransactionsRefresh(): boolean {
+        const needsRefresh = transactionsNeedsRefresh.value
+        transactionsNeedsRefresh.value = false
+        return needsRefresh
+    }
+
     return {
         activeTabId,
         transactionsScrollPosition,
         transactionsFilters,
         shouldRestoreTab,
+        transactionsNeedsRefresh,
         setActiveTab,
         saveTransactionsScrollPosition,
         getAndClearTransactionsScrollPosition,
         saveTransactionsFilters,
         getTransactionsFilters,
         markForTabRestore,
-        clearTabRestoreFlag
+        clearTabRestoreFlag,
+        markTransactionsNeedsRefresh,
+        checkAndClearTransactionsRefresh
     }
 })
 
