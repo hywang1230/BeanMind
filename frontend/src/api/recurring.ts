@@ -1,7 +1,7 @@
 import apiClient from './client'
 
 export type RecurringRule = {
-    id: number
+    id: number | string
     name: string
     frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly' | 'yearly'
     frequency_config: FrequencyConfig
@@ -21,6 +21,7 @@ export type FrequencyConfig = {
 
 export type TransactionTemplate = {
     description: string
+    payee?: string
     postings: {
         account: string
         amount: number
@@ -30,8 +31,8 @@ export type TransactionTemplate = {
 }
 
 export type RecurringExecution = {
-    id: number
-    rule_id: number
+    id: number | string
+    rule_id: number | string
     execution_date: string
     transaction_id?: string
     status: 'pending' | 'executed' | 'failed'
@@ -61,27 +62,27 @@ export const recurringApi = {
     },
 
     // 获取规则详情
-    getRule(id: number): Promise<RecurringRule> {
+    getRule(id: number | string): Promise<RecurringRule> {
         return apiClient.get(`/api/recurring/rules/${id}`)
     },
 
     // 更新规则
-    updateRule(id: number, data: Partial<CreateRecurringRuleRequest>): Promise<RecurringRule> {
+    updateRule(id: number | string, data: Partial<CreateRecurringRuleRequest>): Promise<RecurringRule> {
         return apiClient.put(`/api/recurring/rules/${id}`, data)
     },
 
     // 删除规则
-    deleteRule(id: number): Promise<void> {
+    deleteRule(id: number | string): Promise<void> {
         return apiClient.delete(`/api/recurring/rules/${id}`)
     },
 
     // 手动执行规则
-    executeRule(id: number, date: string): Promise<RecurringExecution> {
+    executeRule(id: number | string, date: string): Promise<RecurringExecution> {
         return apiClient.post(`/api/recurring/rules/${id}/execute`, { date })
     },
 
     // 获取执行历史
-    getExecutions(ruleId?: number): Promise<RecurringExecution[]> {
+    getExecutions(ruleId?: number | string): Promise<RecurringExecution[]> {
         const params = ruleId ? { rule_id: ruleId } : {}
         return apiClient.get('/api/recurring/executions', { params })
     }

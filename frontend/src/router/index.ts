@@ -62,6 +62,24 @@ const routes: RouteRecordRaw[] = [
         name: 'Recurring',
         component: () => import('../pages/recurring/RecurringPage.vue'),
         meta: { requiresAuth: true }
+    },
+    {
+        path: '/recurring/rules',
+        name: 'RecurringRules',
+        component: () => import('../pages/recurring/RecurringRulesPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/recurring/add',
+        name: 'AddRecurringRule',
+        component: () => import('../pages/recurring/RecurringRuleFormPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/recurring/:id/edit',
+        name: 'EditRecurringRule',
+        component: () => import('../pages/recurring/RecurringRuleFormPage.vue'),
+        meta: { requiresAuth: true }
     }
 ]
 

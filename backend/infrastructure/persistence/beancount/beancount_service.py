@@ -185,7 +185,7 @@ class BeancountService:
             flag="*",  # 已清算标记
             payee=transaction_data.get("payee", ""),
             narration=transaction_data["description"],
-            tags=set(transaction_data.get("tags", [])),
+            tags=set(transaction_data.get("tags") or []),
             links=set(),
             postings=postings
         )

@@ -9,7 +9,7 @@
           </f7-link>
         </f7-nav-left>
         <f7-nav-title>{{ title }}</f7-nav-title>
-        <f7-nav-right>
+        <f7-nav-right v-if="allowMultiSelect">
           <f7-link v-if="!isMultiSelect" @click="isMultiSelect = true">多选</f7-link>
           <f7-link v-else @click="confirmMultiSelect" bold :class="{ 'disabled': selectedNames.length === 0 }">确定</f7-link>
         </f7-nav-right>
@@ -56,11 +56,14 @@ interface AccountTreeNode {
   opened?: boolean
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   opened: boolean
   title: string
   rootTypes?: string[] // e.g. ['Expenses', 'Income']
-}>()
+  allowMultiSelect?: boolean
+}>(), {
+  allowMultiSelect: true
+})
 
 const emit = defineEmits<{
   (e: 'update:opened', value: boolean): void
