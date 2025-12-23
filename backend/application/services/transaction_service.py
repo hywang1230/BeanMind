@@ -128,25 +128,17 @@ class TransactionApplicationService:
         Returns:
             交易 DTO 列表
         """
-        transactions = []
+        # 转换日期参数
+        start = date.fromisoformat(start_date) if start_date else None
+        end = date.fromisoformat(end_date) if end_date else None
         
-        # 按不同条件查询
-        if start_date and end_date:
-            # 日期范围查询
-            start = date.fromisoformat(start_date)
-            end = date.fromisoformat(end_date)
+        # 首先获取基础数据集
+        if start and end:
+            # 日期范围查询作为基础
             transactions = self.transaction_repository.find_by_date_range(start, end, user_id)
         elif account:
             # 按账户查询
-            start = date.fromisoformat(start_date) if start_date else None
-            end = date.fromisoformat(end_date) if end_date else None
             transactions = self.transaction_repository.find_by_account(account, start, end)
-        elif transaction_type:
-            # 按类型查询
-            txn_type = TransactionType(transaction_type)
-            start = date.fromisoformat(start_date) if start_date else None
-            end = date.fromisoformat(end_date) if end_date else None
-            transactions = self.transaction_repository.find_by_type(txn_type, start, end)
         elif tags:
             # 按标签查询
             transactions = self.transaction_repository.find_by_tags(tags)
@@ -154,8 +146,19 @@ class TransactionApplicationService:
             # 按描述搜索
             transactions = self.transaction_repository.find_by_description(description)
         else:
-            # 查询所有（不分页，分页由上层处理）
+            # 查询所有
             transactions = self.transaction_repository.find_all(user_id, None, None)
+        
+        # 应用额外的过滤条件（支持多条件组合）
+        if transaction_type:
+            txn_type = TransactionType(transaction_type)
+            transactions = [t for t in transactions if t.detect_transaction_type() == txn_type]
+        
+        # 如果有日期范围但不是通过 find_by_date_range 获取的，需要再次过滤
+        if start and not end:
+            transactions = [t for t in transactions if t.date >= start]
+        if end and not start:
+            transactions = [t for t in transactions if t.date <= end]
         
         # 按日期倒序排序
         transactions.sort(key=lambda t: t.date, reverse=True)

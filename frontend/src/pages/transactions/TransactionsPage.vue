@@ -109,10 +109,12 @@ import { ref, onMounted, computed, onUnmounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { f7 } from 'framework7-vue'
 import { useTransactionStore } from '../../stores/transaction'
+import { useUIStore } from '../../stores/ui'
 import { type Transaction, type TransactionsQuery } from '../../api/transactions'
 
 const router = useRouter()
 const transactionStore = useTransactionStore()
+const uiStore = useUIStore()
 
 const loading = ref(false)
 const loadingMore = ref(false)
@@ -373,7 +375,72 @@ function navigateToAdd() {
 }
 
 function viewTransaction(transaction: Transaction) {
+  // 保存当前滚动位置
+  saveScrollPosition()
+  // 保存筛选条件
+  saveFilters()
+  // 标记当前在流水 Tab，需要在返回时恢复
+  uiStore.setActiveTab('tab-2')
+  uiStore.markForTabRestore()
   router.push(`/transactions/${transaction.id}`)
+}
+
+/**
+ * 获取滚动容器（F7 Tab 的 page-content）
+ */
+function getScrollContainer(): HTMLElement | null {
+  // F7 Tab 结构: f7-tab.page-content > transactions-page > transactions-content
+  // 滚动发生在 f7-tab.page-content 上
+  const tabContent = document.querySelector('#tab-2.page-content') as HTMLElement
+  return tabContent
+}
+
+/**
+ * 保存当前滚动位置
+ */
+function saveScrollPosition() {
+  const container = getScrollContainer()
+  if (container) {
+    const position = container.scrollTop
+    uiStore.saveTransactionsScrollPosition(position)
+  }
+}
+
+/**
+ * 恢复滚动位置
+ */
+function restoreScrollPosition() {
+  const savedPosition = uiStore.getAndClearTransactionsScrollPosition()
+  if (savedPosition > 0) {
+    // 使用多次延迟确保 DOM 完全就绪
+    nextTick(() => {
+      setTimeout(() => {
+        const container = getScrollContainer()
+        if (container) {
+          container.scrollTop = savedPosition
+        }
+      }, 100)
+    })
+  }
+}
+
+/**
+ * 保存筛选条件
+ */
+function saveFilters() {
+  uiStore.saveTransactionsFilters({
+    typeFilter: currentTypeFilter.value,
+    dateRange: { ...dateRange.value }
+  })
+}
+
+/**
+ * 恢复筛选条件
+ */
+function restoreFilters() {
+  const filters = uiStore.getTransactionsFilters()
+  currentTypeFilter.value = filters.typeFilter
+  dateRange.value = { ...filters.dateRange }
 }
 
 function getTransactionClass(transaction: Transaction): string {
@@ -473,7 +540,23 @@ function formatDayTotal(total: number): string {
 }
 
 onMounted(async () => {
-  await loadTransactions(true)
+  // 只有在 store 中没有数据时才加载（避免返回时重复加载）
+  if (transactionStore.transactions.length === 0) {
+    await loadTransactions(true)
+  } else {
+    // 恢复筛选条件
+    restoreFilters()
+    // 恢复滚动位置
+    restoreScrollPosition()
+    // 重新设置 IntersectionObserver（返回页面时原来的 observer 已失效）
+    await nextTick()
+    setupIntersectionObserver()
+  }
+})
+
+// 暴露方法给父组件（如果需要的话）
+defineExpose({
+  restoreScrollPosition
 })
 
 onUnmounted(() => {
