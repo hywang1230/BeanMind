@@ -12,7 +12,13 @@ const routes: RouteRecordRaw[] = [
         name: 'Main',
         component: () => import('../layouts/MainLayout.vue'),
         meta: { requiresAuth: true },
-        alias: ['/dashboard', '/transactions', '/reports', '/settings']
+        alias: ['/dashboard', '/transactions', '/ai', '/settings']
+    },
+    {
+        path: '/reports',
+        name: 'Reports',
+        component: () => import('../pages/reports/ReportsPage.vue'),
+        meta: { requiresAuth: true }
     },
     {
         path: '/transactions/add',
