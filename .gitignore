@@ -16,6 +16,7 @@ ENV/
 *.swo
 *~
 .agent
+.cursor/
 
 # Data
 data/*.db
