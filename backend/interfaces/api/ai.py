@@ -1,11 +1,9 @@
 """AI 对话 API 端点
 
-提供 AI 对话相关的 HTTP 接口，支持流式输出。
+提供 AI 对话相关的 HTTP 接口。
 """
-import json
 import logging
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import StreamingResponse
 from typing import Optional
 
 from backend.application.services import AIApplicationService
@@ -64,81 +62,20 @@ def get_quick_questions():
 
 @router.post(
     "/chat",
-    summary="AI 对话（流式）",
-    description="发送消息给 AI 并获取流式响应（SSE）",
-    responses={
-        200: {"description": "流式响应", "content": {"text/event-stream": {}}},
-        400: {"description": "请求参数错误", "model": ErrorResponse},
-    }
-)
-async def chat_stream(request: ChatRequest):
-    """
-    AI 对话（流式）
-    
-    使用 Server-Sent Events (SSE) 返回流式响应。
-    每个数据块格式为：`data: {"type": "chunk", "content": "..."}\n\n`
-    
-    数据块类型：
-    - chunk: 内容片段
-    - done: 对话完成
-    - error: 发生错误
-    """
-    ai_service = get_ai_service()
-    
-    # 转换历史格式
-    history = None
-    if request.history:
-        history = [{"role": h.role, "content": h.content} for h in request.history]
-    
-    async def generate():
-        """生成 SSE 流"""
-        try:
-            for chunk in ai_service.chat_stream(
-                message=request.message,
-                session_id=request.session_id,
-                history=history
-            ):
-                # 格式化为 SSE
-                data = json.dumps(chunk, ensure_ascii=False)
-                yield f"data: {data}\n\n"
-                
-        except Exception as e:
-            logger.error(f"流式对话失败: {e}")
-            error_data = json.dumps({
-                "type": "error",
-                "content": str(e),
-                "session_id": request.session_id,
-            }, ensure_ascii=False)
-            yield f"data: {error_data}\n\n"
-    
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # 禁用 Nginx 缓冲
-        }
-    )
-
-
-@router.post(
-    "/chat/sync",
     response_model=ChatResponse,
-    summary="AI 对话（同步）",
-    description="发送消息给 AI 并获取完整响应（非流式）",
+    summary="AI 对话",
+    description="发送消息给 AI 并获取完整响应",
     responses={
         200: {"description": "对话成功", "model": ChatResponse},
         400: {"description": "请求参数错误", "model": ErrorResponse},
         500: {"description": "服务器错误", "model": ErrorResponse},
     }
 )
-def chat_sync(request: ChatRequest):
+def chat(request: ChatRequest):
     """
-    AI 对话（同步/非流式）
+    AI 对话
     
-    等待 AI 处理完成后返回完整响应。
-    适用于不需要流式输出的场景。
+    发送消息给 AI 并等待完整响应返回。
     """
     ai_service = get_ai_service()
     
@@ -160,7 +97,7 @@ def chat_sync(request: ChatRequest):
         )
         
     except Exception as e:
-        logger.error(f"同步对话失败: {e}")
+        logger.error(f"AI 对话失败: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"AI 对话失败: {str(e)}"

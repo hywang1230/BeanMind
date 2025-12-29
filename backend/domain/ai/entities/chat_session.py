@@ -81,7 +81,6 @@ class ChatSession:
         return [
             {"role": msg.role.value, "content": msg.content}
             for msg in recent_messages
-            if not msg.is_streaming  # 排除正在流式输出的消息
         ]
     
     def clear_messages(self):

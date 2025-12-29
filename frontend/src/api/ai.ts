@@ -1,4 +1,36 @@
 import apiClient from './client'
+import axios from 'axios'
+
+// AI 专用 axios 实例，超时时间更长
+const aiClient = axios.create({
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
+    timeout: 120000,  // 120 秒超时，AI 对话需要更长时间
+    headers: {
+        'Content-Type': 'application/json'
+    }
+})
+
+// 请求拦截器 - 添加 token
+aiClient.interceptors.request.use((config) => {
+    const token = localStorage.getItem('token')
+    if (token && config.headers) {
+        config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+})
+
+// 响应拦截器 - 处理错误
+aiClient.interceptors.response.use(
+    (response) => response.data,
+    (error) => {
+        if (error.response?.status === 401) {
+            localStorage.removeItem('token')
+            window.location.href = '/login'
+        }
+        const errorMessage = error.response?.data?.detail || error.message || '请求失败'
+        return Promise.reject({ status: error.response?.status, message: errorMessage })
+    }
+)
 
 // 类型定义
 export type MessageRole = 'user' | 'assistant' | 'system'
@@ -8,7 +40,6 @@ export type ChatMessage = {
     role: MessageRole
     content: string
     created_at: string
-    is_streaming?: boolean
 }
 
 export type ChatSession = {
@@ -37,20 +68,6 @@ export type ChatResponse = {
     message: ChatMessage
 }
 
-export type StreamChunk = {
-    type: 'chunk' | 'done' | 'error'
-    content: string
-    session_id?: string
-    message_id?: string
-}
-
-// 回调类型
-export type StreamCallbacks = {
-    onChunk?: (chunk: StreamChunk) => void
-    onDone?: (fullContent: string, sessionId: string, messageId: string) => void
-    onError?: (error: string) => void
-}
-
 /**
  * AI API 客户端
  */
@@ -63,98 +80,10 @@ export const aiApi = {
     },
 
     /**
-     * 流式对话
-     * 
-     * @param request 聊天请求
-     * @param callbacks 流式回调函数
-     * @returns AbortController 用于取消请求
+     * AI 对话
      */
-    chatStream(request: ChatRequest, callbacks: StreamCallbacks): AbortController {
-        const abortController = new AbortController()
-        
-        const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'
-        const token = localStorage.getItem('token')
-        
-        fetch(`${baseUrl}/api/ai/chat`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify(request),
-            signal: abortController.signal,
-        })
-        .then(async (response) => {
-            if (!response.ok) {
-                const error = await response.json().catch(() => ({ detail: '请求失败' }))
-                callbacks.onError?.(error.detail || '请求失败')
-                return
-            }
-            
-            const reader = response.body?.getReader()
-            if (!reader) {
-                callbacks.onError?.('无法读取响应流')
-                return
-            }
-            
-            const decoder = new TextDecoder()
-            let fullContent = ''
-            let sessionId = request.session_id || ''
-            let messageId = ''
-            
-            try {
-                while (true) {
-                    const { done, value } = await reader.read()
-                    if (done) break
-                    
-                    const text = decoder.decode(value, { stream: true })
-                    const lines = text.split('\n')
-                    
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            try {
-                                const data = JSON.parse(line.slice(6)) as StreamChunk
-                                
-                                if (data.session_id) sessionId = data.session_id
-                                if (data.message_id) messageId = data.message_id
-                                
-                                if (data.type === 'chunk') {
-                                    fullContent += data.content
-                                    callbacks.onChunk?.(data)
-                                } else if (data.type === 'done') {
-                                    // 使用服务端返回的完整内容
-                                    if (data.content) fullContent = data.content
-                                    callbacks.onDone?.(fullContent, sessionId, messageId)
-                                } else if (data.type === 'error') {
-                                    callbacks.onError?.(data.content)
-                                }
-                            } catch (e) {
-                                // 忽略解析错误
-                                console.warn('解析 SSE 数据失败:', line)
-                            }
-                        }
-                    }
-                }
-            } catch (e) {
-                if ((e as Error).name !== 'AbortError') {
-                    callbacks.onError?.((e as Error).message)
-                }
-            }
-        })
-        .catch((error) => {
-            if (error.name !== 'AbortError') {
-                callbacks.onError?.(error.message)
-            }
-        })
-        
-        return abortController
-    },
-
-    /**
-     * 同步对话（非流式）
-     */
-    chatSync(request: ChatRequest): Promise<ChatResponse> {
-        return apiClient.post('/api/ai/chat/sync', request)
+    chat(request: ChatRequest): Promise<ChatResponse> {
+        return aiClient.post('/api/ai/chat', request)
     },
 
     /**
@@ -180,4 +109,3 @@ export const aiApi = {
 }
 
 export default aiApi
-

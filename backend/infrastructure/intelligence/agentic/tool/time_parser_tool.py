@@ -39,7 +39,7 @@ class TimeParserTool(Tool):
             dict: 开始和结束日期
         """
         try:
-            llm: LLM = LLMManager().get_instance_obj('qwen3_max_llm_sync')
+            llm: LLM = LLMManager().get_instance_obj('qwen3_max_llm')
             prompt_text = f"""
 你是一个时间解析器，请根据用户输入的时间字符串，返回开始和结束时间，当前时间为{datetime.now().strftime("%Y-%m-%d")}，
 返回 json 格式，key 为 start_date 和 end_date，value 为日期字符串，格式为 YYYY-MM-DD

@@ -42,10 +42,10 @@
       <!-- 消息列表 -->
       <div v-else class="messages-list">
         <div 
-          v-for="message in displayMessages" 
+          v-for="message in aiStore.messages" 
           :key="message.id"
           class="message-item"
-          :class="[`message-${message.role}`, { 'is-streaming': message.is_streaming }]"
+          :class="[`message-${message.role}`]"
         >
           <!-- 头像 -->
           <div class="message-avatar">
@@ -59,14 +59,13 @@
           <div class="message-content">
             <div class="message-bubble">
               <div class="message-text" v-html="formatMessage(message.content)"></div>
-              <span v-if="message.is_streaming" class="typing-cursor"></span>
             </div>
             <div class="message-time">{{ formatTime(message.created_at) }}</div>
           </div>
         </div>
         
-        <!-- 加载指示器（流式消息内容为空时显示） -->
-        <div v-if="showLoadingIndicator" class="loading-indicator">
+        <!-- 加载指示器 -->
+        <div v-if="aiStore.isLoading" class="loading-indicator">
           <div class="ai-loading-avatar">
             <f7-icon f7="sparkles" class="ai-avatar" />
           </div>
@@ -84,21 +83,8 @@
 
     <!-- 输入区域 -->
     <div class="input-container">
-      <!-- 停止按钮（流式输出时显示） -->
-      <f7-button 
-        v-if="aiStore.isStreaming"
-        @click="handleStop"
-        class="stop-btn"
-        fill
-        round
-        color="red"
-      >
-        <f7-icon f7="stop_fill" size="16" />
-        停止
-      </f7-button>
-      
       <!-- 输入框 -->
-      <div class="input-wrapper" v-else>
+      <div class="input-wrapper">
         <textarea 
           v-model="inputMessage"
           @keydown.enter.exact.prevent="handleSend"
@@ -106,12 +92,13 @@
           rows="1"
           class="message-input"
           ref="inputRef"
+          :disabled="aiStore.isLoading"
         ></textarea>
         <f7-button 
           @click="handleSend"
-          :disabled="!inputMessage.trim()"
+          :disabled="!inputMessage.trim() || aiStore.isLoading"
           class="send-btn"
-          :class="{ 'active': inputMessage.trim() }"
+          :class="{ 'active': inputMessage.trim() && !aiStore.isLoading }"
         >
           <f7-icon f7="arrow_up_circle_fill" size="32" />
         </f7-button>
@@ -121,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 import { f7Icon, f7Button } from 'framework7-vue'
 import { useAIStore } from '../../stores/ai'
 import { marked } from 'marked'
@@ -136,23 +123,6 @@ const aiStore = useAIStore()
 const inputMessage = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
-
-// 过滤掉正在流式输出但内容为空的消息（这些消息只显示加载动画）
-const displayMessages = computed(() => {
-  return aiStore.messages.filter(msg => {
-    // 如果是流式消息且内容为空，不显示消息气泡
-    if (msg.is_streaming && !msg.content) {
-      return false
-    }
-    return true
-  })
-})
-
-// 是否显示加载指示器
-const showLoadingIndicator = computed(() => {
-  const lastMsg = aiStore.lastMessage
-  return aiStore.isStreaming && lastMsg?.is_streaming && !lastMsg.content
-})
 
 // 初始化
 onMounted(async () => {
@@ -170,9 +140,9 @@ watch(
   }
 )
 
-// 监听流式内容变化
+// 监听加载状态变化
 watch(
-  () => aiStore.currentStreamingContent,
+  () => aiStore.isLoading,
   () => {
     nextTick(() => {
       scrollToBottom()
@@ -190,7 +160,7 @@ function scrollToBottom() {
 // 发送消息
 async function handleSend() {
   const message = inputMessage.value.trim()
-  if (!message || aiStore.isStreaming) return
+  if (!message || aiStore.isLoading) return
   
   inputMessage.value = ''
   await aiStore.sendMessage(message)
@@ -199,11 +169,6 @@ async function handleSend() {
 // 点击快捷问题
 async function handleQuickQuestion(question: string) {
   await aiStore.sendMessage(question)
-}
-
-// 停止生成
-function handleStop() {
-  aiStore.stopStreaming()
 }
 
 // 新建对话
@@ -585,22 +550,6 @@ function formatTime(dateString: string): string {
   padding: 0 4px;
 }
 
-/* 打字光标动画 */
-.typing-cursor {
-  display: inline-block;
-  width: 2px;
-  height: 16px;
-  background: currentColor;
-  margin-left: 2px;
-  animation: blink 1s infinite;
-  vertical-align: middle;
-}
-
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
-}
-
 /* 加载指示器 */
 .loading-indicator {
   display: flex;
@@ -697,6 +646,10 @@ function formatTime(dateString: string): string {
   color: var(--f7-input-placeholder-color);
 }
 
+.message-input:disabled {
+  opacity: 0.6;
+}
+
 .send-btn {
   --f7-button-text-color: #d1d5db;
   min-width: auto;
@@ -710,10 +663,6 @@ function formatTime(dateString: string): string {
 
 .send-btn:active {
   transform: scale(0.9);
-}
-
-.stop-btn {
-  width: 100%;
 }
 
 /* 暗黑模式适配 */

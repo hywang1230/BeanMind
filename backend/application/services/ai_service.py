@@ -5,8 +5,7 @@
 import logging
 import uuid
 from pathlib import Path
-from typing import Dict, Optional, List, Generator, Any
-from datetime import datetime
+from typing import Dict, Optional, List
 
 from backend.domain.ai.entities import ChatMessage, ChatSession, MessageRole
 from backend.domain.ai.services import AIChatService
@@ -35,7 +34,7 @@ class AIApplicationService:
     负责：
     - 管理聊天会话
     - 协调 AI 领域服务
-    - 提供流式和非流式对话接口
+    - 提供对话接口
     - 管理对话历史
     """
     
@@ -136,7 +135,7 @@ class AIApplicationService:
         history: Optional[List[Dict]] = None
     ) -> Dict:
         """
-        同步对话（非流式）
+        对话
         
         Args:
             message: 用户消息
@@ -176,96 +175,6 @@ class AIApplicationService:
         except Exception as e:
             logger.error(f"AI 对话失败: {e}")
             raise
-    
-    def chat_stream(
-        self,
-        message: str,
-        session_id: Optional[str] = None,
-        history: Optional[List[Dict]] = None
-    ) -> Generator[Dict[str, Any], None, None]:
-        """
-        流式对话
-        
-        Args:
-            message: 用户消息
-            session_id: 会话 ID
-            history: 外部传入的历史（可选）
-            
-        Yields:
-            流式输出数据块
-        """
-        # 获取或创建会话
-        session = self.get_or_create_session(session_id)
-        
-        # 添加用户消息
-        user_message = ChatMessage.user_message(message, session.id)
-        session.add_message(user_message)
-        
-        # 获取聊天历史
-        chat_history = history or session.get_history_for_context()
-        
-        # 创建 AI 回复消息（流式状态）
-        assistant_message = ChatMessage.assistant_message("", session.id, is_streaming=True)
-        session.add_message(assistant_message)
-        
-        try:
-            # 调用流式 AI 服务
-            for chunk in self.chat_service.chat_stream(
-                message=message,
-                session_id=session.id,
-                chat_history=chat_history
-            ):
-                chunk_type = chunk.get('type', 'chunk')
-                content = chunk.get('content', '')
-                
-                if chunk_type == 'chunk':
-                    # 累积内容
-                    assistant_message.append_content(content)
-                    
-                    yield {
-                        'type': 'chunk',
-                        'content': content,
-                        'session_id': session.id,
-                        'message_id': assistant_message.id,
-                    }
-                    
-                elif chunk_type == 'done':
-                    # 完成
-                    assistant_message.mark_streaming_complete()
-                    # 如果最终内容与累积不同，使用最终内容
-                    if content and content != assistant_message.content:
-                        assistant_message.content = content
-                    
-                    yield {
-                        'type': 'done',
-                        'content': assistant_message.content,
-                        'session_id': session.id,
-                        'message_id': assistant_message.id,
-                    }
-                    
-                elif chunk_type == 'error':
-                    # 错误
-                    assistant_message.mark_streaming_complete()
-                    assistant_message.content = f"抱歉，处理您的请求时出现了问题：{content}"
-                    
-                    yield {
-                        'type': 'error',
-                        'content': content,
-                        'session_id': session.id,
-                        'message_id': assistant_message.id,
-                    }
-                    
-        except Exception as e:
-            logger.error(f"流式对话失败: {e}")
-            assistant_message.mark_streaming_complete()
-            assistant_message.content = f"抱歉，处理您的请求时出现了问题：{str(e)}"
-            
-            yield {
-                'type': 'error',
-                'content': str(e),
-                'session_id': session.id,
-                'message_id': assistant_message.id,
-            }
     
     def get_session_history(self, session_id: str) -> Optional[Dict]:
         """

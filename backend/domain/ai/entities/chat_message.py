@@ -29,7 +29,6 @@ class ChatMessage:
         content: 消息内容
         created_at: 创建时间
         session_id: 所属会话 ID
-        is_streaming: 是否为流式输出中的消息
     """
     
     role: MessageRole
@@ -37,7 +36,6 @@ class ChatMessage:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = field(default_factory=datetime.now)
     session_id: Optional[str] = None
-    is_streaming: bool = False
     
     def __post_init__(self):
         """验证消息数据"""
@@ -51,19 +49,6 @@ class ChatMessage:
         if self.content is None:
             raise ValueError("消息内容不能为 None")
     
-    def append_content(self, chunk: str):
-        """
-        追加内容（用于流式输出）
-        
-        Args:
-            chunk: 要追加的内容片段
-        """
-        self.content += chunk
-    
-    def mark_streaming_complete(self):
-        """标记流式输出完成"""
-        self.is_streaming = False
-    
     def to_dict(self) -> dict:
         """转换为字典格式"""
         return {
@@ -72,7 +57,6 @@ class ChatMessage:
             "content": self.content,
             "created_at": self.created_at.isoformat(),
             "session_id": self.session_id,
-            "is_streaming": self.is_streaming,
         }
     
     @classmethod
@@ -84,7 +68,6 @@ class ChatMessage:
             content=data["content"],
             created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.now(),
             session_id=data.get("session_id"),
-            is_streaming=data.get("is_streaming", False),
         )
     
     @classmethod
@@ -97,13 +80,12 @@ class ChatMessage:
         )
     
     @classmethod
-    def assistant_message(cls, content: str = "", session_id: Optional[str] = None, is_streaming: bool = False) -> "ChatMessage":
+    def assistant_message(cls, content: str, session_id: Optional[str] = None) -> "ChatMessage":
         """创建 AI 助手消息的工厂方法"""
         return cls(
             role=MessageRole.ASSISTANT,
             content=content,
             session_id=session_id,
-            is_streaming=is_streaming,
         )
     
     @classmethod
@@ -119,4 +101,3 @@ class ChatMessage:
         """字符串表示"""
         content_preview = self.content[:50] + "..." if len(self.content) > 50 else self.content
         return f"<ChatMessage(role={self.role.value}, content='{content_preview}')>"
-

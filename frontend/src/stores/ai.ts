@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { aiApi, type ChatMessage, type QuickQuestion, type StreamChunk } from '../api/ai'
+import { aiApi, type ChatMessage, type QuickQuestion } from '../api/ai'
 
 // 生成 UUID（使用浏览器内置 API）
 function generateId(): string {
@@ -11,14 +11,9 @@ export const useAIStore = defineStore('ai', () => {
     // 状态
     const messages = ref<ChatMessage[]>([])
     const sessionId = ref<string>('')
-    const isStreaming = ref(false)
-    const currentStreamingContent = ref('')
+    const isLoading = ref(false)
     const quickQuestions = ref<QuickQuestion[]>([])
-    const loading = ref(false)
     const error = ref<string | null>(null)
-    
-    // 当前请求的 AbortController
-    let currentAbortController: AbortController | null = null
 
     // 计算属性
     const hasMessages = computed(() => messages.value.length > 0)
@@ -48,12 +43,13 @@ export const useAIStore = defineStore('ai', () => {
         }
     }
 
-    // 发送消息（流式）
+    // 发送消息
     async function sendMessage(content: string) {
-        if (!content.trim() || isStreaming.value) return
+        if (!content.trim() || isLoading.value) return
 
         initSession()
         error.value = null
+        isLoading.value = true
         
         // 添加用户消息
         const userMessage: ChatMessage = {
@@ -64,99 +60,46 @@ export const useAIStore = defineStore('ai', () => {
         }
         messages.value.push(userMessage)
         
-        // 创建 AI 消息占位
-        const assistantMessage: ChatMessage = {
-            id: generateId(),
-            role: 'assistant',
-            content: '',
-            created_at: new Date().toISOString(),
-            is_streaming: true,
-        }
-        messages.value.push(assistantMessage)
-        
-        isStreaming.value = true
-        currentStreamingContent.value = ''
-        
-        // 构建历史（不包含当前的占位消息）
+        // 构建历史
         const history = messages.value
-            .slice(0, -1)  // 排除占位消息
-            .filter(m => !m.is_streaming)
+            .slice(0, -1)  // 排除刚添加的用户消息
             .map(m => ({ role: m.role, content: m.content }))
         
-        // 发起流式请求
-        currentAbortController = aiApi.chatStream(
-            {
+        try {
+            // 发起请求
+            const response = await aiApi.chat({
                 message: content.trim(),
                 session_id: sessionId.value,
                 history,
-            },
-            {
-                onChunk: (chunk: StreamChunk) => {
-                    currentStreamingContent.value += chunk.content
-                    // 更新最后一条消息的内容
-                    const lastMsg = messages.value[messages.value.length - 1]
-                    if (lastMsg && lastMsg.role === 'assistant') {
-                        lastMsg.content = currentStreamingContent.value
-                    }
-                    // 更新 session_id
-                    if (chunk.session_id) {
-                        sessionId.value = chunk.session_id
-                    }
-                },
-                onDone: (fullContent: string, sid: string, msgId: string) => {
-                    // 更新最终内容
-                    const lastMsg = messages.value[messages.value.length - 1]
-                    if (lastMsg && lastMsg.role === 'assistant') {
-                        lastMsg.content = fullContent
-                        lastMsg.is_streaming = false
-                        if (msgId) lastMsg.id = msgId
-                    }
-                    if (sid) sessionId.value = sid
-                    
-                    isStreaming.value = false
-                    currentStreamingContent.value = ''
-                    currentAbortController = null
-                },
-                onError: (errorMsg: string) => {
-                    error.value = errorMsg
-                    // 更新错误消息
-                    const lastMsg = messages.value[messages.value.length - 1]
-                    if (lastMsg && lastMsg.role === 'assistant') {
-                        lastMsg.content = `抱歉，处理您的请求时出现了问题：${errorMsg}`
-                        lastMsg.is_streaming = false
-                    }
-                    
-                    isStreaming.value = false
-                    currentStreamingContent.value = ''
-                    currentAbortController = null
-                },
+            })
+            
+            // 更新 session_id
+            if (response.session_id) {
+                sessionId.value = response.session_id
             }
-        )
-    }
-
-    // 停止当前流式输出
-    function stopStreaming() {
-        if (currentAbortController) {
-            currentAbortController.abort()
-            currentAbortController = null
-        }
-        
-        // 标记最后一条消息为完成
-        const lastMsg = messages.value[messages.value.length - 1]
-        if (lastMsg && lastMsg.is_streaming) {
-            lastMsg.is_streaming = false
-            if (!lastMsg.content) {
-                lastMsg.content = '（已停止）'
+            
+            // 添加 AI 回复消息
+            messages.value.push(response.message)
+            
+        } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : '请求失败'
+            error.value = errorMsg
+            
+            // 添加错误消息
+            const errorMessage: ChatMessage = {
+                id: generateId(),
+                role: 'assistant',
+                content: `抱歉，处理您的请求时出现了问题：${errorMsg}`,
+                created_at: new Date().toISOString(),
             }
+            messages.value.push(errorMessage)
+        } finally {
+            isLoading.value = false
         }
-        
-        isStreaming.value = false
-        currentStreamingContent.value = ''
     }
 
     // 清空消息
     function clearMessages() {
-        stopStreaming()
         messages.value = []
         error.value = null
         
@@ -174,7 +117,7 @@ export const useAIStore = defineStore('ai', () => {
 
     // 加载会话历史
     async function loadSessionHistory(sid: string) {
-        loading.value = true
+        isLoading.value = true
         try {
             const session = await aiApi.getSessionHistory(sid)
             sessionId.value = session.id
@@ -183,7 +126,7 @@ export const useAIStore = defineStore('ai', () => {
             console.error('加载会话历史失败:', e)
             throw e
         } finally {
-            loading.value = false
+            isLoading.value = false
         }
     }
 
@@ -191,10 +134,8 @@ export const useAIStore = defineStore('ai', () => {
         // 状态
         messages,
         sessionId,
-        isStreaming,
-        currentStreamingContent,
+        isLoading,
         quickQuestions,
-        loading,
         error,
         
         // 计算属性
@@ -205,10 +146,8 @@ export const useAIStore = defineStore('ai', () => {
         initSession,
         fetchQuickQuestions,
         sendMessage,
-        stopStreaming,
         clearMessages,
         newConversation,
         loadSessionHistory,
     }
 })
-

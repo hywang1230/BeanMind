@@ -4,7 +4,6 @@
 """
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import datetime
 
 
 class ChatMessageResponse(BaseModel):
@@ -15,7 +14,6 @@ class ChatMessageResponse(BaseModel):
     role: str = Field(..., description="消息角色")
     content: str = Field(..., description="消息内容")
     created_at: str = Field(..., description="创建时间")
-    is_streaming: bool = Field(False, description="是否为流式输出中")
     
     class Config:
         json_schema_extra = {
@@ -23,15 +21,14 @@ class ChatMessageResponse(BaseModel):
                 "id": "msg-001",
                 "role": "assistant",
                 "content": "根据您的账单数据分析...",
-                "created_at": "2025-01-15T10:30:00",
-                "is_streaming": False
+                "created_at": "2025-01-15T10:30:00"
             }
         }
 
 
 class ChatResponse(BaseModel):
     """
-    聊天响应（非流式）
+    聊天响应
     """
     session_id: str = Field(..., description="会话 ID")
     message: ChatMessageResponse = Field(..., description="AI 回复消息")
@@ -44,31 +41,8 @@ class ChatResponse(BaseModel):
                     "id": "msg-001",
                     "role": "assistant",
                     "content": "根据您的账单数据分析...",
-                    "created_at": "2025-01-15T10:30:00",
-                    "is_streaming": False
+                    "created_at": "2025-01-15T10:30:00"
                 }
-            }
-        }
-
-
-class StreamChunkResponse(BaseModel):
-    """
-    流式输出块响应
-    
-    用于 SSE 流式输出的单个数据块。
-    """
-    type: str = Field(..., description="数据类型（chunk/done/error）")
-    content: str = Field("", description="内容片段")
-    session_id: Optional[str] = Field(None, description="会话 ID")
-    message_id: Optional[str] = Field(None, description="消息 ID")
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "type": "chunk",
-                "content": "根据您的",
-                "session_id": "session-001",
-                "message_id": "msg-001"
             }
         }
 
@@ -120,4 +94,3 @@ class QuickQuestionsListResponse(BaseModel):
     快捷问题列表响应
     """
     questions: List[QuickQuestionResponse] = Field(..., description="快捷问题列表")
-
