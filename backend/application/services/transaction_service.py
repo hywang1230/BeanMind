@@ -143,8 +143,8 @@ class TransactionApplicationService:
             # 按标签查询
             transactions = self.transaction_repository.find_by_tags(tags)
         elif description:
-            # 按描述搜索
-            transactions = self.transaction_repository.find_by_description(description)
+            # 按关键词搜索（同时搜索描述和付款方）
+            transactions = self.transaction_repository.find_by_keyword(description)
         else:
             # 查询所有
             transactions = self.transaction_repository.find_all(user_id, None, None)
@@ -159,6 +159,15 @@ class TransactionApplicationService:
             transactions = [t for t in transactions if t.date >= start]
         if end and not start:
             transactions = [t for t in transactions if t.date <= end]
+        
+        # 关键词过滤（同时搜索描述和付款方）- 与其他条件组合使用
+        if description and (start or end or account or tags):
+            keyword_lower = description.lower()
+            transactions = [
+                t for t in transactions 
+                if keyword_lower in t.description.lower() or 
+                   (t.payee and keyword_lower in t.payee.lower())
+            ]
         
         # 按日期倒序排序
         transactions.sort(key=lambda t: t.date, reverse=True)

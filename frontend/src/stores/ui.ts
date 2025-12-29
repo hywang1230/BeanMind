@@ -10,6 +10,7 @@ export interface TransactionsFilters {
         start: string
         end: string
     }
+    searchKeyword?: string  // 搜索关键词（同时搜索备注和付款方）
 }
 
 /**
@@ -29,7 +30,8 @@ export const useUIStore = defineStore('ui', () => {
     // 流水页面的筛选条件
     const transactionsFilters = ref<TransactionsFilters>({
         typeFilter: 'all',
-        dateRange: { start: '', end: '' }
+        dateRange: { start: '', end: '' },
+        searchKeyword: ''
     })
 
     // 是否需要刷新交易列表数据（在删除、新增、编辑操作后）

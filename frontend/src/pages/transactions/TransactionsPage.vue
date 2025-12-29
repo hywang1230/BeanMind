@@ -7,6 +7,30 @@
 
     <!-- 筛选器 -->
     <div class="filter-section">
+      <!-- 搜索框 -->
+      <div class="search-box">
+        <f7-icon ios="f7:search" size="18" class="search-icon"></f7-icon>
+        <input 
+          type="text" 
+          v-model="searchKeyword" 
+          placeholder="搜索备注、付款方..." 
+          @input="onSearchInput"
+          @keyup.enter="applyFilters"
+          class="search-input"
+        />
+        <f7-button 
+          v-if="searchKeyword" 
+          fill 
+          small 
+          round 
+          color="gray" 
+          @click="clearSearch" 
+          class="clear-search-btn"
+        >
+          <f7-icon ios="f7:xmark" size="12"></f7-icon>
+        </f7-button>
+      </div>
+      
       <f7-segmented strong tag="div" class="type-filter">
         <f7-button 
           v-for="filter in typeFilters" 
@@ -156,6 +180,8 @@ const dateRange = ref({
   start: '',
   end: ''
 })
+const searchKeyword = ref<string>('')
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
 const transactions = computed(() => transactionStore.transactions)
 const total = computed(() => transactionStore.total)
@@ -361,6 +387,21 @@ function clearDateFilter() {
   loadTransactions(true)
 }
 
+function onSearchInput() {
+  // 防抖处理
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer)
+  }
+  searchDebounceTimer = setTimeout(() => {
+    loadTransactions(true)
+  }, 300)
+}
+
+function clearSearch() {
+  searchKeyword.value = ''
+  loadTransactions(true)
+}
+
 async function loadTransactions(reset: boolean = false) {
   if (reset) {
     loading.value = true
@@ -384,6 +425,11 @@ async function loadTransactions(reset: boolean = false) {
     
     if (dateRange.value.end) {
       query.end_date = dateRange.value.end
+    }
+    
+    // 搜索关键词（同时搜索备注和付款方）
+    if (searchKeyword.value.trim()) {
+      query.description = searchKeyword.value.trim()
     }
     
     await transactionStore.fetchTransactions(query, !reset)
@@ -455,6 +501,10 @@ async function loadMore() {
     if (dateRange.value.end) {
       query.end_date = dateRange.value.end
     }
+    // 搜索关键词
+    if (searchKeyword.value.trim()) {
+      query.description = searchKeyword.value.trim()
+    }
     
     await transactionStore.fetchTransactions(query, true) // append mode
   } finally {
@@ -523,7 +573,8 @@ function restoreScrollPosition() {
 function saveFilters() {
   uiStore.saveTransactionsFilters({
     typeFilter: currentTypeFilter.value,
-    dateRange: { ...dateRange.value }
+    dateRange: { ...dateRange.value },
+    searchKeyword: searchKeyword.value
   })
 }
 
@@ -534,6 +585,7 @@ function restoreFilters() {
   const filters = uiStore.getTransactionsFilters()
   currentTypeFilter.value = filters.typeFilter
   dateRange.value = { ...filters.dateRange }
+  searchKeyword.value = filters.searchKeyword || ''
 }
 
 function getTransactionClass(transaction: Transaction): string {
@@ -740,6 +792,45 @@ onUnmounted(() => {
   background: #f2f2f7;
 }
 
+/* 搜索框 */
+.search-box {
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.search-icon {
+  color: #8e8e93;
+  flex-shrink: 0;
+}
+
+.search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  padding: 0 8px;
+  background: transparent;
+  color: #000;
+}
+
+.search-input::placeholder {
+  color: #8e8e93;
+}
+
+.clear-search-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  --f7-button-bg-color: rgba(142, 142, 147, 0.12);
+}
+
 .type-filter {
   margin-bottom: 12px;
 }
@@ -929,6 +1020,15 @@ onUnmounted(() => {
   
   .filter-section {
     background: #000;
+  }
+  
+  .search-box {
+    background: #1c1c1e;
+    box-shadow: none;
+  }
+  
+  .search-input {
+    color: #fff;
   }
   
   .date-group-header {

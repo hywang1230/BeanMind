@@ -154,6 +154,24 @@ class TransactionRepository(ABC):
         pass
     
     @abstractmethod
+    def find_by_keyword(
+        self,
+        keyword: str,
+        case_sensitive: bool = False
+    ) -> List[Transaction]:
+        """
+        根据关键词搜索交易（同时搜索描述和付款方）
+        
+        Args:
+            keyword: 搜索关键词
+            case_sensitive: 是否区分大小写
+            
+        Returns:
+            描述或付款方中包含关键词的交易列表
+        """
+        pass
+    
+    @abstractmethod
     def create(self, transaction: Transaction, user_id: Optional[str] = None) -> Transaction:
         """
         创建新交易

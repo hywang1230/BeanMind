@@ -311,6 +311,25 @@ class TransactionRepositoryImpl(TransactionRepository):
                 if keyword_lower in t.description.lower()
             ]
     
+    def find_by_keyword(
+        self,
+        keyword: str,
+        case_sensitive: bool = False
+    ) -> List[Transaction]:
+        """根据关键词搜索交易（同时搜索描述和付款方）"""
+        if case_sensitive:
+            return [
+                t for t in self._transactions_cache.values()
+                if keyword in t.description or (t.payee and keyword in t.payee)
+            ]
+        else:
+            keyword_lower = keyword.lower()
+            return [
+                t for t in self._transactions_cache.values()
+                if keyword_lower in t.description.lower() or 
+                   (t.payee and keyword_lower in t.payee.lower())
+            ]
+    
     def create(self, transaction: Transaction, user_id: Optional[str] = None) -> Transaction:
         """
         创建新交易
