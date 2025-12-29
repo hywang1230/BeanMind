@@ -10,46 +10,23 @@
       <!-- 搜索框 -->
       <div class="search-box">
         <f7-icon ios="f7:search" size="18" class="search-icon"></f7-icon>
-        <input 
-          type="text" 
-          v-model="searchKeyword" 
-          placeholder="搜索备注、付款方..." 
-          @input="onSearchInput"
-          @keyup.enter="applyFilters"
-          class="search-input"
-        />
-        <f7-button 
-          v-if="searchKeyword" 
-          fill 
-          small 
-          round 
-          color="gray" 
-          @click="clearSearch" 
-          class="clear-search-btn"
-        >
+        <input type="text" v-model="searchKeyword" placeholder="搜索备注、付款方..." @input="onSearchInput"
+          @keyup.enter="applyFilters" class="search-input" />
+        <f7-button v-if="searchKeyword" fill small round color="gray" @click="clearSearch" class="clear-search-btn">
           <f7-icon ios="f7:xmark" size="12"></f7-icon>
         </f7-button>
       </div>
-      
+
       <f7-segmented strong tag="div" class="type-filter">
-        <f7-button 
-          v-for="filter in typeFilters" 
-          :key="filter.value"
-          :active="currentTypeFilter === filter.value"
-          @click="selectTypeFilter(filter.value)"
-        >
+        <f7-button v-for="filter in typeFilters" :key="filter.value" :active="currentTypeFilter === filter.value"
+          @click="selectTypeFilter(filter.value)">
           {{ filter.label }}
         </f7-button>
       </f7-segmented>
-      
+
       <div class="date-filter-row">
-        <f7-button 
-          fill 
-          small 
-          :color="hasDateFilter ? 'blue' : 'gray'" 
-          @click="openDateRangePicker"
-          class="date-range-btn"
-        >
+        <f7-button fill small :color="hasDateFilter ? 'blue' : 'gray'" @click="openDateRangePicker"
+          class="date-range-btn">
           <f7-icon ios="f7:calendar" size="16" style="margin-right: 4px;"></f7-icon>
           {{ dateRangeText }}
         </f7-button>
@@ -63,7 +40,7 @@
     <div v-if="loading && transactions.length === 0" class="loading-container">
       <f7-preloader></f7-preloader>
     </div>
-    
+
     <!-- 空状态 -->
     <div v-else-if="transactions.length === 0" class="empty-state">
       <div class="empty-icon">📝</div>
@@ -72,7 +49,7 @@
         开始记账
       </f7-button>
     </div>
-    
+
     <!-- 交易列表 -->
     <div v-else class="transactions-content" ref="scrollContent">
       <div v-for="group in groupedTransactions" :key="group.date" class="transaction-group">
@@ -83,17 +60,11 @@
             {{ formatDayTotal(group.total) }}
           </span>
         </div>
-        
+
         <!-- 该日期的交易列表 - 独立的圆角卡片 -->
         <f7-list media-list dividers-ios strong inset class="transaction-list">
-          <f7-list-item
-            v-for="transaction in group.items"
-            :key="transaction.id"
-            link="#"
-            @click="viewTransaction(transaction)"
-            class="transaction-item"
-            :class="getTransactionClass(transaction)"
-          >
+          <f7-list-item v-for="transaction in group.items" :key="transaction.id" link="#"
+            @click="viewTransaction(transaction)" class="transaction-item" :class="getTransactionClass(transaction)">
             <template #media>
               <div class="transaction-icon" :class="getIconClass(transaction)">
                 <f7-icon :ios="getIcon(transaction)" size="20"></f7-icon>
@@ -113,13 +84,13 @@
           </f7-list-item>
         </f7-list>
       </div>
-      
+
       <!-- 加载更多指示器 -->
       <div v-if="hasMore" class="load-more-indicator" ref="loadMoreTrigger">
         <f7-preloader v-if="loadingMore"></f7-preloader>
         <span v-else class="load-more-text">上滑加载更多</span>
       </div>
-      
+
       <!-- 没有更多数据 -->
       <div v-else-if="transactions.length > 0" class="no-more-data">
         <span>— 没有更多了 —</span>
@@ -219,19 +190,19 @@ interface TransactionGroup {
 
 const groupedTransactions = computed<TransactionGroup[]>(() => {
   const groups: Record<string, TransactionGroup> = {}
-  
+
   for (const transaction of transactions.value) {
     const date = transaction.date
     if (!groups[date]) {
       groups[date] = { date, items: [], total: 0 }
     }
     groups[date].items.push(transaction)
-    
+
     // 计算当日总额
     const amount = getTransactionAmount(transaction)
     groups[date].total += amount
   }
-  
+
   // 按日期降序排列
   return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date))
 })
@@ -239,10 +210,10 @@ const groupedTransactions = computed<TransactionGroup[]>(() => {
 // 辅助函数：获取用于显示的金额值（正负号），不进行汇率转换
 function getDisplayAmountValue(transaction: Transaction): number {
   if (transaction.postings.length === 0) return 0
-  
+
   let totalAmount = 0
   let hasCategory = false
-  
+
   for (const posting of transaction.postings) {
     const amount = Number(posting.amount)
     if (posting.account.startsWith('Income:')) {
@@ -254,7 +225,7 @@ function getDisplayAmountValue(transaction: Transaction): number {
       hasCategory = true
     }
   }
-  
+
   // 如果没有分类账户（转账），取负数一方的金额汇总，然后取相反数
   if (!hasCategory && transaction.postings.length > 0) {
     let negativeTotal = 0
@@ -267,21 +238,21 @@ function getDisplayAmountValue(transaction: Transaction): number {
     // 取相反数作为显示金额（转账不参与日汇总，返回0用于汇总，但显示时用正数）
     return -negativeTotal
   }
-  
+
   return totalAmount
 }
 
 // 获取交易的主要货币（用于显示）
 function getTransactionCurrency(transaction: Transaction): string {
   if (transaction.postings.length === 0) return 'CNY'
-  
+
   // 优先获取分类账户（Expenses/Income）的货币
   for (const posting of transaction.postings) {
     if (posting.account.startsWith('Expenses:') || posting.account.startsWith('Income:')) {
       return posting.currency || 'CNY'
     }
   }
-  
+
   // 如果没有分类账户，取第一个 posting 的货币
   return transaction.postings[0]?.currency || 'CNY'
 }
@@ -289,19 +260,19 @@ function getTransactionCurrency(transaction: Transaction): string {
 // 获取用于日汇总的金额（已转换为 CNY）
 function getTransactionAmountInCNY(transaction: Transaction): number {
   if (transaction.postings.length === 0) return 0
-  
+
   // 日汇总：只计算收入和支出，转账不参与
   if (transaction.transaction_type === 'transfer') {
     return 0
   }
-  
+
   let totalAmountInCNY = 0
-  
+
   for (const posting of transaction.postings) {
     const amount = Number(posting.amount)
     const currency = posting.currency || 'CNY'
     const rate = exchangeRates.value[currency] || 1
-    
+
     if (posting.account.startsWith('Income:')) {
       // Beancount 中 Income 账户：负数表示收入（盈利）
       totalAmountInCNY += -amount * rate  // 转换为 CNY
@@ -309,7 +280,7 @@ function getTransactionAmountInCNY(transaction: Transaction): number {
       totalAmountInCNY += -amount * rate  // 转换为 CNY
     }
   }
-  
+
   return totalAmountInCNY
 }
 
@@ -328,7 +299,7 @@ function openDateRangePicker() {
     dateRangeCalendar.destroy()
     dateRangeCalendar = null
   }
-  
+
   dateRangeCalendar = f7.calendar.create({
     openIn: 'customModal',
     rangePicker: true,
@@ -353,7 +324,7 @@ function openDateRangePicker() {
       }
     }
   })
-  
+
   // 设置初始值
   if (dateRange.value.start && dateRange.value.end) {
     dateRangeCalendar.setValue([
@@ -361,7 +332,7 @@ function openDateRangePicker() {
       new Date(dateRange.value.end)
     ])
   }
-  
+
   dateRangeCalendar.open()
 }
 
@@ -408,35 +379,35 @@ async function loadTransactions(reset: boolean = false) {
   } else {
     loadingMore.value = true
   }
-  
+
   try {
     const query: TransactionsQuery = {
       limit: pageSize,
       offset: reset ? 0 : transactions.value.length
     }
-    
+
     if (currentTypeFilter.value !== 'all') {
       query.transaction_type = currentTypeFilter.value as 'expense' | 'income' | 'transfer'
     }
-    
+
     if (dateRange.value.start) {
       query.start_date = dateRange.value.start
     }
-    
+
     if (dateRange.value.end) {
       query.end_date = dateRange.value.end
     }
-    
+
     // 搜索关键词（同时搜索备注和付款方）
     if (searchKeyword.value.trim()) {
       query.description = searchKeyword.value.trim()
     }
-    
+
     await transactionStore.fetchTransactions(query, !reset)
   } finally {
     loading.value = false
     loadingMore.value = false
-    
+
     // 重新设置观察器
     if (reset) {
       await nextTick()
@@ -453,7 +424,7 @@ function setupIntersectionObserver() {
   if (observer) {
     observer.disconnect()
   }
-  
+
   // 创建新的 observer
   observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
@@ -466,7 +437,7 @@ function setupIntersectionObserver() {
     rootMargin: '200px',
     threshold: 0
   })
-  
+
   // 监听加载更多触发器
   if (loadMoreTrigger.value) {
     observer.observe(loadMoreTrigger.value)
@@ -483,15 +454,15 @@ watch(hasMore, async (newVal) => {
 
 async function loadMore() {
   if (loadingMore.value || !hasMore.value) return
-  
+
   loadingMore.value = true
-  
+
   try {
     const query: TransactionsQuery = {
       limit: pageSize,
       offset: transactions.value.length
     }
-    
+
     if (currentTypeFilter.value !== 'all') {
       query.transaction_type = currentTypeFilter.value as 'expense' | 'income' | 'transfer'
     }
@@ -505,7 +476,7 @@ async function loadMore() {
     if (searchKeyword.value.trim()) {
       query.description = searchKeyword.value.trim()
     }
-    
+
     await transactionStore.fetchTransactions(query, true) // append mode
   } finally {
     loadingMore.value = false
@@ -523,7 +494,7 @@ function viewTransaction(transaction: Transaction) {
   // 保存筛选条件
   saveFilters()
   // 标记当前在流水 Tab，需要在返回时恢复
-  uiStore.setActiveTab('tab-2')
+  uiStore.setActiveTab('tab-3')
   uiStore.markForTabRestore()
   router.push(`/transactions/${transaction.id}`)
 }
@@ -534,7 +505,7 @@ function viewTransaction(transaction: Transaction) {
 function getScrollContainer(): HTMLElement | null {
   // F7 Tab 结构: f7-tab.page-content > transactions-page > transactions-content
   // 滚动发生在 f7-tab.page-content 上
-  const tabContent = document.querySelector('#tab-2.page-content') as HTMLElement
+  const tabContent = document.querySelector('#tab-3.page-content') as HTMLElement
   return tabContent
 }
 
@@ -621,10 +592,10 @@ function getDisplayDescription(transaction: Transaction): string {
 
 function getCategory(transaction: Transaction): string {
   if (transaction.postings.length === 0) return '未分类'
-  
+
   // 提取所有非资产/负债账户（即分类账户）的名称
   const categories: string[] = []
-  
+
   for (const posting of transaction.postings) {
     const account = posting.account
     // 只显示支出和收入分类，跳过资产和负债账户
@@ -637,25 +608,25 @@ function getCategory(transaction: Transaction): string {
       }
     }
   }
-  
+
   if (categories.length === 0) {
     // 如果没有找到分类账户，使用第一个账户
     const account = transaction.postings[0]!.account
     const parts = account.split(':')
     return parts.length >= 2 ? parts[parts.length - 1]! : parts[0]!
   }
-  
+
   return categories.join(', ')
 }
 
 function getAmountClass(transaction: Transaction): string {
   if (transaction.postings.length === 0) return ''
-  
+
   // 转账用蓝色
   if (transaction.transaction_type === 'transfer') {
     return 'neutral'
   }
-  
+
   // 收入/支出根据金额正负决定颜色
   const amount = getDisplayAmountValue(transaction)
   if (amount > 0) return 'positive'
@@ -665,15 +636,15 @@ function getAmountClass(transaction: Transaction): string {
 
 function formatAmount(transaction: Transaction): string {
   if (transaction.postings.length === 0) return '¥0.00'
-  
+
   // 获取交易的主要币种
   const currency = getTransactionCurrency(transaction)
   const symbol = getCurrencySymbol(currency)
-  
+
   // 使用统一的金额计算逻辑
   const amount = getDisplayAmountValue(transaction)
   const displayAmount = Math.abs(amount)
-  
+
   // 不显示 +/- 符号，只用颜色区分
   return `${symbol}${displayAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
@@ -683,18 +654,18 @@ function formatGroupDate(dateStr: string): string {
   const today = new Date()
   const yesterday = new Date(today)
   yesterday.setDate(yesterday.getDate() - 1)
-  
+
   const month = date.getMonth() + 1
   const day = date.getDate()
   const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
   const weekDay = weekDays[date.getDay()]
-  
+
   if (dateStr === formatDateValue(today)) {
     return `今天 ${month}月${day}日`
   } else if (dateStr === formatDateValue(yesterday)) {
     return `昨天 ${month}月${day}日`
   }
-  
+
   return `${month}月${day}日 ${weekDay}`
 }
 
@@ -724,10 +695,10 @@ async function loadExchangeRates() {
 onMounted(async () => {
   // 加载汇率数据（用于多币种转换）
   await loadExchangeRates()
-  
+
   // 检查是否需要刷新数据（在删除、新增、编辑操作后）
   const needsRefresh = uiStore.checkAndClearTransactionsRefresh()
-  
+
   if (needsRefresh) {
     // 恢复筛选条件
     restoreFilters()
@@ -1009,59 +980,59 @@ onUnmounted(() => {
   .transactions-page {
     background: #000;
   }
-  
+
   .page-header {
     background: #000;
   }
-  
+
   .page-header h1 {
     color: #fff;
   }
-  
+
   .filter-section {
     background: #000;
   }
-  
+
   .search-box {
     background: #1c1c1e;
     box-shadow: none;
   }
-  
+
   .search-input {
     color: #fff;
   }
-  
+
   .date-group-header {
     background: #000 !important;
   }
-  
+
   .transaction-title {
     color: #fff;
   }
-  
+
   .transaction-icon.expense-icon {
     background: rgba(255, 69, 58, 0.18);
     color: #ff453a;
   }
-  
+
   .transaction-icon.income-icon {
     background: rgba(48, 209, 88, 0.18);
     color: #30d158;
   }
-  
+
   .transaction-icon.transfer-icon {
     background: rgba(10, 132, 255, 0.18);
     color: #0a84ff;
   }
-  
+
   .transaction-amount.positive {
     color: #30d158;
   }
-  
+
   .transaction-amount.negative {
     color: #ff453a;
   }
-  
+
   .transaction-amount.neutral {
     color: #0a84ff;
   }
