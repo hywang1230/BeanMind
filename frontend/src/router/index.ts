@@ -62,11 +62,17 @@ const routes: RouteRecordRaw[] = [
         component: () => import('../pages/transactions/TransactionDetailPage.vue'),
         meta: { requiresAuth: true }
     },
-    // 保留这些页面在主布局外（如果需要单独访问）
+    // 保留这些页面在主布局外(如果需要单独访问)
     {
         path: '/accounts',
         name: 'Accounts',
         component: () => import('../pages/accounts/AccountsPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/accounts/:accountName',
+        name: 'AccountManagementDetail',
+        component: () => import('../pages/accounts/AccountDetailPage.vue'),
         meta: { requiresAuth: true }
     },
     {

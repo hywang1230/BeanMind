@@ -18,6 +18,7 @@ ENV/
 *~
 .agent
 .cursor/
+CLAUDE.md
 
 # Data
 data/*.db
