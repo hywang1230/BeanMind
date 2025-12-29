@@ -2,6 +2,8 @@
 
 FastAPI 应用入口
 """
+import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -12,11 +14,42 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import settings
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    # 启动时
+    if settings.SCHEDULER_ENABLED:
+        from backend.infrastructure.scheduler import recurring_scheduler
+        
+        recurring_scheduler.start()
+        recurring_scheduler.add_recurring_job(
+            hour=settings.SCHEDULER_HOUR,
+            minute=settings.SCHEDULER_MINUTE,
+            timezone=settings.SCHEDULER_TIMEZONE,
+        )
+        logger.info(
+            f"周期记账调度器已启动: 每天 {settings.SCHEDULER_HOUR:02d}:{settings.SCHEDULER_MINUTE:02d} "
+            f"({settings.SCHEDULER_TIMEZONE}) 执行"
+        )
+    
+    yield
+    
+    # 关闭时
+    if settings.SCHEDULER_ENABLED:
+        from backend.infrastructure.scheduler import recurring_scheduler
+        recurring_scheduler.shutdown()
+        logger.info("周期记账调度器已关闭")
+
+
 app = FastAPI(
     title="BeanMind API",
     description="基于 Beancount 的个人财务管理系统",
     version="0.1.0",
     debug=settings.DEBUG,
+    lifespan=lifespan,
 )
 
 # CORS 配置

@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     AI_ENABLED: bool = False
     AGENTUNIVERSE_CONFIG: Path = Path("./config/agent_config.yaml")
     
+    # ==================== 周期记账调度配置 ====================
+    SCHEDULER_ENABLED: bool = True
+    SCHEDULER_HOUR: int = 12  # 执行时间（小时，24小时制）
+    SCHEDULER_MINUTE: int = 0  # 执行时间（分钟）
+    SCHEDULER_TIMEZONE: str = "Asia/Shanghai"  # 时区
+    
     # ==================== 服务器配置 ====================
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000

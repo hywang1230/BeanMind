@@ -78,9 +78,27 @@ def get_settings():
     return settings
 
 
+def get_db_session() -> Session:
+    """
+    获取数据库会话（非生成器版本）
+    
+    用于后台任务、调度器等非 FastAPI 上下文的场景
+    调用者负责手动关闭会话
+    
+    用法:
+        db = get_db_session()
+        try:
+            # 使用 db
+        finally:
+            db.close()
+    """
+    return SessionLocal()
+
+
 # 导出所有依赖
 __all__ = [
     "get_db",
+    "get_db_session",
     "get_settings",
     "get_beancount_service",
     # "get_current_user",  # 将在步骤 2.x 实现

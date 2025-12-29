@@ -321,3 +321,65 @@ def get_recurring_executions(
         )
         for ex in executions
     ]
+
+
+# ==================== 调度器相关 API ====================
+
+@router.get("/scheduler/status")
+def get_scheduler_status():
+    """获取调度器状态"""
+    from backend.infrastructure.scheduler import recurring_scheduler
+    
+    job_info = recurring_scheduler.get_job_info()
+    
+    return {
+        "enabled": True,
+        "running": job_info.get("running", False),
+        "job_id": job_info.get("id"),
+        "job_name": job_info.get("name"),
+        "next_run_time": job_info.get("next_run_time"),
+    }
+
+
+@router.post("/scheduler/execute")
+def trigger_scheduler_execution(db: Session = Depends(get_db)):
+    """手动触发调度器执行当天的周期任务"""
+    from backend.application.services.recurring_service import RecurringApplicationService
+    
+    today = date.today()
+    service = RecurringApplicationService(db)
+    
+    results = service.execute_due_rules(today)
+    
+    success_count = sum(1 for r in results if r.get("status") == "SUCCESS")
+    fail_count = sum(1 for r in results if r.get("status") == "FAILED")
+    skip_count = sum(1 for r in results if r.get("status") == "SKIPPED")
+    
+    return {
+        "message": "执行完成",
+        "date": today.isoformat(),
+        "summary": {
+            "total": len(results),
+            "success": success_count,
+            "failed": fail_count,
+            "skipped": skip_count,
+        },
+        "results": results,
+    }
+
+
+@router.get("/scheduler/pending")
+def get_pending_rules(db: Session = Depends(get_db)):
+    """获取今天待执行的规则列表"""
+    from backend.application.services.recurring_service import RecurringApplicationService
+    
+    today = date.today()
+    service = RecurringApplicationService(db)
+    
+    pending_rules = service.get_pending_rules(today)
+    
+    return {
+        "date": today.isoformat(),
+        "count": len(pending_rules),
+        "rules": pending_rules,
+    }
