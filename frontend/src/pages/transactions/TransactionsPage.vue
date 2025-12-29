@@ -733,26 +733,29 @@ onUnmounted(() => {
 })
 </script>
 
+
 <style scoped>
 .transactions-page {
   min-height: 100vh;
-  background: #f2f2f7;
+  background: var(--bg-primary);
   display: flex;
   flex-direction: column;
+  transition: background-color 0.3s;
 }
 
 .page-header {
   padding: 12px 16px 8px;
   position: sticky;
   top: 0;
-  background: #f2f2f7;
+  background: var(--bg-primary);
   z-index: 10;
+  transition: background-color 0.3s;
 }
 
 .page-header h1 {
   font-size: 34px;
   font-weight: 700;
-  color: #000;
+  color: var(--text-primary);
   margin: 0;
   letter-spacing: -0.4px;
 }
@@ -760,18 +763,20 @@ onUnmounted(() => {
 /* 筛选区域 */
 .filter-section {
   padding: 0 16px 12px;
-  background: #f2f2f7;
+  background: var(--bg-primary);
+  transition: background-color 0.3s;
 }
 
 /* 搜索框 */
 .search-box {
   display: flex;
   align-items: center;
-  background: #fff;
+  background: var(--bg-secondary);
   border-radius: 10px;
   padding: 8px 12px;
   margin-bottom: 12px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: background-color 0.3s;
 }
 
 .search-icon {
@@ -786,7 +791,7 @@ onUnmounted(() => {
   font-size: 15px;
   padding: 0 8px;
   background: transparent;
-  color: #000;
+  color: var(--text-primary);
 }
 
 .search-input::placeholder {
@@ -890,16 +895,18 @@ onUnmounted(() => {
 }
 
 .day-summary.positive {
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .day-summary.negative {
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 /* 交易项 */
 .transaction-item {
   --f7-list-item-padding-horizontal: 16px;
+  background: var(--bg-secondary);
+  /* 确保列表项背景正确 */
 }
 
 .transaction-icon {
@@ -913,23 +920,23 @@ onUnmounted(() => {
 
 .transaction-icon.expense-icon {
   background: rgba(255, 59, 48, 0.12);
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 .transaction-icon.income-icon {
   background: rgba(52, 199, 89, 0.12);
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .transaction-icon.transfer-icon {
   background: rgba(0, 122, 255, 0.12);
-  color: #007aff;
+  color: var(--ios-blue);
 }
 
 .transaction-title {
   font-size: 16px;
   font-weight: 500;
-  color: #000;
+  color: var(--text-primary);
 }
 
 .transaction-desc {
@@ -943,15 +950,15 @@ onUnmounted(() => {
 }
 
 .transaction-amount.positive {
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .transaction-amount.negative {
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 .transaction-amount.neutral {
-  color: #007aff;
+  color: var(--ios-blue);
 }
 
 /* 加载更多 */
@@ -973,69 +980,6 @@ onUnmounted(() => {
   padding: 20px;
   color: #8e8e93;
   font-size: 13px;
-}
-
-/* 暗黑模式 */
-@media (prefers-color-scheme: dark) {
-  .transactions-page {
-    background: #000;
-  }
-
-  .page-header {
-    background: #000;
-  }
-
-  .page-header h1 {
-    color: #fff;
-  }
-
-  .filter-section {
-    background: #000;
-  }
-
-  .search-box {
-    background: #1c1c1e;
-    box-shadow: none;
-  }
-
-  .search-input {
-    color: #fff;
-  }
-
-  .date-group-header {
-    background: #000 !important;
-  }
-
-  .transaction-title {
-    color: #fff;
-  }
-
-  .transaction-icon.expense-icon {
-    background: rgba(255, 69, 58, 0.18);
-    color: #ff453a;
-  }
-
-  .transaction-icon.income-icon {
-    background: rgba(48, 209, 88, 0.18);
-    color: #30d158;
-  }
-
-  .transaction-icon.transfer-icon {
-    background: rgba(10, 132, 255, 0.18);
-    color: #0a84ff;
-  }
-
-  .transaction-amount.positive {
-    color: #30d158;
-  }
-
-  .transaction-amount.negative {
-    color: #ff453a;
-  }
-
-  .transaction-amount.neutral {
-    color: #0a84ff;
-  }
 }
 </style>
 

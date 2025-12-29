@@ -451,7 +451,7 @@ onMounted(() => {
 
 .empty-text {
   font-size: 16px;
-  color: var(--f7-text-color);
+  color: var(--text-primary);
   opacity: 0.6;
   margin-bottom: 24px;
 }
@@ -461,9 +461,29 @@ onMounted(() => {
   padding-bottom: 80px;
 }
 
-/* 账户列表 */
+/* 账户列表样式覆盖 */
 .account-list {
   margin-top: 0;
+  --f7-list-bg-color: var(--bg-secondary);
+  --f7-list-item-title-text-color: var(--text-primary);
+  --f7-list-item-after-text-color: #8e8e93;
+  --f7-list-item-border-color: var(--separator);
+}
+
+:deep(.list .item-content) {
+  background-color: var(--bg-secondary);
+}
+
+:deep(.list strong) {
+  background-color: var(--bg-secondary);
+}
+
+:deep(.item-title) {
+  color: var(--text-primary);
+}
+
+:deep(.item-subtitle) {
+  color: #8e8e93;
 }
 
 /* 树项缩进 */
@@ -503,27 +523,27 @@ onMounted(() => {
 
 .account-icon.assets-icon {
   background: rgba(0, 122, 255, 0.12);
-  color: #007aff;
+  color: var(--ios-blue);
 }
 
 .account-icon.liabilities-icon {
   background: rgba(175, 82, 222, 0.12);
-  color: #af52de;
+  color: var(--ios-purple);
 }
 
 .account-icon.income-icon {
   background: rgba(52, 199, 89, 0.12);
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .account-icon.expenses-icon {
   background: rgba(255, 59, 48, 0.12);
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 .account-icon.equity-icon {
   background: rgba(255, 149, 0, 0.12);
-  color: #ff9500;
+  color: var(--ios-orange);
 }
 
 /* 展开图标 */
@@ -535,7 +555,7 @@ onMounted(() => {
 /* 错误块 */
 .error-block {
   background: rgba(255, 59, 48, 0.12);
-  color: #ff3b30;
+  color: var(--ios-red);
   padding: 16px;
   border-radius: 8px;
   margin: 16px;
@@ -552,38 +572,5 @@ onMounted(() => {
   color: var(--f7-theme-color);
   font-weight: 600;
   font-size: 12px;
-}
-
-/* 暗黑模式 */
-@media (prefers-color-scheme: dark) {
-  .account-icon.assets-icon {
-    background: rgba(10, 132, 255, 0.18);
-    color: #0a84ff;
-  }
-
-  .account-icon.liabilities-icon {
-    background: rgba(191, 90, 242, 0.18);
-    color: #bf5af2;
-  }
-
-  .account-icon.income-icon {
-    background: rgba(48, 209, 88, 0.18);
-    color: #30d158;
-  }
-
-  .account-icon.expenses-icon {
-    background: rgba(255, 69, 58, 0.18);
-    color: #ff453a;
-  }
-
-  .account-icon.equity-icon {
-    background: rgba(255, 159, 10, 0.18);
-    color: #ff9f0a;
-  }
-
-  .error-block {
-    background: rgba(255, 69, 58, 0.18);
-    color: #ff453a;
-  }
 }
 </style>

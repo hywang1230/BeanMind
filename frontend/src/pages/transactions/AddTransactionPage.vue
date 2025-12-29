@@ -8,7 +8,9 @@
       </f7-nav-left>
       <f7-nav-title>记一笔</f7-nav-title>
       <f7-nav-right>
-        <f7-link @click="handleSubmit" :class="{ disabled: loading }" :style="{ opacity: (!isFormValid || loading) ? 0.5 : 1 }">{{ loading ? '保存中' : (isMultiSelect ? '下一步' : '保存') }}</f7-link>
+        <f7-link @click="handleSubmit" :class="{ disabled: loading }"
+          :style="{ opacity: (!isFormValid || loading) ? 0.5 : 1 }">{{ loading ? '保存中' : (isMultiSelect ? '下一步' : '保存')
+          }}</f7-link>
       </f7-nav-right>
     </f7-navbar>
 
@@ -22,26 +24,16 @@
 
     <f7-list strong-ios dividers-ios inset-ios form>
       <!-- 账户/转出账户 -->
-      <f7-list-item
-        class="account-item"
-        link="#"
-        :title="formData.type === 'transfer' ? '转出账户' : '账户'"
-        :after="formatAccountDisplay(formData.fromAccount) || '请选择'"
-        @click="openFromAccountPicker"
-      >
+      <f7-list-item class="account-item" link="#" :title="formData.type === 'transfer' ? '转出账户' : '账户'"
+        :after="formatAccountDisplay(formData.fromAccount) || '请选择'" @click="openFromAccountPicker">
         <template #media>
           <i class="icon f7-icons">creditcard_fill</i>
         </template>
       </f7-list-item>
 
       <!-- 币种 -->
-      <f7-list-item
-        title="币种"
-        :after="formData.currency"
-        :link="availableCurrencies.length > 1 ? '#' : undefined"
-        class="currency-trigger"
-        @click="openCurrencyPopover"
-      >
+      <f7-list-item title="币种" :after="formData.currency" :link="availableCurrencies.length > 1 ? '#' : undefined"
+        class="currency-trigger" @click="openCurrencyPopover">
         <template #media>
           <i class="icon f7-icons">money_dollar_circle_fill</i>
         </template>
@@ -53,87 +45,50 @@
           <i class="icon f7-icons">money_yen_circle_fill</i>
         </template>
         <div class="amount-row">
-          <AmountInput
-            v-model="formData.amount"
-            :allow-negative="formData.type !== 'transfer'"
-            :currency="formData.currency"
-          />
+          <AmountInput v-model="formData.amount" :allow-negative="formData.type !== 'transfer'"
+            :currency="formData.currency" />
         </div>
       </f7-list-item>
 
       <!-- 分类 (非转账) -->
-      <f7-list-item
-        v-if="formData.type !== 'transfer'"
-        class="account-item"
-        link="#"
-        title="分类"
-        :after="formatAccountDisplay(formData.category) || '请选择'"
-        @click="openCategoryPicker"
-      >
+      <f7-list-item v-if="formData.type !== 'transfer'" class="account-item" link="#" title="分类"
+        :after="formatAccountDisplay(formData.category) || '请选择'" @click="openCategoryPicker">
         <template #media>
           <i class="icon f7-icons">folder_fill</i>
         </template>
       </f7-list-item>
 
       <!-- 转入账户 -->
-      <f7-list-item
-        v-if="formData.type === 'transfer'"
-        class="account-item"
-        link="#"
-        title="转入账户"
-        :after="formatAccountDisplay(formData.toAccount) || '请选择'"
-        @click="openToAccountPicker"
-      >
+      <f7-list-item v-if="formData.type === 'transfer'" class="account-item" link="#" title="转入账户"
+        :after="formatAccountDisplay(formData.toAccount) || '请选择'" @click="openToAccountPicker">
         <template #media>
           <i class="icon f7-icons">arrow_right_circle_fill</i>
         </template>
       </f7-list-item>
 
       <!-- 日期 -->
-      <f7-list-item
-        title="日期"
-        :after="formData.date"
-        link="#"
-        @click="openCalendar"
-      >
+      <f7-list-item title="日期" :after="formData.date" link="#" @click="openCalendar">
         <template #media>
           <i class="icon f7-icons">calendar_today</i>
         </template>
       </f7-list-item>
 
       <!-- 交易方 -->
-      <f7-list-item
-        title="交易方"
-        :after="formData.payee || '请选择'"
-        link="#"
-        @click="openPayeePicker"
-      >
+      <f7-list-item title="交易方" :after="formData.payee || '请选择'" link="#" @click="openPayeePicker">
         <template #media>
           <i class="icon f7-icons">person_2_fill</i>
         </template>
       </f7-list-item>
 
       <!-- 备注 -->
-      <f7-list-input
-        label="备注"
-        type="textarea"
-        v-model:value="formData.description"
-        placeholder="添加备注"
-        resizable
-      >
+      <f7-list-input label="备注" type="textarea" v-model:value="formData.description" placeholder="添加备注" resizable>
         <template #media>
           <i class="icon f7-icons">pencil_circle</i>
         </template>
       </f7-list-input>
 
       <!-- 标签 -->
-      <f7-list-input
-        label="标签"
-        type="text"
-        v-model:value="formData.tagString"
-        placeholder="标签用空格分隔"
-        info="例如: 旅行 餐饮"
-      >
+      <f7-list-input label="标签" type="text" v-model:value="formData.tagString" placeholder="标签用空格分隔" info="例如: 旅行 餐饮">
         <template #media>
           <i class="icon f7-icons">tag_fill</i>
         </template>
@@ -145,51 +100,27 @@
     </f7-block>
 
     <!-- Pickers -->
-    <AccountSelectionPopup
-      v-model:opened="showCategoryPicker"
-      title="选择分类"
-      :root-types="categoryRoots"
-      @select="onCategorySelect"
-    />
+    <AccountSelectionPopup v-model:opened="showCategoryPicker" title="选择分类" :root-types="categoryRoots"
+      @select="onCategorySelect" />
 
-    <PayeeSelectionPopup
-      v-model:opened="showPayeePicker"
-      @select="onPayeeSelect"
-    />
+    <PayeeSelectionPopup v-model:opened="showPayeePicker" @select="onPayeeSelect" />
 
-    <AccountSelectionPopup
-      v-model:opened="showFromAccountPicker"
-      :title="formData.type === 'transfer' ? '选择转出账户' : '选择账户'"
-      :root-types="accountRoots"
-      @select="onFromAccountSelect"
-    />
+    <AccountSelectionPopup v-model:opened="showFromAccountPicker"
+      :title="formData.type === 'transfer' ? '选择转出账户' : '选择账户'" :root-types="accountRoots"
+      @select="onFromAccountSelect" />
 
-    <AccountSelectionPopup
-      v-model:opened="showToAccountPicker"
-      title="选择转入账户"
-      :root-types="['Assets', 'Liabilities']"
-      @select="onToAccountSelect"
-    />
+    <AccountSelectionPopup v-model:opened="showToAccountPicker" title="选择转入账户" :root-types="['Assets', 'Liabilities']"
+      @select="onToAccountSelect" />
 
     <!-- Currency Popover -->
-    <f7-popover
-      class="currency-popover"
-      :opened="showCurrencyPopover"
-      @popover:closed="showCurrencyPopover = false"
-      target-el=".currency-trigger"
-    >
+    <f7-popover class="currency-popover" :opened="showCurrencyPopover" @popover:closed="showCurrencyPopover = false"
+      target-el=".currency-trigger">
       <f7-list>
-        <f7-list-item
-          v-for="curr in availableCurrencies"
-          :key="curr"
-          :title="curr"
-          link="#"
-          popover-close
-          @click="onCurrencySelect(curr)"
-        >
+        <f7-list-item v-for="curr in availableCurrencies" :key="curr" :title="curr" link="#" popover-close
+          @click="onCurrencySelect(curr)">
           <template #media>
-             <f7-icon v-if="formData.currency === curr" f7="checkmark_alt" size="20" color="blue"></f7-icon>
-             <span v-else style="width: 20px; display: inline-block;"></span>
+            <f7-icon v-if="formData.currency === curr" f7="checkmark_alt" size="20" color="blue"></f7-icon>
+            <span v-else style="width: 20px; display: inline-block;"></span>
           </template>
         </f7-list-item>
       </f7-list>
@@ -254,7 +185,7 @@ onMounted(async () => {
   // Restore from draft if exists
   const draft = transactionStore.transactionDraft
   if (draft) {
-      formData.value = { ...draft }
+    formData.value = { ...draft }
   }
 
   try {
@@ -284,10 +215,10 @@ const availableCurrencies = computed(() => {
     ...formData.value.category
   ]
   if (selectedNames.length === 0) return DEFAULT_CURRENCIES
-  
+
   const accountsInfo = getSelectedAccountsInfo(selectedNames)
   if (accountsInfo.length === 0) return DEFAULT_CURRENCIES
-  
+
   // Intersection of currencies
   // Special case: if account.currencies is empty, it maintains all DEFAULT_CURRENCIES
   let common: string[] | null = null
@@ -300,7 +231,7 @@ const availableCurrencies = computed(() => {
       common = common.filter(c => accCurrs.includes(c))
     }
   }
-  
+
   return common || []
 })
 
@@ -331,7 +262,7 @@ const isFormValid = computed(() => {
   if (formData.value.type === 'transfer' && formData.value.amount < 0) return false
   if (!formData.value.date) return false
   if (formData.value.fromAccount.length === 0) return false
-  
+
   if (formData.value.type === 'transfer') {
     return formData.value.toAccount.length > 0
   } else {
@@ -349,11 +280,11 @@ function goBack() {
 function selectType(type: 'expense' | 'income' | 'transfer') {
   formData.value.type = type
   if (type === 'transfer') {
-      formData.value.category = []
+    formData.value.category = []
   } else if (type === 'expense' && formData.value.category.some(c => c.startsWith('Income'))) {
-      formData.value.category = []
+    formData.value.category = []
   } else if (type === 'income' && formData.value.category.some(c => c.startsWith('Expenses'))) {
-      formData.value.category = []
+    formData.value.category = []
   }
 }
 
@@ -471,77 +402,77 @@ function buildPostings(): Posting[] {
 
 const isMultiSelect = computed(() => {
   if (formData.value.type === 'transfer') {
-      return formData.value.fromAccount.length > 1 || formData.value.toAccount.length > 1
+    return formData.value.fromAccount.length > 1 || formData.value.toAccount.length > 1
   }
   return formData.value.category.length > 1 || formData.value.fromAccount.length > 1
 })
 
 async function handleSubmit() {
   if (!isFormValid.value) {
-      f7.toast.show({ text: '请填写所有必填项', position: 'center', closeTimeout: 2000 })
-      return 
+    f7.toast.show({ text: '请填写所有必填项', position: 'center', closeTimeout: 2000 })
+    return
   }
 
   if (isMultiSelect.value) {
-      // Create draft
-      const draft: TransactionDraft = {
-          ...formData.value,
-          amount: formData.value.amount || 0, // Ensure number
-          categoryDistributions: transactionStore.transactionDraft?.categoryDistributions || {},
-          accountDistributions: transactionStore.transactionDraft?.accountDistributions || {}
-      }
-      transactionStore.setTransactionDraft(draft)
+    // Create draft
+    const draft: TransactionDraft = {
+      ...formData.value,
+      amount: formData.value.amount || 0, // Ensure number
+      categoryDistributions: transactionStore.transactionDraft?.categoryDistributions || {},
+      accountDistributions: transactionStore.transactionDraft?.accountDistributions || {}
+    }
+    transactionStore.setTransactionDraft(draft)
 
-      // Navigate
-      if (formData.value.type !== 'transfer' && formData.value.category.length > 1) {
-           router.push({ path: '/transactions/distribute', query: { type: 'category', depth: 2 } })
-      } else if (formData.value.type === 'transfer') {
-           if (formData.value.fromAccount.length > 1) {
-                router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', depth: 2 } })
-           } else {
-                router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', depth: 2 } })
-           }
+    // Navigate
+    if (formData.value.type !== 'transfer' && formData.value.category.length > 1) {
+      router.push({ path: '/transactions/distribute', query: { type: 'category', depth: 2 } })
+    } else if (formData.value.type === 'transfer') {
+      if (formData.value.fromAccount.length > 1) {
+        router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', depth: 2 } })
       } else {
-           // Expense/Income with multiple accounts
-           router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', depth: 2 } })
+        router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', depth: 2 } })
       }
-      return
+    } else {
+      // Expense/Income with multiple accounts
+      router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', depth: 2 } })
+    }
+    return
   }
 
   loading.value = true
   error.value = ''
 
   try {
-      const tags = formData.value.tagString
-        .split(' ')
-        .map(t => t.trim())
-        .filter(t => t.length > 0)
+    const tags = formData.value.tagString
+      .split(' ')
+      .map(t => t.trim())
+      .filter(t => t.length > 0)
 
-      const request: CreateTransactionRequest = {
-          date: formData.value.date,
-          description: formData.value.description || undefined,
-          payee: formData.value.payee || undefined,
-          postings: buildPostings(),
-          tags: tags.length > 0 ? tags : undefined
-      }
+    const request: CreateTransactionRequest = {
+      date: formData.value.date,
+      description: formData.value.description || undefined,
+      payee: formData.value.payee || undefined,
+      postings: buildPostings(),
+      tags: tags.length > 0 ? tags : undefined
+    }
 
-      await transactionStore.createTransaction(request)
-      // 标记交易列表需要刷新
-      uiStore.markTransactionsNeedsRefresh()
-      router.back()
+    await transactionStore.createTransaction(request)
+    // 标记交易列表需要刷新
+    uiStore.markTransactionsNeedsRefresh()
+    router.back()
   } catch (err: any) {
-      console.error(err)
-      error.value = err.message || '保存失败'
+    console.error(err)
+    error.value = err.message || '保存失败'
   } finally {
-      loading.value = false
+    loading.value = false
   }
 }
 </script>
 
 <style scoped>
 .margin-vertical {
-    margin-top: 16px;
-    margin-bottom: 16px;
+  margin-top: 16px;
+  margin-bottom: 16px;
 }
 
 .amount-row {
@@ -551,7 +482,8 @@ async function handleSubmit() {
   gap: 8px;
 }
 
-.currency-badge, .currency-badge-fixed {
+.currency-badge,
+.currency-badge-fixed {
   background: var(--f7-theme-color);
   color: white;
   padding: 2px 8px;
@@ -577,5 +509,58 @@ async function handleSubmit() {
 .account-item :deep(.item-title) {
   flex-shrink: 0;
 }
+
+/* 适配暗黑模式的列表样式 */
+:deep(.list) {
+  --f7-list-item-title-text-color: var(--text-primary);
+  --f7-list-bg-color: var(--bg-secondary);
+  --f7-list-item-border-color: var(--separator);
+}
+
+:deep(.list .item-content) {
+  background-color: var(--bg-secondary);
+}
+
+:deep(.list .item-title) {
+  color: var(--text-primary);
+}
+
+/* 适配暗黑模式的币种选择 Popover */
+:deep(.currency-popover .popover-inner) {
+  background-color: var(--bg-secondary);
+}
+
+:deep(.currency-popover .list) {
+  background-color: transparent;
+}
 </style>
 
+<style>
+/* 全局样式覆盖 Popover，因为 Popover 挂载在组件外部 */
+.currency-popover .popover-inner {
+  background-color: var(--bg-secondary) !important;
+}
+
+.currency-popover .list {
+  background-color: transparent !important;
+}
+
+.currency-popover .item-title {
+  color: var(--text-primary) !important;
+}
+
+/* 覆盖链接箭头颜色 */
+.currency-popover .item-link .item-inner:after {
+  color: #8e8e93 !important;
+}
+
+/* 选中状态的图标颜色 */
+.currency-popover .icon {
+  color: var(--ios-blue) !important;
+}
+
+/* 点击态背景 */
+.currency-popover .item-link.active-state {
+  background: var(--bg-tertiary) !important;
+}
+</style>

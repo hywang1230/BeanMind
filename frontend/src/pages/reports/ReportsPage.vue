@@ -7,7 +7,7 @@
         </f7-link>
       </template>
     </f7-navbar>
-    
+
     <div class="reports-content">
       <!-- 报表入口卡片 -->
       <div class="report-cards">
@@ -15,7 +15,8 @@
         <div class="report-card" @click="goToBalanceSheet">
           <div class="report-icon balance-sheet-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+              <path
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
             </svg>
           </div>
           <div class="report-info">
@@ -24,16 +25,16 @@
           </div>
           <div class="report-arrow">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
             </svg>
           </div>
         </div>
-        
+
         <!-- 利润表 -->
         <div class="report-card" @click="goToIncomeStatement">
           <div class="report-icon income-statement-icon">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-              <path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z"/>
+              <path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z" />
             </svg>
           </div>
           <div class="report-info">
@@ -42,12 +43,12 @@
           </div>
           <div class="report-arrow">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
             </svg>
           </div>
         </div>
       </div>
-      
+
       <!-- 报表说明 -->
       <div class="report-help">
         <h4 class="help-title">报表说明</h4>
@@ -90,8 +91,9 @@ function goToIncomeStatement() {
 <style scoped>
 .reports-content {
   min-height: 100%;
-  background: #f2f2f7;
+  background: var(--bg-primary);
   padding: 16px;
+  transition: background-color 0.3s;
 }
 
 .report-cards {
@@ -104,7 +106,7 @@ function goToIncomeStatement() {
 .report-card {
   display: flex;
   align-items: center;
-  background: #fff;
+  background: var(--bg-secondary);
   border-radius: 12px;
   padding: 16px;
   cursor: pointer;
@@ -114,7 +116,7 @@ function goToIncomeStatement() {
 
 .report-card:active {
   transform: scale(0.98);
-  background: #f8f8f8;
+  background: var(--bg-tertiary);
 }
 
 .report-icon {
@@ -146,7 +148,7 @@ function goToIncomeStatement() {
 .report-title {
   font-size: 17px;
   font-weight: 600;
-  color: #000;
+  color: var(--text-primary);
   margin: 0 0 4px;
 }
 
@@ -165,9 +167,10 @@ function goToIncomeStatement() {
 
 /* 报表说明 */
 .report-help {
-  background: #fff;
+  background: var(--bg-secondary);
   border-radius: 12px;
   padding: 16px;
+  transition: background-color 0.3s;
 }
 
 .help-title {
@@ -181,7 +184,7 @@ function goToIncomeStatement() {
 
 .help-item {
   padding: 12px 0;
-  border-bottom: 0.5px solid #e5e5ea;
+  border-bottom: 0.5px solid var(--separator);
 }
 
 .help-item:last-child {
@@ -193,7 +196,7 @@ function goToIncomeStatement() {
   display: block;
   font-size: 15px;
   font-weight: 500;
-  color: #000;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 
@@ -201,37 +204,5 @@ function goToIncomeStatement() {
   font-size: 13px;
   color: #8e8e93;
   line-height: 1.5;
-}
-
-/* 暗黑模式 */
-@media (prefers-color-scheme: dark) {
-  .reports-content {
-    background: #000;
-  }
-  
-  .report-card {
-    background: #1c1c1e;
-  }
-  
-  .report-card:active {
-    background: #2c2c2e;
-  }
-  
-  .report-title,
-  .help-label {
-    color: #fff;
-  }
-  
-  .report-help {
-    background: #1c1c1e;
-  }
-  
-  .help-item {
-    border-bottom-color: #38383a;
-  }
-  
-  .report-arrow {
-    color: #48484a;
-  }
 }
 </style>

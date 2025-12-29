@@ -11,27 +11,18 @@
         <f7-nav-title>{{ title }}</f7-nav-title>
         <f7-nav-right v-if="allowMultiSelect">
           <f7-link v-if="!isMultiSelect" @click="isMultiSelect = true">多选</f7-link>
-          <f7-link v-else @click="confirmMultiSelect" bold :class="{ 'disabled': selectedNames.length === 0 }">确定</f7-link>
+          <f7-link v-else @click="confirmMultiSelect" bold
+            :class="{ 'disabled': selectedNames.length === 0 }">确定</f7-link>
         </f7-nav-right>
       </f7-navbar>
-      
-      <f7-searchbar
-        placeholder="搜索账户"
-        v-model:value="searchQuery"
-        :disable-button="false"
-        @searchbar:clear="searchQuery = ''"
-      ></f7-searchbar>
+
+      <f7-searchbar placeholder="搜索账户" v-model:value="searchQuery" :disable-button="false"
+        @searchbar:clear="searchQuery = ''"></f7-searchbar>
 
       <f7-list class="account-tree-list">
         <f7-treeview v-if="filteredAccounts.length > 0">
-          <account-tree-item
-            v-for="account in filteredAccounts"
-            :key="account.name"
-            :account="account"
-            :is-multi-select="isMultiSelect"
-            :selected-names="selectedNames"
-            @select="onAccountSelect"
-          />
+          <account-tree-item v-for="account in filteredAccounts" :key="account.name" :account="account"
+            :is-multi-select="isMultiSelect" :selected-names="selectedNames" @select="onAccountSelect" />
         </f7-treeview>
         <f7-list-item v-else title="未找到账户"></f7-list-item>
       </f7-list>
@@ -83,14 +74,14 @@ const defaultRootTypes = ['Assets', 'Liabilities']
  */
 function buildTree(flatAccounts: Account[]): AccountTreeNode[] {
   const nodeMap = new Map<string, AccountTreeNode>()
-  
+
   for (const account of flatAccounts) {
     const parts = account.name.split(':')
     let currentPath = ''
-    
+
     parts.forEach((part, i) => {
       currentPath = currentPath ? `${currentPath}:${part}` : part
-      
+
       if (!nodeMap.has(currentPath)) {
         nodeMap.set(currentPath, {
           name: currentPath,
@@ -101,9 +92,9 @@ function buildTree(flatAccounts: Account[]): AccountTreeNode[] {
       }
     })
   }
-  
+
   const roots: AccountTreeNode[] = []
-  
+
   for (const [path, node] of nodeMap) {
     const parts = path.split(':')
     if (parts.length === 1) {
@@ -118,42 +109,42 @@ function buildTree(flatAccounts: Account[]): AccountTreeNode[] {
       }
     }
   }
-  
+
   return roots
 }
 
 const filteredAccounts = computed(() => {
-  const types = (props.rootTypes && props.rootTypes.length > 0) 
-    ? props.rootTypes 
+  const types = (props.rootTypes && props.rootTypes.length > 0)
+    ? props.rootTypes
     : defaultRootTypes
-  
+
   const filtered = accounts.value.filter(acc => types.includes(acc.account_type))
   const tree = buildTree(filtered)
-  
+
   const secondLevelNodes: AccountTreeNode[] = []
   for (const root of tree) {
     if (root.children && root.children.length > 0) {
       secondLevelNodes.push(...root.children)
     }
   }
-  
+
   if (!searchQuery.value) {
     return secondLevelNodes
   }
-  
+
   const query = searchQuery.value.toLowerCase()
-  
+
   function filterTree(nodes: AccountTreeNode[]): AccountTreeNode[] {
     const result: AccountTreeNode[] = []
-    
+
     for (const node of nodes) {
       const parts = node.name.split(':')
       const nodeName = parts[parts.length - 1] || ''
       const matchesSelf = nodeName.toLowerCase().includes(query)
-      
+
       const filteredChildren = filterTree(node.children)
       const hasMatchingChildren = filteredChildren.length > 0
-      
+
       if (matchesSelf || hasMatchingChildren) {
         result.push({
           ...node,
@@ -162,10 +153,10 @@ const filteredAccounts = computed(() => {
         })
       }
     }
-    
+
     return result
   }
-  
+
   return filterTree(secondLevelNodes)
 })
 
@@ -220,3 +211,54 @@ onMounted(() => {
 })
 </script>
 
+<style scoped>
+/* 确保 Popup 内部元素使用正确的背景色和文字颜色 */
+:deep(.page) {
+  background-color: var(--bg-primary);
+}
+
+:deep(.navbar-inner),
+:deep(.navbar-bg) {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+:deep(.subnavbar) {
+  background-color: var(--bg-primary);
+}
+
+:deep(.searchbar) {
+  background-color: var(--bg-primary);
+}
+
+:deep(.searchbar input) {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+:deep(.list) {
+  background-color: var(--bg-primary);
+}
+
+:deep(.item-content) {
+  background-color: transparent;
+  color: var(--text-primary);
+}
+
+/* 针对树形控件的样式覆盖 */
+:deep(.treeview-item-content) {
+  color: var(--text-primary);
+  /* 移除背景色，避免嵌套导致的多重底纹 */
+  background-color: transparent;
+}
+
+:deep(.treeview-item-label) {
+  color: var(--text-primary);
+}
+
+:deep(.treeview-toggle) {
+  color: var(--text-secondary);
+}
+
+/* 选中状态（如果需要高亮）可以在这里处理，但目前 AccountTreeItem 已经处理了 selected-item 类 */
+</style>

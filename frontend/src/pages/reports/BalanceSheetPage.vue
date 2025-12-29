@@ -8,7 +8,7 @@
         </f7-link>
       </template>
     </f7-navbar>
-    
+
     <div class="balance-sheet-content">
       <!-- 日期选择器 -->
       <div class="date-picker-section" @click="openDatePicker">
@@ -18,19 +18,19 @@
           <f7-icon f7="calendar" size="18" class="date-icon"></f7-icon>
         </div>
       </div>
-      
+
       <!-- 加载状态 -->
       <div v-if="loading" class="loading-container">
         <div class="loading-spinner"></div>
         <p class="loading-text">加载中...</p>
       </div>
-      
+
       <!-- 错误状态 -->
       <div v-else-if="error" class="error-container">
         <p class="error-text">{{ error }}</p>
         <button @click="loadBalanceSheet()" class="retry-btn">重试</button>
       </div>
-      
+
       <!-- 报表内容 -->
       <div v-else-if="data" class="report-body">
         <!-- 汇总卡片 -->
@@ -57,18 +57,19 @@
             </div>
           </div>
         </div>
-        
+
         <!-- 汇率信息 -->
         <div v-if="data.currencies.length > 1" class="exchange-rates-card">
           <div class="card-header">汇率参考</div>
           <div class="rates-list">
             <div v-for="currency in data.currencies" :key="currency" class="rate-item">
               <span class="rate-currency">{{ currency }}</span>
-              <span class="rate-value">{{ currency === 'CNY' ? '1.00' : formatRate(data.exchange_rates[currency]) }}</span>
+              <span class="rate-value">{{ currency === 'CNY' ? '1.00' : formatRate(data.exchange_rates[currency])
+                }}</span>
             </div>
           </div>
         </div>
-        
+
         <!-- 资产类 -->
         <div class="category-section">
           <div class="category-header">
@@ -79,19 +80,12 @@
             <div class="category-total">{{ formatCurrency(data.assets.total_cny) }}</div>
           </div>
           <div class="accounts-list">
-            <ReportAccountTreeItem 
-              v-for="account in data.assets.accounts" 
-              :key="account.account"
-              :item="account"
-              type="asset"
-              :default-expanded="false"
-              :expanded-accounts="expandedAccounts"
-              @click-account="handleAccountClick"
-              @toggle-expand="handleToggleExpand"
-            />
+            <ReportAccountTreeItem v-for="account in data.assets.accounts" :key="account.account" :item="account"
+              type="asset" :default-expanded="false" :expanded-accounts="expandedAccounts"
+              @click-account="handleAccountClick" @toggle-expand="handleToggleExpand" />
           </div>
         </div>
-        
+
         <!-- 负债类 -->
         <div class="category-section">
           <div class="category-header">
@@ -102,19 +96,12 @@
             <div class="category-total liabilities">{{ formatCurrency(data.liabilities.total_cny) }}</div>
           </div>
           <div class="accounts-list">
-            <ReportAccountTreeItem 
-              v-for="account in data.liabilities.accounts" 
-              :key="account.account"
-              :item="account"
-              type="liability"
-              :default-expanded="false"
-              :expanded-accounts="expandedAccounts"
-              @click-account="handleAccountClick"
-              @toggle-expand="handleToggleExpand"
-            />
+            <ReportAccountTreeItem v-for="account in data.liabilities.accounts" :key="account.account" :item="account"
+              type="liability" :default-expanded="false" :expanded-accounts="expandedAccounts"
+              @click-account="handleAccountClick" @toggle-expand="handleToggleExpand" />
           </div>
         </div>
-        
+
         <!-- 权益类 -->
         <div class="category-section">
           <div class="category-header">
@@ -125,16 +112,9 @@
             <div class="category-total equity">{{ formatCurrency(data.equity.total_cny) }}</div>
           </div>
           <div class="accounts-list">
-            <ReportAccountTreeItem 
-              v-for="account in data.equity.accounts" 
-              :key="account.account"
-              :item="account"
-              type="equity"
-              :default-expanded="false"
-              :expanded-accounts="expandedAccounts"
-              @click-account="handleAccountClick"
-              @toggle-expand="handleToggleExpand"
-            />
+            <ReportAccountTreeItem v-for="account in data.equity.accounts" :key="account.account" :item="account"
+              type="equity" :default-expanded="false" :expanded-accounts="expandedAccounts"
+              @click-account="handleAccountClick" @toggle-expand="handleToggleExpand" />
           </div>
         </div>
       </div>
@@ -254,7 +234,7 @@ function openDatePicker() {
     dateCalendar.destroy()
     dateCalendar = null
   }
-  
+
   dateCalendar = f7.calendar.create({
     openIn: 'customModal',
     header: true,
@@ -278,7 +258,7 @@ function openDatePicker() {
       }
     }
   })
-  
+
   dateCalendar.open()
 }
 
@@ -314,7 +294,7 @@ function formatRate(rate: number | undefined): string {
 async function loadBalanceSheet(scrollPositionToRestore?: number) {
   loading.value = true
   error.value = ''
-  
+
   try {
     data.value = await reportsApi.getBalanceSheet({
       as_of_date: selectedDate.value
@@ -358,13 +338,14 @@ onMounted(() => {
 <style scoped>
 .balance-sheet-content {
   min-height: 100%;
-  background: #f2f2f7;
+  background: var(--bg-primary);
   padding-bottom: 20px;
+  transition: background-color 0.3s;
 }
 
 /* 日期选择器 */
 .date-picker-section {
-  background: #fff;
+  background: var(--bg-secondary);
   padding: 12px 16px;
   margin-bottom: 8px;
   display: flex;
@@ -375,12 +356,12 @@ onMounted(() => {
 }
 
 .date-picker-section:active {
-  background-color: #f8f8f8;
+  background-color: var(--bg-tertiary);
 }
 
 .date-picker-label {
   font-size: 15px;
-  color: #000;
+  color: var(--text-primary);
   font-weight: 500;
 }
 
@@ -389,11 +370,11 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   font-size: 15px;
-  color: #007aff;
+  color: var(--ios-blue);
 }
 
 .date-icon {
-  color: #007aff;
+  color: var(--ios-blue);
 }
 
 /* 加载状态 */
@@ -408,14 +389,16 @@ onMounted(() => {
 .loading-spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #e5e5ea;
-  border-top-color: #007aff;
+  border: 3px solid var(--separator);
+  border-top-color: var(--ios-blue);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .loading-text {
@@ -434,13 +417,13 @@ onMounted(() => {
 
 .error-text {
   font-size: 15px;
-  color: #ff3b30;
+  color: var(--ios-red);
   margin-bottom: 16px;
 }
 
 .retry-btn {
   padding: 10px 24px;
-  background: #007aff;
+  background: var(--ios-blue);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -451,7 +434,7 @@ onMounted(() => {
 
 /* 汇总卡片 */
 .summary-card {
-  background: #fff;
+  background: var(--bg-secondary);
   margin: 0 16px 12px;
   border-radius: 12px;
   padding: 20px 16px;
@@ -472,16 +455,16 @@ onMounted(() => {
 .summary-value {
   font-size: 32px;
   font-weight: 700;
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .summary-value.negative {
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 .summary-divider {
   height: 1px;
-  background: #e5e5ea;
+  background: var(--separator);
   margin-bottom: 16px;
 }
 
@@ -504,16 +487,24 @@ onMounted(() => {
 .item-value {
   font-size: 15px;
   font-weight: 600;
-  color: #000;
+  color: var(--text-primary);
 }
 
-.item-value.assets { color: #34c759; }
-.item-value.liabilities { color: #ff9500; }
-.item-value.equity { color: #007aff; }
+.item-value.assets {
+  color: var(--ios-green);
+}
+
+.item-value.liabilities {
+  color: var(--ios-orange);
+}
+
+.item-value.equity {
+  color: var(--ios-blue);
+}
 
 /* 汇率信息卡片 */
 .exchange-rates-card {
-  background: #fff;
+  background: var(--bg-secondary);
   margin: 0 16px 12px;
   border-radius: 12px;
   overflow: hidden;
@@ -539,14 +530,14 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: #f8f8f8;
+  background: var(--bg-tertiary);
   border-radius: 6px;
 }
 
 .rate-currency {
   font-size: 13px;
   font-weight: 600;
-  color: #000;
+  color: var(--text-primary);
 }
 
 .rate-value {
@@ -556,7 +547,7 @@ onMounted(() => {
 
 /* 分类区域 */
 .category-section {
-  background: #fff;
+  background: var(--bg-secondary);
   margin: 0 16px 12px;
   border-radius: 12px;
   overflow: hidden;
@@ -567,8 +558,8 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 14px 16px;
-  background: #f8f8f8;
-  border-bottom: 1px solid #e5e5ea;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--separator);
 }
 
 .category-title {
@@ -577,7 +568,7 @@ onMounted(() => {
   gap: 8px;
   font-size: 16px;
   font-weight: 600;
-  color: #000;
+  color: var(--text-primary);
 }
 
 .category-icon {
@@ -587,98 +578,18 @@ onMounted(() => {
 .category-total {
   font-size: 16px;
   font-weight: 600;
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .category-total.liabilities {
-  color: #ff9500;
+  color: var(--ios-orange);
 }
 
 .category-total.equity {
-  color: #007aff;
+  color: var(--ios-blue);
 }
 
 .accounts-list {
   padding: 0;
 }
-
-/* 暗黑模式 */
-@media (prefers-color-scheme: dark) {
-  .balance-sheet-content {
-    background: #000;
-  }
-  
-  .date-picker-section,
-  .summary-card,
-  .exchange-rates-card,
-  .category-section {
-    background: #1c1c1e;
-  }
-  
-  .date-picker-section:active {
-    background-color: #2c2c2e;
-  }
-  
-  .date-picker-label {
-    color: #fff;
-  }
-  
-  .date-picker-value {
-    color: #0a84ff;
-  }
-  
-  .date-icon {
-    color: #0a84ff;
-  }
-  
-  .summary-value {
-    color: #30d158;
-  }
-  
-  .summary-value.negative {
-    color: #ff453a;
-  }
-  
-  .summary-divider {
-    background: #38383a;
-  }
-  
-  .item-value {
-    color: #fff;
-  }
-  
-  .item-value.assets { color: #30d158; }
-  .item-value.liabilities { color: #ff9f0a; }
-  .item-value.equity { color: #0a84ff; }
-  
-  .rate-item {
-    background: #2c2c2e;
-  }
-  
-  .rate-currency {
-    color: #fff;
-  }
-  
-  .category-header {
-    background: #2c2c2e;
-    border-bottom-color: #38383a;
-  }
-  
-  .category-title {
-    color: #fff;
-  }
-  
-  .category-total {
-    color: #30d158;
-  }
-  
-  .category-total.liabilities {
-    color: #ff9f0a;
-  }
-  
-  .category-total.equity {
-    color: #0a84ff;
-  }
-}
 </style>
-

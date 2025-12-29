@@ -1,79 +1,72 @@
 <template>
-  <div class="amount-input-container">
-    <!-- Display Area (Click to open keypad) -->
-    <div class="amount-display" @click="openKeypad" :class="{ 'focused': isKeypadOpen }">
-      <span class="currency-symbol">{{ currencySymbol }}</span>
-      <span class="value-text">{{ displayValue }}</span>
-      <span class="cursor" v-if="isKeypadOpen">|</span>
-    </div>
-
-    <!-- Keypad Sheet -->
-    <f7-sheet
-      class="amount-keypad-sheet"
-      :opened="isKeypadOpen"
-      @sheet:closed="onSheetClosed"
-      style="height: auto;"
-      backdrop
-      close-by-backdrop-click
-      swipe-to-close
-    >
-        <div class="keypad-grid">
-            <button class="key-btn number-key" @click="append('1')">1</button>
-            <button class="key-btn number-key" @click="append('2')">2</button>
-            <button class="key-btn number-key" @click="append('3')">3</button>
-            <button class="key-btn action-key" @click="handleDelete">
-                 <i class="f7-icons">delete_left</i>
-            </button>
-
-            <button class="key-btn number-key" @click="append('4')">4</button>
-            <button class="key-btn number-key" @click="append('5')">5</button>
-            <button class="key-btn number-key" @click="append('6')">6</button>
-            <button class="key-btn op-key" @click="append('+')">+</button>
-
-            <button class="key-btn number-key" @click="append('7')">7</button>
-            <button class="key-btn number-key" @click="append('8')">8</button>
-            <button class="key-btn number-key" @click="append('9')">9</button>
-            <button class="key-btn op-key" @click="append('-')">-</button>
-
-            <button class="key-btn number-key" @click="append('.')">.</button>
-            <button class="key-btn number-key" @click="append('0')">0</button>
-            <button class="key-btn action-key highlight" style="grid-column: span 2" @click="handleOK">
-                确定
-            </button>
+    <div class="amount-input-container">
+        <!-- Display Area (Click to open keypad) -->
+        <div class="amount-display" @click="openKeypad" :class="{ 'focused': isKeypadOpen }">
+            <span class="currency-symbol">{{ currencySymbol }}</span>
+            <span class="value-text">{{ displayValue }}</span>
+            <span class="cursor" v-if="isKeypadOpen">|</span>
         </div>
-    </f7-sheet>
-  </div>
+
+        <!-- Keypad Sheet -->
+        <f7-sheet class="amount-keypad-sheet" :opened="isKeypadOpen" @sheet:closed="onSheetClosed" style="height: auto;"
+            backdrop close-by-backdrop-click swipe-to-close>
+            <div class="keypad-grid">
+                <button class="key-btn number-key" @click="append('1')">1</button>
+                <button class="key-btn number-key" @click="append('2')">2</button>
+                <button class="key-btn number-key" @click="append('3')">3</button>
+                <button class="key-btn action-key" @click="handleDelete">
+                    <i class="f7-icons">delete_left</i>
+                </button>
+
+                <button class="key-btn number-key" @click="append('4')">4</button>
+                <button class="key-btn number-key" @click="append('5')">5</button>
+                <button class="key-btn number-key" @click="append('6')">6</button>
+                <button class="key-btn op-key" @click="append('+')">+</button>
+
+                <button class="key-btn number-key" @click="append('7')">7</button>
+                <button class="key-btn number-key" @click="append('8')">8</button>
+                <button class="key-btn number-key" @click="append('9')">9</button>
+                <button class="key-btn op-key" @click="append('-')">-</button>
+
+                <button class="key-btn number-key" @click="append('.')">.</button>
+                <button class="key-btn number-key" @click="append('0')">0</button>
+                <button class="key-btn action-key highlight" style="grid-column: span 2" @click="handleOK">
+                    确定
+                </button>
+            </div>
+        </f7-sheet>
+    </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 
 interface Props {
-  modelValue?: number
-  allowNegative?: boolean
-  currency?: string
+    modelValue?: number
+    allowNegative?: boolean
+    currency?: string
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  modelValue: 0,
-  allowNegative: true,
-  currency: 'CNY'
+    modelValue: 0,
+    allowNegative: true,
+    currency: 'CNY'
 })
 
 const emit = defineEmits<{
-  (e: 'update:modelValue', value: number): void
+    (e: 'update:modelValue', value: number): void
 }>()
 
 const currencySymbol = computed(() => {
-  const symbols: Record<string, string> = {
-    'CNY': '¥',
-    'USD': '$',
-    'HKD': 'HK$',
-    'EUR': '€',
-    'JPY': '¥',
-    'GBP': '£'
-  }
-  return symbols[props.currency || 'CNY'] || props.currency || ''
+    const symbols: Record<string, string> = {
+        'CNY': '¥',
+        'USD': '$',
+        'HKD': 'HK$',
+        'EUR': '€',
+        'JPY': '¥',
+        'GBP': '£'
+    }
+    return symbols[props.currency || 'CNY'] || props.currency || ''
 })
 
 const isKeypadOpen = ref(false)
@@ -119,7 +112,7 @@ function append(char: string) {
         const currentNum = parts[parts.length - 1]
         if (currentNum && currentNum.includes('.')) return
     }
-    
+
     // Prevent multiple operators
     if (['+', '-'].includes(char)) {
         const lastChar = expression.value.slice(-1)
@@ -143,8 +136,8 @@ function handleDelete() {
 function calculate() {
     try {
         if (!expression.value) {
-             emit('update:modelValue', 0)
-             return
+            emit('update:modelValue', 0)
+            return
         }
         // Safe evaluation
         // Replace potential issues
@@ -153,9 +146,9 @@ function calculate() {
         if (['+', '-'].includes(sanitized.slice(-1))) {
             sanitized = sanitized.slice(0, -1)
         }
-        
+
         let result = Function('"use strict";return (' + sanitized + ')')()
-        
+
         // Handle constraint
         if (!props.allowNegative && result < 0) {
             // Revert or Clamp?
@@ -163,12 +156,12 @@ function calculate() {
             // Better to just set to positive? Or 0? Or warn?
             // "Only positive" usually means absolute value for Entry, but let's clamp to 0 or warning.
             // Since this is a keypad behavior, let's clamp 0 if negative not allowed.
-            result = 0 
+            result = 0
         }
 
         // Float precision
         result = Math.round(result * 100) / 100
-        
+
         emit('update:modelValue', result)
         expression.value = result.toString()
     } catch (e) {
@@ -190,7 +183,8 @@ function handleOK() {
 .amount-display {
     display: flex;
     align-items: center;
-    justify-content: flex-end; /* Align right like numbers usually are */
+    justify-content: flex-end;
+    /* Align right like numbers usually are */
     font-size: 24px;
     font-weight: 600;
     padding: 10px 0;
@@ -206,11 +200,11 @@ function handleOK() {
 .currency-symbol {
     font-size: 0.8em;
     margin-right: 4px;
-    color: #666;
+    color: var(--text-secondary);
 }
 
 .value-text {
-    color: #333;
+    color: var(--text-primary);
 }
 
 .cursor {
@@ -221,8 +215,15 @@ function handleOK() {
 }
 
 @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0;
+    }
 }
 
 .keypad-grid {
@@ -230,45 +231,46 @@ function handleOK() {
     grid-template-columns: repeat(4, 1fr);
     gap: 8px;
     padding: 8px;
-    background: #f0f0f5;
+    background: var(--bg-tertiary);
     padding-bottom: calc(8px + var(--f7-safe-area-bottom));
 }
 
 .key-btn {
     appearance: none;
     border: none;
-    background: white;
+    background: var(--bg-secondary);
     border-radius: 5px;
     font-size: 20px;
     font-weight: 500;
-    color: #000;
+    color: var(--text-primary);
     padding: 15px 0;
-    box-shadow: 0 1px 1px rgba(0,0,0,0.2);
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: background-color 0.1s;
 }
 
 .key-btn:active {
-    background: #e5e5e5;
+    background: var(--bg-tertiary);
 }
 
 .action-key {
-    background: #e4e4e9;
+    background: var(--bg-tertiary);
 }
 
 .highlight {
     background: var(--f7-theme-color);
     color: white;
 }
+
 .highlight:active {
     opacity: 0.8;
 }
 
 .op-key {
-    background: #ffcc00; /* Calculator orange or just distinct */
-    background: #f4d03f;
-    color: black;
+    background: var(--ios-orange);
+    color: white;
 }
 </style>

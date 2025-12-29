@@ -10,34 +10,21 @@
         </f7-nav-left>
         <f7-nav-title>选择交易方</f7-nav-title>
       </f7-navbar>
-      
-      <f7-searchbar
-        placeholder="搜索或输入新交易方"
-        v-model:value="searchQuery"
-        :disable-button="false"
-        @searchbar:clear="searchQuery = ''"
-      ></f7-searchbar>
+
+      <f7-searchbar placeholder="搜索或输入新交易方" v-model:value="searchQuery" :disable-button="false"
+        @searchbar:clear="searchQuery = ''"></f7-searchbar>
 
       <f7-list>
         <!-- 如果搜索内容不在列表中，显示使用当前输入 -->
-        <f7-list-item
-          v-if="searchQuery && !filteredPayees.includes(searchQuery)"
-          :title="`使用 '${searchQuery}'`"
-          link="#"
-          @click="onPayeeSelect(searchQuery)"
-        >
+        <f7-list-item v-if="searchQuery && !filteredPayees.includes(searchQuery)" :title="`使用 '${searchQuery}'`"
+          link="#" @click="onPayeeSelect(searchQuery)">
           <template #media>
             <f7-icon f7="plus_circle_fill" color="blue"></f7-icon>
           </template>
         </f7-list-item>
 
-        <f7-list-item
-          v-for="payee in filteredPayees"
-          :key="payee"
-          :title="payee"
-          link="#"
-          @click="onPayeeSelect(payee)"
-        ></f7-list-item>
+        <f7-list-item v-for="payee in filteredPayees" :key="payee" :title="payee" link="#"
+          @click="onPayeeSelect(payee)"></f7-list-item>
 
         <f7-list-item v-if="filteredPayees.length === 0 && !searchQuery" title="暂无历史交易方"></f7-list-item>
       </f7-list>
@@ -72,7 +59,7 @@ async function loadPayees() {
   try {
     const res = await transactionsApi.getPayees()
     if (Array.isArray(res)) {
-       allPayees.value = res
+      allPayees.value = res
     }
   } catch (e) {
     console.error('Failed to load payees', e)
@@ -101,3 +88,38 @@ onMounted(() => {
   loadPayees()
 })
 </script>
+
+<style scoped>
+/* 确保 Popup 内部元素使用正确的背景色和文字颜色 */
+:deep(.page) {
+  background-color: var(--bg-primary);
+}
+
+:deep(.navbar-inner),
+:deep(.navbar-bg) {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+:deep(.subnavbar) {
+  background-color: var(--bg-primary);
+}
+
+:deep(.searchbar) {
+  background-color: var(--bg-primary);
+}
+
+:deep(.searchbar input) {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+:deep(.list) {
+  background-color: var(--bg-primary);
+}
+
+:deep(.item-content) {
+  background-color: transparent;
+  color: var(--text-primary);
+}
+</style>

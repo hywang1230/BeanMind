@@ -8,7 +8,7 @@
         </f7-link>
       </template>
     </f7-navbar>
-    
+
     <div class="income-statement-content">
       <!-- 日期范围选择器 -->
       <div class="date-range-section" @click="openDateRangePicker">
@@ -19,39 +19,35 @@
         </div>
         <f7-icon f7="calendar" size="18" class="date-icon"></f7-icon>
       </div>
-      
+
       <!-- 快捷日期选择 -->
       <div class="quick-date-section">
-        <button 
-          v-for="preset in datePresets" 
-          :key="preset.label"
-          class="quick-date-btn"
-          :class="{ active: isPresetActive(preset) }"
-          @click="applyPreset(preset)"
-        >
+        <button v-for="preset in datePresets" :key="preset.label" class="quick-date-btn"
+          :class="{ active: isPresetActive(preset) }" @click="applyPreset(preset)">
           {{ preset.label }}
         </button>
       </div>
-      
+
       <!-- 加载状态 -->
       <div v-if="loading" class="loading-container">
         <div class="loading-spinner"></div>
         <p class="loading-text">加载中...</p>
       </div>
-      
+
       <!-- 错误状态 -->
       <div v-else-if="error" class="error-container">
         <p class="error-text">{{ error }}</p>
         <button @click="loadIncomeStatement()" class="retry-btn">重试</button>
       </div>
-      
+
       <!-- 报表内容 -->
       <div v-else-if="data" class="report-body">
         <!-- 汇总卡片 -->
         <div class="summary-card">
           <div class="summary-row main-row">
             <div class="summary-label">净利润</div>
-            <div class="summary-value" :class="{ negative: data.net_profit_cny < 0, positive: data.net_profit_cny >= 0 }">
+            <div class="summary-value"
+              :class="{ negative: data.net_profit_cny < 0, positive: data.net_profit_cny >= 0 }">
               {{ data.net_profit_cny >= 0 ? '+' : '' }}{{ formatCurrency(data.net_profit_cny) }}
             </div>
           </div>
@@ -67,17 +63,13 @@
             </div>
           </div>
         </div>
-        
+
         <!-- 收入分析图 -->
         <div v-if="data.income.items.length > 0" class="chart-card">
           <div class="card-header">收入构成</div>
           <div class="pie-chart-container">
             <div class="pie-legend">
-              <div 
-                v-for="(item, index) in topIncomeItems" 
-                :key="item.account"
-                class="legend-item"
-              >
+              <div v-for="(item, index) in topIncomeItems" :key="item.account" class="legend-item">
                 <span class="legend-color" :style="{ background: incomeColors[index % incomeColors.length] }"></span>
                 <span class="legend-name">{{ item.display_name }}</span>
                 <span class="legend-value">{{ item.percentage.toFixed(1) }}%</span>
@@ -85,17 +77,13 @@
             </div>
           </div>
         </div>
-        
+
         <!-- 支出分析图 -->
         <div v-if="data.expenses.items.length > 0" class="chart-card">
           <div class="card-header">支出构成</div>
           <div class="pie-chart-container">
             <div class="pie-legend">
-              <div 
-                v-for="(item, index) in topExpenseItems" 
-                :key="item.account"
-                class="legend-item"
-              >
+              <div v-for="(item, index) in topExpenseItems" :key="item.account" class="legend-item">
                 <span class="legend-color" :style="{ background: expenseColors[index % expenseColors.length] }"></span>
                 <span class="legend-name">{{ item.display_name }}</span>
                 <span class="legend-value">{{ item.percentage.toFixed(1) }}%</span>
@@ -103,7 +91,7 @@
             </div>
           </div>
         </div>
-        
+
         <!-- 收入类 -->
         <div class="category-section">
           <div class="category-header">
@@ -114,22 +102,15 @@
             <div class="category-total income">+{{ formatCurrency(data.income.total_cny) }}</div>
           </div>
           <div class="items-list">
-            <IncomeExpenseTreeItem 
-              v-for="item in sortedIncomeItems" 
-              :key="item.account"
-              :item="item"
-              type="income"
-              :default-expanded="false"
-              :expanded-accounts="expandedAccounts"
-              @click-account="handleAccountClick"
-              @toggle-expand="handleToggleExpand"
-            />
+            <IncomeExpenseTreeItem v-for="item in sortedIncomeItems" :key="item.account" :item="item" type="income"
+              :default-expanded="false" :expanded-accounts="expandedAccounts" @click-account="handleAccountClick"
+              @toggle-expand="handleToggleExpand" />
           </div>
           <div v-if="data.income.items.length === 0" class="empty-hint">
             本期无收入记录
           </div>
         </div>
-        
+
         <!-- 支出类 -->
         <div class="category-section">
           <div class="category-header">
@@ -140,16 +121,9 @@
             <div class="category-total expense">-{{ formatCurrency(data.expenses.total_cny) }}</div>
           </div>
           <div class="items-list">
-            <IncomeExpenseTreeItem 
-              v-for="item in sortedExpenseItems" 
-              :key="item.account"
-              :item="item"
-              type="expense"
-              :default-expanded="false"
-              :expanded-accounts="expandedAccounts"
-              @click-account="handleAccountClick"
-              @toggle-expand="handleToggleExpand"
-            />
+            <IncomeExpenseTreeItem v-for="item in sortedExpenseItems" :key="item.account" :item="item" type="expense"
+              :default-expanded="false" :expanded-accounts="expandedAccounts" @click-account="handleAccountClick"
+              @toggle-expand="handleToggleExpand" />
           </div>
           <div v-if="data.expenses.items.length === 0" class="empty-hint">
             本期无支出记录
@@ -248,8 +222,8 @@ function formatDateValue(d: Date): string {
 function getInitialState(): { start: string, end: string, expandedAccounts: Set<string> } {
   const cached = getCachedState()
   if (cached) {
-    return { 
-      start: cached.startDate, 
+    return {
+      start: cached.startDate,
       end: cached.endDate,
       expandedAccounts: new Set(cached.expandedAccounts || [])
     }
@@ -286,7 +260,7 @@ function openDateRangePicker() {
     dateRangeCalendar.destroy()
     dateRangeCalendar = null
   }
-  
+
   dateRangeCalendar = f7.calendar.create({
     openIn: 'customModal',
     rangePicker: true,
@@ -315,7 +289,7 @@ function openDateRangePicker() {
       }
     }
   })
-  
+
   dateRangeCalendar.open()
 }
 
@@ -403,8 +377,8 @@ function sortItemsByAmount(items: IncomeExpenseItem[]): IncomeExpenseItem[] {
     .sort((a, b) => b.total_cny - a.total_cny)
     .map(item => ({
       ...item,
-      children: item.children && item.children.length > 0 
-        ? sortItemsByAmount(item.children) 
+      children: item.children && item.children.length > 0
+        ? sortItemsByAmount(item.children)
         : []
     }))
 }
@@ -471,7 +445,7 @@ function formatCurrency(amount: number): string {
 async function loadIncomeStatement(scrollPositionToRestore?: number) {
   loading.value = true
   error.value = ''
-  
+
   try {
     data.value = await reportsApi.getIncomeStatement({
       start_date: startDate.value,
@@ -516,13 +490,14 @@ onMounted(() => {
 <style scoped>
 .income-statement-content {
   min-height: 100%;
-  background: #f2f2f7;
+  background: var(--bg-primary);
   padding-bottom: 20px;
+  transition: background-color 0.3s;
 }
 
 /* 日期范围选择器 */
 .date-range-section {
-  background: #fff;
+  background: var(--bg-secondary);
   padding: 14px 16px;
   display: flex;
   align-items: center;
@@ -532,7 +507,7 @@ onMounted(() => {
 }
 
 .date-range-section:active {
-  background: #f8f8f8;
+  background: var(--bg-tertiary);
 }
 
 .date-range-display {
@@ -544,7 +519,7 @@ onMounted(() => {
 .date-text {
   font-size: 16px;
   font-weight: 500;
-  color: #007aff;
+  color: var(--ios-blue);
 }
 
 .date-separator {
@@ -553,35 +528,35 @@ onMounted(() => {
 }
 
 .date-icon {
-  color: #007aff;
+  color: var(--ios-blue);
 }
 
 /* 快捷日期选择 */
 .quick-date-section {
-  background: #fff;
+  background: var(--bg-secondary);
   padding: 8px 16px 12px;
   display: flex;
   gap: 8px;
-  border-top: 0.5px solid #e5e5ea;
+  border-top: 0.5px solid var(--separator);
   margin-bottom: 8px;
   overflow-x: auto;
 }
 
 .quick-date-btn {
   padding: 6px 14px;
-  border: 1px solid #e5e5ea;
+  border: 1px solid var(--separator);
   border-radius: 16px;
-  background: #fff;
+  background: var(--bg-secondary);
   font-size: 13px;
-  color: #000;
+  color: var(--text-primary);
   white-space: nowrap;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .quick-date-btn.active {
-  background: #007aff;
-  border-color: #007aff;
+  background: var(--ios-blue);
+  border-color: var(--ios-blue);
   color: #fff;
 }
 
@@ -597,14 +572,16 @@ onMounted(() => {
 .loading-spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid #e5e5ea;
-  border-top-color: #007aff;
+  border: 3px solid var(--separator);
+  border-top-color: var(--ios-blue);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .loading-text {
@@ -623,13 +600,13 @@ onMounted(() => {
 
 .error-text {
   font-size: 15px;
-  color: #ff3b30;
+  color: var(--ios-red);
   margin-bottom: 16px;
 }
 
 .retry-btn {
   padding: 10px 24px;
-  background: #007aff;
+  background: var(--ios-blue);
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -640,7 +617,7 @@ onMounted(() => {
 
 /* 汇总卡片 */
 .summary-card {
-  background: #fff;
+  background: var(--bg-secondary);
   margin: 0 16px 12px;
   border-radius: 12px;
   padding: 20px 16px;
@@ -664,16 +641,16 @@ onMounted(() => {
 }
 
 .summary-value.positive {
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .summary-value.negative {
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 .summary-divider {
   height: 1px;
-  background: #e5e5ea;
+  background: var(--separator);
   margin-bottom: 16px;
 }
 
@@ -698,12 +675,17 @@ onMounted(() => {
   font-weight: 600;
 }
 
-.item-value.income { color: #34c759; }
-.item-value.expense { color: #ff3b30; }
+.item-value.income {
+  color: var(--ios-green);
+}
+
+.item-value.expense {
+  color: var(--ios-red);
+}
 
 /* 图表卡片 */
 .chart-card {
-  background: #fff;
+  background: var(--bg-secondary);
   margin: 0 16px 12px;
   border-radius: 12px;
   overflow: hidden;
@@ -743,7 +725,7 @@ onMounted(() => {
 .legend-name {
   flex: 1;
   font-size: 14px;
-  color: #000;
+  color: var(--text-primary);
 }
 
 .legend-value {
@@ -754,7 +736,7 @@ onMounted(() => {
 
 /* 分类区域 */
 .category-section {
-  background: #fff;
+  background: var(--bg-secondary);
   margin: 0 16px 12px;
   border-radius: 12px;
   overflow: hidden;
@@ -765,8 +747,8 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   padding: 14px 16px;
-  background: #f8f8f8;
-  border-bottom: 1px solid #e5e5ea;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--separator);
 }
 
 .category-title {
@@ -775,7 +757,7 @@ onMounted(() => {
   gap: 8px;
   font-size: 16px;
   font-weight: 600;
-  color: #000;
+  color: var(--text-primary);
 }
 
 .category-icon {
@@ -788,11 +770,11 @@ onMounted(() => {
 }
 
 .category-total.income {
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .category-total.expense {
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 .items-list {
@@ -805,77 +787,4 @@ onMounted(() => {
   font-size: 14px;
   color: #8e8e93;
 }
-
-/* 暗黑模式 */
-@media (prefers-color-scheme: dark) {
-  .income-statement-content {
-    background: #000;
-  }
-  
-  .date-range-section,
-  .quick-date-section {
-    background: #1c1c1e;
-    border-top-color: #38383a;
-  }
-  
-  .date-input {
-    background: #2c2c2e;
-    border-color: #38383a;
-    color: #0a84ff;
-  }
-  
-  .quick-date-btn {
-    background: #2c2c2e;
-    border-color: #38383a;
-    color: #fff;
-  }
-  
-  .quick-date-btn.active {
-    background: #0a84ff;
-    border-color: #0a84ff;
-  }
-  
-  .summary-card,
-  .chart-card,
-  .category-section {
-    background: #1c1c1e;
-  }
-  
-  .summary-value.positive {
-    color: #30d158;
-  }
-  
-  .summary-value.negative {
-    color: #ff453a;
-  }
-  
-  .summary-divider {
-    background: #38383a;
-  }
-  
-  .item-value.income { color: #30d158; }
-  .item-value.expense { color: #ff453a; }
-  
-  .legend-name {
-    color: #fff;
-  }
-  
-  .category-header {
-    background: #2c2c2e;
-    border-bottom-color: #38383a;
-  }
-  
-  .category-title {
-    color: #fff;
-  }
-  
-  .category-total.income {
-    color: #30d158;
-  }
-  
-  .category-total.expense {
-    color: #ff453a;
-  }
-}
 </style>
-

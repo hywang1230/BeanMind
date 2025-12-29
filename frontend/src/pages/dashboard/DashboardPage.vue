@@ -4,12 +4,12 @@
     <div class="page-header">
       <h1>首页</h1>
     </div>
-    
+
     <!-- 加载状态 -->
     <div v-if="loading" class="loading-container">
       <div class="loading-spinner"></div>
     </div>
-    
+
     <div v-else class="dashboard-content">
       <!-- 总资产卡片 -->
       <div class="card assets-card">
@@ -20,7 +20,7 @@
             {{ assetData.net_assets >= 0 ? '' : '-' }}¥{{ formatNumber(assetData.net_assets) }}
           </div>
         </div>
-        
+
         <!-- 资产与负债 - 次要信息 -->
         <div class="asset-liability-row">
           <div class="al-item">
@@ -35,7 +35,7 @@
         </div>
       </div>
 
-      
+
       <!-- 本月概览 -->
       <div class="card">
         <div class="card-header">本月概览</div>
@@ -58,16 +58,12 @@
           </div>
         </div>
       </div>
-      
+
       <!-- 本月支出 Top 3 -->
       <div class="card">
         <div class="card-header">本月支出 Top 3</div>
         <div class="top-list">
-          <div 
-            v-for="(item, index) in topCategories" 
-            :key="item.category"
-            class="top-item"
-          >
+          <div v-for="(item, index) in topCategories" :key="item.category" class="top-item">
             <div class="top-rank">{{ index + 1 }}</div>
             <div class="top-info">
               <div class="top-name">{{ item.category }}</div>
@@ -80,18 +76,13 @@
           </div>
         </div>
       </div>
-      
+
       <!-- 近 6 个月趋势 -->
       <div class="card">
         <div class="card-header">收支趋势</div>
         <div class="chart-container">
-          <apexchart
-            v-if="trendData.length > 0"
-            type="line"
-            height="200"
-            :options="chartOptions"
-            :series="chartSeries"
-          />
+          <apexchart v-if="trendData.length > 0" type="line" height="200" :options="chartOptions"
+            :series="chartSeries" />
           <div v-else class="empty-hint">暂无数据</div>
         </div>
       </div>
@@ -103,6 +94,7 @@
 import { ref, onMounted, computed } from 'vue'
 import VueApexCharts from 'vue3-apexcharts'
 import { statisticsApi, type AssetOverview, type CategoryStatistics, type MonthlyTrend } from '../../api/statistics'
+import { useUIStore } from '../../stores/ui'
 
 const apexchart = VueApexCharts
 
@@ -131,8 +123,11 @@ const trendData = ref<MonthlyTrend[]>([])
 
 // 图表配置
 const chartOptions = computed(() => {
-  const isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-  
+  const uiStore = useUIStore();
+  // 检查是否为暗黑模式 (dark 或 auto 且系统为 dark)
+  const isDark = uiStore.themeMode === 'dark' ||
+    (uiStore.themeMode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
   return {
     chart: {
       id: 'trend-chart',
@@ -141,21 +136,21 @@ const chartOptions = computed(() => {
       fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
       animations: { enabled: true, easing: 'easeinout', speed: 500 }
     },
-    colors: ['#34c759', '#ff3b30'], // iOS 绿/红
+    colors: [isDark ? '#30d158' : '#34c759', isDark ? '#ff453a' : '#ff3b30'], // iOS 绿/红
     stroke: { curve: 'smooth' as const, width: 2.5 },
     xaxis: {
       categories: trendData.value.map(item => {
         const [, month] = item.month.split('-')
         return `${parseInt(month || '0')}月`
       }),
-      labels: { style: { colors: isDark ? '#8e8e93' : '#8e8e93', fontSize: '10px' } },
+      labels: { style: { colors: '#8e8e93', fontSize: '10px' } },
       axisBorder: { show: false },
       axisTicks: { show: false }
     },
     yaxis: {
       labels: {
-        formatter: (v: number) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : `${v}`,
-        style: { colors: isDark ? '#8e8e93' : '#8e8e93', fontSize: '10px' }
+        formatter: (v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`,
+        style: { colors: '#8e8e93', fontSize: '10px' }
       }
     },
     tooltip: {
@@ -166,7 +161,7 @@ const chartOptions = computed(() => {
       position: 'top' as const,
       horizontalAlign: 'right' as const,
       fontSize: '11px',
-      labels: { colors: isDark ? '#8e8e93' : '#8e8e93' },
+      labels: { colors: '#8e8e93' },
       markers: { size: 6 }
     },
     grid: {
@@ -200,9 +195,9 @@ async function loadDashboardData() {
       statisticsApi.getCategoryStatistics({ type: 'expense', limit: 3 }).catch(() => []),
       statisticsApi.getMonthlyTrend({ months: 6 }).catch(() => [])
     ])
-    
+
     assetData.value = assets
-    
+
     // 从 trend 数据获取本月概览（最后一个月即为当前月）
     const currentMonthTrend = trend.length > 0 ? trend[trend.length - 1] : null
     monthlyData.value = {
@@ -210,7 +205,7 @@ async function loadDashboardData() {
       expense: Math.abs(currentMonthTrend?.expense || 0),
       net: currentMonthTrend?.net || 0
     }
-    
+
     topCategories.value = categories
     trendData.value = trend
   } catch (error) {
@@ -226,22 +221,25 @@ onMounted(() => { loadDashboardData() })
 <style scoped>
 .dashboard-page {
   min-height: 100vh;
-  background: #f2f2f7;
+  background: var(--bg-primary);
   padding: 0 0px 8px;
+  /* 确保变量更新能重新渲染 */
+  transition: background-color 0.3s;
 }
 
 .page-header {
   padding: 12px 0 8px;
   position: sticky;
   top: 0;
-  background: #f2f2f7;
+  background: var(--bg-primary);
   z-index: 10;
+  transition: background-color 0.3s;
 }
 
 .page-header h1 {
   font-size: 34px;
   font-weight: 700;
-  color: #000;
+  color: var(--text-primary);
   margin: 0;
   letter-spacing: -0.4px;
 }
@@ -256,13 +254,17 @@ onMounted(() => { loadDashboardData() })
 .loading-spinner {
   width: 28px;
   height: 28px;
-  border: 3px solid #e5e5ea;
-  border-top-color: #007aff;
+  border: 3px solid var(--separator);
+  border-top-color: var(--ios-blue);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 
 .dashboard-content {
@@ -274,9 +276,10 @@ onMounted(() => { loadDashboardData() })
 
 /* iOS 风格卡片 */
 .card {
-  background: #fff;
+  background: var(--bg-secondary);
   border-radius: 12px;
   overflow: hidden;
+  transition: background-color 0.3s;
 }
 
 .card-header {
@@ -309,12 +312,12 @@ onMounted(() => { loadDashboardData() })
 .net-worth-value {
   font-size: 32px;
   font-weight: 700;
-  color: #007aff;
+  color: var(--ios-blue);
   letter-spacing: -0.5px;
 }
 
 .net-worth-value.negative {
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 /* 资产与负债行 */
@@ -323,7 +326,7 @@ onMounted(() => { loadDashboardData() })
   justify-content: center;
   align-items: center;
   padding-top: 12px;
-  border-top: 0.5px solid #e5e5ea;
+  border-top: 0.5px solid var(--separator);
 }
 
 .al-item {
@@ -345,17 +348,17 @@ onMounted(() => { loadDashboardData() })
 }
 
 .al-value.assets {
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .al-value.liabilities {
-  color: #ff9500;
+  color: var(--ios-orange);
 }
 
 .al-divider {
   width: 0.5px;
   height: 28px;
-  background: #c6c6c8;
+  background: var(--separator);
 }
 
 /* 本月概览 */
@@ -378,11 +381,16 @@ onMounted(() => { loadDashboardData() })
 .monthly-value {
   font-size: 17px;
   font-weight: 600;
-  color: #000;
+  color: var(--text-primary);
 }
 
-.monthly-value.income { color: #34c759; }
-.monthly-value.expense { color: #ff3b30; }
+.monthly-value.income {
+  color: var(--ios-green);
+}
+
+.monthly-value.expense {
+  color: var(--ios-red);
+}
 
 /* Top 列表 */
 .top-list {
@@ -393,7 +401,7 @@ onMounted(() => { loadDashboardData() })
   display: flex;
   align-items: center;
   padding: 10px 0;
-  border-bottom: 0.5px solid #c6c6c8;
+  border-bottom: 0.5px solid var(--separator);
 }
 
 .top-item:last-child {
@@ -404,7 +412,7 @@ onMounted(() => { loadDashboardData() })
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  background: #007aff;
+  background: var(--ios-blue);
   color: #fff;
   font-size: 13px;
   font-weight: 600;
@@ -414,9 +422,17 @@ onMounted(() => { loadDashboardData() })
   margin-right: 12px;
 }
 
-.top-item:nth-child(1) .top-rank { background: #ff9500; }
-.top-item:nth-child(2) .top-rank { background: #8e8e93; }
-.top-item:nth-child(3) .top-rank { background: #af7e56; }
+.top-item:nth-child(1) .top-rank {
+  background: var(--ios-orange);
+}
+
+.top-item:nth-child(2) .top-rank {
+  background: #8e8e93;
+}
+
+.top-item:nth-child(3) .top-rank {
+  background: #af7e56;
+}
 
 .top-info {
   flex: 1;
@@ -425,7 +441,7 @@ onMounted(() => { loadDashboardData() })
 .top-name {
   font-size: 15px;
   font-weight: 500;
-  color: #000;
+  color: var(--text-primary);
 }
 
 .top-meta {
@@ -437,7 +453,7 @@ onMounted(() => { loadDashboardData() })
 .top-amount {
   font-size: 15px;
   font-weight: 600;
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 /* 图表容器 */
@@ -450,63 +466,5 @@ onMounted(() => { loadDashboardData() })
   padding: 24px 16px;
   font-size: 14px;
   color: #8e8e93;
-}
-
-/* 暗黑模式 */
-@media (prefers-color-scheme: dark) {
-  .dashboard-page {
-    background: #000;
-  }
-  
-  .page-header {
-    background: #000;
-  }
-  
-  .page-header h1 {
-    color: #fff;
-  }
-  
-  .card {
-    background: #1c1c1e;
-  }
-  
-  /* 净资产在暗黑模式下保持原色 */
-  .net-worth-value {
-    color: #0a84ff;
-  }
-  
-  .net-worth-value.negative {
-    color: #ff453a;
-  }
-  
-  .asset-liability-row {
-    border-top-color: #38383a;
-  }
-  
-  .al-value.assets {
-    color: #30d158;
-  }
-  
-  .al-value.liabilities {
-    color: #ff9f0a;
-  }
-  
-  .al-divider {
-    background: #38383a;
-  }
-  
-  .monthly-value,
-  .top-name {
-    color: #fff;
-  }
-  
-  .top-item {
-    border-bottom-color: #38383a;
-  }
-  
-  .loading-spinner {
-    border-color: #38383a;
-    border-top-color: #0a84ff;
-  }
 }
 </style>

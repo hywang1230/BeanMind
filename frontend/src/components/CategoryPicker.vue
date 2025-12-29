@@ -1,25 +1,15 @@
 <template>
   <div class="category-picker">
     <div class="category-tabs">
-      <button
-        v-for="type in categoryTypes"
-        :key="type.value"
-        @click="selectType(type.value)"
-        class="category-tab"
-        :class="{ active: selectedType === type.value }"
-      >
+      <button v-for="type in categoryTypes" :key="type.value" @click="selectType(type.value)" class="category-tab"
+        :class="{ active: selectedType === type.value }">
         {{ type.label }}
       </button>
     </div>
-    
+
     <div class="category-grid">
-      <div
-        v-for="category in currentCategories"
-        :key="category.value"
-        @click="selectCategory(category)"
-        class="category-item"
-        :class="{ active: modelValue === category.value }"
-      >
+      <div v-for="category in currentCategories" :key="category.value" @click="selectCategory(category)"
+        class="category-item" :class="{ active: modelValue === category.value }">
         <span class="category-icon">{{ category.icon }}</span>
         <span class="category-label">{{ category.label }}</span>
       </div>
@@ -51,7 +41,12 @@ const emit = defineEmits<{
   (e: 'update:type', value: 'expense' | 'income'): void
 }>()
 
-const categoryTypes = [
+interface CategoryType {
+  value: 'expense' | 'income'
+  label: string
+}
+
+const categoryTypes: CategoryType[] = [
   { value: 'expense', label: '支出' },
   { value: 'income', label: '收入' }
 ]
@@ -110,9 +105,10 @@ function selectCategory(category: Category) {
 .category-tab {
   flex: 1;
   padding: 10px 16px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--separator);
   border-radius: 8px;
-  background: white;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
   font-size: 16px;
   cursor: pointer;
   transition: all 0.2s;
@@ -135,21 +131,23 @@ function selectCategory(category: Category) {
   flex-direction: column;
   align-items: center;
   padding: 16px 8px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--separator);
   border-radius: 8px;
-  background: white;
+  background: var(--bg-secondary);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .category-item:hover {
   border-color: var(--f7-theme-color);
-  background: #f5f5f5;
+  background: var(--bg-tertiary);
 }
 
 .category-item.active {
   border-color: var(--f7-theme-color);
   background: var(--f7-theme-color-rgb, 0.1);
+  /* 注意：需要确保 CSS 变量回退值有效 */
+  background-color: rgba(var(--f7-theme-color-rgb), 0.1);
 }
 
 .category-icon {
@@ -159,7 +157,7 @@ function selectCategory(category: Category) {
 
 .category-label {
   font-size: 14px;
-  color: #333;
+  color: var(--text-primary);
   text-align: center;
 }
 

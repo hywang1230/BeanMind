@@ -497,11 +497,27 @@ onMounted(() => {
   background: rgba(255, 59, 48, 0.3);
 }
 
-/* 列表样式 */
+/* 列表样式覆盖 */
 .info-list,
 .balance-list,
 .children-list {
   margin-top: 0;
+  --f7-list-bg-color: var(--bg-secondary);
+  --f7-list-item-title-text-color: var(--text-primary);
+  --f7-list-item-after-text-color: #8e8e93;
+  --f7-list-item-border-color: var(--separator);
+}
+
+:deep(.list .item-content) {
+  background-color: var(--bg-secondary);
+}
+
+:deep(.list strong) {
+  background-color: var(--bg-secondary);
+}
+
+:deep(.item-title) {
+  color: var(--text-primary);
 }
 
 /* 余额图标 */
@@ -513,7 +529,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   background: rgba(0, 122, 255, 0.12);
-  color: #007aff;
+  color: var(--ios-blue);
 }
 
 /* 余额金额 */
@@ -521,14 +537,15 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 600;
   font-family: -apple-system, BlinkMacSystemFont, monospace;
+  color: var(--text-primary);
 }
 
 .balance-amount.positive {
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .balance-amount.negative {
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 /* 子账户图标 */
@@ -543,27 +560,27 @@ onMounted(() => {
 
 .child-icon.assets-icon {
   background: rgba(0, 122, 255, 0.12);
-  color: #007aff;
+  color: var(--ios-blue);
 }
 
 .child-icon.liabilities-icon {
   background: rgba(175, 82, 222, 0.12);
-  color: #af52de;
+  color: var(--ios-purple);
 }
 
 .child-icon.income-icon {
   background: rgba(52, 199, 89, 0.12);
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .child-icon.expenses-icon {
   background: rgba(255, 59, 48, 0.12);
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 .child-icon.equity-icon {
   background: rgba(255, 149, 0, 0.12);
-  color: #ff9500;
+  color: var(--ios-orange);
 }
 
 /* 警告块 */
@@ -571,7 +588,7 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   padding: 16px;
-  background: #fff3cd;
+  background: rgba(255, 204, 0, 0.15);
   border-radius: 8px;
   margin: 16px;
 }
@@ -587,7 +604,7 @@ onMounted(() => {
 .warning-text p {
   margin: 0 0 8px 0;
   font-size: 14px;
-  color: #333;
+  color: var(--text-primary);
 }
 
 .warning-text p:last-child {
@@ -596,8 +613,8 @@ onMounted(() => {
 
 /* 错误块 */
 .error-block {
-  background: #fee;
-  color: #c33;
+  background: rgba(255, 59, 48, 0.15);
+  color: var(--ios-red);
   padding: 16px;
   border-radius: 8px;
   margin: 16px;
@@ -607,79 +624,5 @@ onMounted(() => {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-}
-
-/* 暗黑模式 */
-@media (prefers-color-scheme: dark) {
-  .account-card.assets-card {
-    background: linear-gradient(135deg, #0a84ff 0%, #007aff 100%);
-  }
-
-  .account-card.liabilities-card {
-    background: linear-gradient(135deg, #bf5af2 0%, #af52de 100%);
-  }
-
-  .account-card.income-card {
-    background: linear-gradient(135deg, #30d158 0%, #28cd41 100%);
-  }
-
-  .account-card.expenses-card {
-    background: linear-gradient(135deg, #ff453a 0%, #ff3b30 100%);
-  }
-
-  .account-card.equity-card {
-    background: linear-gradient(135deg, #ff9f0a 0%, #ff9500 100%);
-  }
-
-  .balance-icon {
-    background: rgba(10, 132, 255, 0.18);
-    color: #0a84ff;
-  }
-
-  .balance-amount.positive {
-    color: #30d158;
-  }
-
-  .balance-amount.negative {
-    color: #ff453a;
-  }
-
-  .child-icon.assets-icon {
-    background: rgba(10, 132, 255, 0.18);
-    color: #0a84ff;
-  }
-
-  .child-icon.liabilities-icon {
-    background: rgba(191, 90, 242, 0.18);
-    color: #bf5af2;
-  }
-
-  .child-icon.income-icon {
-    background: rgba(48, 209, 88, 0.18);
-    color: #30d158;
-  }
-
-  .child-icon.expenses-icon {
-    background: rgba(255, 69, 58, 0.18);
-    color: #ff453a;
-  }
-
-  .child-icon.equity-icon {
-    background: rgba(255, 159, 10, 0.18);
-    color: #ff9f0a;
-  }
-
-  .warning-block {
-    background: rgba(255, 204, 0, 0.2);
-  }
-
-  .warning-text p {
-    color: var(--f7-text-color);
-  }
-
-  .error-block {
-    background: rgba(255, 69, 58, 0.2);
-    color: #ff453a;
-  }
 }
 </style>

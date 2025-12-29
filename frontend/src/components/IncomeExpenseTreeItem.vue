@@ -1,31 +1,17 @@
 <template>
   <div class="income-expense-tree-item">
     <!-- 项目行 -->
-    <div 
-      class="item-row" 
-      :class="{ 'has-children': item.children && item.children.length > 0, expanded }"
-      :style="{ paddingLeft: `${16 + item.depth * 16}px` }"
-      @click="handleClick"
-    >
+    <div class="item-row" :class="{ 'has-children': item.children && item.children.length > 0, expanded }"
+      :style="{ paddingLeft: `${16 + item.depth * 16}px` }" @click="handleClick">
       <!-- 展开/折叠图标 -->
-      <span 
-        v-if="item.children && item.children.length > 0" 
-        class="expand-icon"
-        @click.stop="toggleExpand"
-      >
-        <svg 
-          xmlns="http://www.w3.org/2000/svg" 
-          viewBox="0 0 24 24" 
-          fill="currentColor" 
-          width="16" 
-          height="16"
-          :class="{ rotated: expanded }"
-        >
-          <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+      <span v-if="item.children && item.children.length > 0" class="expand-icon" @click.stop="toggleExpand">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="16" height="16"
+          :class="{ rotated: expanded }">
+          <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
         </svg>
       </span>
       <span v-else class="expand-placeholder"></span>
-      
+
       <!-- 项目名称 -->
       <div class="item-info">
         <span class="item-name">{{ shortName }}</span>
@@ -34,7 +20,7 @@
           {{ item.percentage.toFixed(1) }}%
         </span>
       </div>
-      
+
       <!-- 金额 -->
       <div class="item-amount">
         <span class="amount-cny" :class="type">
@@ -47,28 +33,22 @@
           </span>
         </div>
       </div>
-      
+
       <!-- 箭头占位（保持对齐） -->
       <span class="detail-arrow" :class="{ invisible: item.children && item.children.length > 0 }">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-          <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z"/>
+          <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
         </svg>
       </span>
     </div>
-    
+
     <!-- 子项目（递归） -->
     <transition name="expand">
       <div v-if="expanded && item.children && item.children.length > 0" class="children">
-        <IncomeExpenseTreeItem
-          v-for="child in item.children"
-          :key="child.account"
-          :item="child"
-          :type="type"
-          :default-expanded="false"
-          :expanded-accounts="expandedAccounts"
+        <IncomeExpenseTreeItem v-for="child in item.children" :key="child.account" :item="child" :type="type"
+          :default-expanded="false" :expanded-accounts="expandedAccounts"
           @click-account="(acc) => emit('click-account', acc)"
-          @toggle-expand="(account, exp) => emit('toggle-expand', account, exp)"
-        />
+          @toggle-expand="(account, exp) => emit('toggle-expand', account, exp)" />
       </div>
     </transition>
   </div>
@@ -98,7 +78,7 @@ const emit = defineEmits<{
 
 // 计算是否展开：优先使用外部控制的状态
 const expanded = ref(
-  props.expandedAccounts 
+  props.expandedAccounts
     ? props.expandedAccounts.has(props.item.account)
     : props.defaultExpanded
 )
@@ -157,7 +137,7 @@ function handleClick() {
 
 <style scoped>
 .income-expense-tree-item {
-  border-bottom: 0.5px solid #e5e5ea;
+  border-bottom: 0.5px solid var(--separator);
 }
 
 .income-expense-tree-item:last-child {
@@ -172,10 +152,11 @@ function handleClick() {
   cursor: pointer;
   transition: background-color 0.15s;
   min-height: 48px;
+  background-color: var(--bg-secondary);
 }
 
 .item-row:active {
-  background-color: #f8f8f8;
+  background-color: var(--bg-tertiary);
 }
 
 .expand-icon {
@@ -213,7 +194,7 @@ function handleClick() {
 
 .item-name {
   font-size: 15px;
-  color: #000;
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -228,12 +209,12 @@ function handleClick() {
 
 .percentage-badge.income {
   background: rgba(52, 199, 89, 0.15);
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .percentage-badge.expense {
   background: rgba(255, 59, 48, 0.15);
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 .item-amount {
@@ -249,11 +230,11 @@ function handleClick() {
 }
 
 .amount-cny.income {
-  color: #34c759;
+  color: var(--ios-green);
 }
 
 .amount-cny.expense {
-  color: #ff3b30;
+  color: var(--ios-red);
 }
 
 .amount-original {
@@ -297,7 +278,7 @@ function handleClick() {
 }
 
 .children {
-  background: #fafafa;
+  background: var(--bg-tertiary);
 }
 
 .children .item-row {
@@ -305,60 +286,16 @@ function handleClick() {
 }
 
 .children .item-row:active {
-  background: #f0f0f0;
+  background: var(--bg-primary);
 }
 
+/* 嵌套层级的子项目 */
 .children .children {
-  background: #f5f5f5;
+  background: rgba(0, 0, 0, 0.05);
 }
 
-/* 暗黑模式 */
-@media (prefers-color-scheme: dark) {
-  .income-expense-tree-item {
-    border-bottom-color: #38383a;
-  }
-  
-  .item-row:active {
-    background-color: #2c2c2e;
-  }
-  
-  .item-name {
-    color: #fff;
-  }
-  
-  .percentage-badge.income {
-    background: rgba(48, 209, 88, 0.2);
-    color: #30d158;
-  }
-  
-  .percentage-badge.expense {
-    background: rgba(255, 69, 58, 0.2);
-    color: #ff453a;
-  }
-  
-  .amount-cny.income {
-    color: #30d158;
-  }
-  
-  .amount-cny.expense {
-    color: #ff453a;
-  }
-  
-  .detail-arrow {
-    color: #48484a;
-  }
-  
-  .children {
-    background: #1c1c1e;
-  }
-  
-  .children .item-row:active {
-    background: #2c2c2e;
-  }
-  
-  .children .children {
-    background: #2c2c2e;
-  }
+/* 适配暗黑模式的嵌套背景加深 */
+:global(.theme-dark) .children .children {
+  background: rgba(255, 255, 255, 0.05);
 }
 </style>
-
