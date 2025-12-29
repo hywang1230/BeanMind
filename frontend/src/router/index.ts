@@ -21,6 +21,24 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true }
     },
     {
+        path: '/reports/balance-sheet',
+        name: 'BalanceSheet',
+        component: () => import('../pages/reports/BalanceSheetPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/reports/income-statement',
+        name: 'IncomeStatement',
+        component: () => import('../pages/reports/IncomeStatementPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/reports/account-detail',
+        name: 'AccountDetail',
+        component: () => import('../pages/reports/AccountDetailPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
         path: '/transactions/add',
         name: 'AddTransaction',
         component: () => import('../pages/transactions/AddTransactionPage.vue'),
