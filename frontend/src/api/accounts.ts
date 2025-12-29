@@ -25,7 +25,7 @@ export type Balance = {
 
 export type CreateAccountRequest = {
     name: string
-    type: string
+    account_type: string
     currencies?: string[]
 }
 
@@ -92,5 +92,10 @@ export const accountsApi = {
     async getChildren(accountName: string): Promise<Account[]> {
         const response: { accounts: Account[], total: number } = await apiClient.get(`/api/accounts/${encodeURIComponent(accountName)}/children`)
         return response.accounts
+    },
+
+    // 重新开启账户
+    reopenAccount(accountName: string): Promise<{ message: string }> {
+        return apiClient.post(`/api/accounts/${encodeURIComponent(accountName)}/reopen`)
     }
 }

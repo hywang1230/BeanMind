@@ -46,21 +46,33 @@
     <!-- 创建账户模态框 -->
     <f7-popup :opened="showCreateModal" @popup:closed="showCreateModal = false">
       <f7-page>
-        <f7-navbar title="创建账户">
+        <f7-navbar>
+          <f7-nav-left>
+            <f7-link popup-close>
+              <f7-icon ios="f7:chevron_left" md="material:arrow_back" />
+            </f7-link>
+          </f7-nav-left>
+          <f7-nav-title>创建账户</f7-nav-title>
           <f7-nav-right>
-            <f7-link popup-close>取消</f7-link>
+            <f7-link @click="handleCreateAccount" :style="{ opacity: (!newAccount.name || creatingAccount) ? 0.5 : 1 }">
+              {{ creatingAccount ? '保存中' : '保存' }}
+            </f7-link>
           </f7-nav-right>
         </f7-navbar>
 
         <f7-list strong-ios dividers-ios inset>
-          <f7-list-input label="账户名称" type="text" placeholder="例如: Assets:Bank:ICBC" :value="newAccount.name"
-            @input="newAccount.name = $event.target.value" required></f7-list-input>
-
           <f7-list-input label="账户类型" type="select" :value="newAccount.type"
             @input="newAccount.type = $event.target.value">
             <option v-for="type in accountTypes" :key="type.value" :value="type.value">
               {{ type.label }}
             </option>
+          </f7-list-input>
+
+          <f7-list-input label="账户名称" type="text" :placeholder="getAccountPlaceholder()" :value="newAccount.name"
+            @input="newAccount.name = $event.target.value" required>
+            <template #info>
+              <span class="account-prefix">{{ newAccount.type }}:</span>
+            </template>
           </f7-list-input>
 
           <f7-list-input label="支持币种" type="text" placeholder="例如: CNY,USD（逗号分隔）" :value="newAccount.currencies"
@@ -69,12 +81,6 @@
 
         <f7-block v-if="createError" class="error-block">
           <p>{{ createError }}</p>
-        </f7-block>
-
-        <f7-block>
-          <f7-button large fill :disabled="creatingAccount" @click="handleCreateAccount">
-            {{ creatingAccount ? '创建中...' : '创建账户' }}
-          </f7-button>
         </f7-block>
       </f7-page>
     </f7-popup>
@@ -261,6 +267,17 @@ async function loadAccounts() {
   }
 }
 
+function getAccountPlaceholder(): string {
+  const placeholders: Record<string, string> = {
+    'Assets': '例如: Bank:ICBC 或 现金:钱包',
+    'Liabilities': '例如: 信用卡:工行 或 借款:朋友',
+    'Income': '例如: 工资 或 兼职:咨询',
+    'Expenses': '例如: 餐饮 或 出行:公交',
+    'Equity': '例如: 期初余额'
+  }
+  return placeholders[newAccount.value.type] || '例如: 子账户:详细分类'
+}
+
 async function handleCreateAccount() {
   if (!newAccount.value.name || !newAccount.value.type) {
     createError.value = '请填写所有必填字段'
@@ -276,9 +293,12 @@ async function handleCreateAccount() {
       .map(c => c.trim())
       .filter(c => c)
 
+    // 将账户类型拼接到用户输入的账户名之前
+    const fullAccountName = `${newAccount.value.type}:${newAccount.value.name}`
+
     await accountsApi.createAccount({
-      name: newAccount.value.name,
-      type: newAccount.value.type,
+      name: fullAccountName,
+      account_type: newAccount.value.type,
       currencies: currencies.length > 0 ? currencies : undefined
     })
 
@@ -525,6 +545,13 @@ onMounted(() => {
   margin: 0;
   font-size: 14px;
   font-weight: 500;
+}
+
+/* 账户前缀 */
+.account-prefix {
+  color: var(--f7-theme-color);
+  font-weight: 600;
+  font-size: 12px;
 }
 
 /* 暗黑模式 */

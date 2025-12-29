@@ -325,3 +325,40 @@ def close_account(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@router.post(
+    "/{account_name:path}/reopen",
+    response_model=MessageResponse,
+    summary="重新开启账户",
+    description="重新开启已关闭的账户（删除关闭记录）",
+    responses={
+        200: {"description": "开启成功", "model": MessageResponse},
+        400: {"description": "无法开启", "model": ErrorResponse},
+        404: {"description": "账户不存在", "model": ErrorResponse},
+    }
+)
+def reopen_account(
+    account_name: str,
+    account_service: AccountApplicationService = Depends(get_account_service)
+):
+    """
+    重新开启账户
+    
+    将已关闭的账户重新开启（删除关闭记录）。
+    """
+    try:
+        result = account_service.reopen_account(account_name)
+        
+        if result:
+            return {"message": f"账户 '{account_name}' 已成功重新开启"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"账户 '{account_name}' 不存在"
+            )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )

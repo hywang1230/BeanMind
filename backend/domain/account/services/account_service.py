@@ -68,10 +68,7 @@ class AccountService:
         if self.account_repository.exists(name):
             raise ValueError(f"账户 '{name}' 已存在")
         
-        # 4. 验证父账户存在（如果不是根账户）
-        self._validate_parent_exists(name)
-        
-        # 5. 创建账户实体
+        # 4. 创建账户实体
         account = Account(
             name=name,
             account_type=account_type,
@@ -79,18 +76,14 @@ class AccountService:
             open_date=open_date or datetime.now()
         )
         
-        # 6. 保存到仓储
+        # 5. 保存到仓储
         return self.account_repository.create(account)
     
     def _validate_account_name(self, name: str):
         """
         验证账户名称格式
         
-        规则：
-        - 不能为空
-        - 使用冒号分隔的层级结构
-        - 每个层级以大写字母开头
-        - 允许字母、数字、下划线、中划线
+        复用 Account 实体的验证规则，保持一致性。
         
         Args:
             name: 账户名称
@@ -101,21 +94,25 @@ class AccountService:
         if not name or not name.strip():
             raise ValueError("账户名称不能为空")
         
+        # 创建临时实体进行验证（利用实体的 _is_valid_account_name 方法）
+        # 为了避免创建临时实体，直接使用实体的静态验证逻辑
         parts = name.split(":")
-        if len(parts) < 1:
-            raise ValueError("账户名称格式无效")
+        if len(parts) < 2:
+            raise ValueError("账户名称至少需要两个层级")
         
+        # 验证第一层级是有效的账户类型
+        valid_root_types = {"Assets", "Liabilities", "Equity", "Income", "Expenses"}
+        if parts[0] not in valid_root_types:
+            raise ValueError(f"无效的账户根类型: {parts[0]}")
+        
+        # 验证第二层级是否以大写字母开头
+        if not parts[1] or not parts[1][0].isupper():
+            raise ValueError(f"账户第二层级 '{parts[1]}' 必须以大写字母开头")
+        
+        # 验证每一部分不能为空
         for part in parts:
             if not part:
                 raise ValueError("账户名称中不能有空的层级")
-            
-            # 每个部分应以大写字母开头
-            if not part[0].isupper():
-                raise ValueError(f"账户层级 '{part}' 必须以大写字母开头")
-            
-            # 允许字母、数字、下划线、中划线
-            if not all(c.isalnum() or c in ('_', '-') for c in part):
-                raise ValueError(f"账户层级 '{part}' 包含无效字符")
     
     def _validate_account_type_match(self, name: str, account_type: AccountType):
         """
@@ -134,25 +131,7 @@ class AccountService:
                 f"账户名称 '{name}' 的根账户 '{root}' 与账户类型 '{account_type.value}' 不匹配"
             )
     
-    def _validate_parent_exists(self, name: str):
-        """
-        验证父账户存在
-        
-        Args:
-            name: 账户名称
-            
-        Raises:
-            ValueError: 如果父账户不存在
-        """
-        parts = name.split(":")
-        if len(parts) <= 1:
-            # 根账户，无需验证
-            return
-        
-        # 检查父账户
-        parent_name = ":".join(parts[:-1])
-        if not self.account_repository.exists(parent_name):
-            raise ValueError(f"父账户 '{parent_name}' 不存在")
+
     
     def close_account(self, account_name: str, close_date: Optional[datetime] = None) -> bool:
         """
@@ -191,6 +170,35 @@ class AccountService:
         
         # 4. 关闭账户
         return self.account_repository.delete(account_name)
+    
+    def reopen_account(self, account_name: str) -> bool:
+        """
+        重新开启账户
+        
+        业务规则：
+        - 账户必须存在
+        - 账户必须处于关闭状态
+        
+        Args:
+            account_name: 账户名称
+            
+        Returns:
+            成功开启返回 True
+            
+        Raises:
+            ValueError: 如果验证失败
+        """
+        # 1. 检查账户存在
+        account = self.account_repository.find_by_name(account_name)
+        if not account:
+            raise ValueError(f"账户 '{account_name}' 不存在")
+        
+        # 2. 检查账户状态
+        if account.is_active():
+            raise ValueError(f"账户 '{account_name}' 已经是活跃状态")
+        
+        # 3. 重新开启账户
+        return self.account_repository.reopen(account_name)
     
     def get_account_hierarchy(self, root_account: Optional[str] = None) -> Dict:
         """

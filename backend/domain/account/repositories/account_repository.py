@@ -182,6 +182,19 @@ class AccountRepository(ABC):
         pass
     
     @abstractmethod
+    def reopen(self, account_name: str) -> bool:
+        """
+        重新开启账户（删除关闭记录）
+        
+        Args:
+            account_name: 账户名称
+            
+        Returns:
+            成功重新开启返回 True，账户不存在或未关闭返回 False
+        """
+        pass
+    
+    @abstractmethod
     def exists(self, account_name: str) -> bool:
         """
         检查账户是否存在

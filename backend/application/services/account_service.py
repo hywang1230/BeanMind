@@ -143,6 +143,18 @@ class AccountApplicationService:
         close_dt = datetime.fromisoformat(close_date) if close_date else None
         return self.account_service.close_account(account_name, close_dt)
     
+    def reopen_account(self, account_name: str) -> bool:
+        """
+        重新开启账户
+        
+        Args:
+            account_name: 账户名称
+            
+        Returns:
+            成功返回 True
+        """
+        return self.account_service.reopen_account(account_name)
+    
     def get_account_balance(
         self,
         account_name: str,
@@ -289,20 +301,20 @@ class AccountApplicationService:
         """
         将账户实体转换为 DTO
         
+        复用实体的 to_dict 方法并扩展必要的字段。
+        
         Args:
             account: 账户实体
             
         Returns:
             账户 DTO
         """
-        return {
-            "name": account.name,
-            "account_type": account.account_type.value,
-            "currencies": list(account.currencies),
-            "is_active": account.is_active(),
-            "open_date": account.open_date.isoformat() if account.open_date else None,
-            "close_date": account.close_date.isoformat() if account.close_date else None,
-            "depth": account.get_depth(),
-            "parent": account.get_parent_account(),
-            "meta": account.meta
-        }
+        # 复用实体的 to_dict 方法
+        dto = account.to_dict()
+        
+        # 扩展 DTO 特有的字段
+        dto["is_active"] = account.is_active()
+        dto["depth"] = account.get_depth()
+        dto["parent"] = account.get_parent_account()
+        
+        return dto

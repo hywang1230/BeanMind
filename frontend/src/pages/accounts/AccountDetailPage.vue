@@ -51,13 +51,13 @@
           </template>
         </f7-list-item>
 
-        <f7-list-item v-if="account.open_date" title="开户日期" :after="account.open_date">
+        <f7-list-item v-if="account.open_date" title="开户日期" :after="formatDate(account.open_date)">
           <template #media>
             <i class="icon f7-icons">calendar</i>
           </template>
         </f7-list-item>
 
-        <f7-list-item v-if="account.close_date" title="关闭日期" :after="account.close_date">
+        <f7-list-item v-if="account.close_date" title="关闭日期" :after="formatDate(account.close_date)">
           <template #media>
             <i class="icon f7-icons">calendar_badge_minus</i>
           </template>
@@ -121,6 +121,13 @@
       <f7-block v-if="account.is_active">
         <f7-button large fill color="red" @click="showCloseModal = true">
           关闭账户
+        </f7-button>
+      </f7-block>
+
+      <!-- 重新开启账户按钮 -->
+      <f7-block v-if="!account.is_active">
+        <f7-button large fill color="green" :disabled="reopeningAccount" @click="handleReopenAccount">
+          {{ reopeningAccount ? '开启中...' : '重新开启账户' }}
         </f7-button>
       </f7-block>
     </div>
@@ -195,6 +202,7 @@ const showCloseModal = ref(false)
 const closeDate = ref(new Date().toISOString().split('T')[0])
 const closingAccount = ref(false)
 const closeError = ref('')
+const reopeningAccount = ref(false)
 
 const today = new Date().toISOString().split('T')[0]
 
@@ -226,6 +234,12 @@ function formatAmount(amount: number | undefined | null): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   })
+}
+
+function formatDate(dateStr: string | undefined | null): string {
+  if (!dateStr) return ''
+  // 处理 ISO 格式日期，取 yyyy-MM-dd 部分
+  return dateStr.split('T')[0] ?? dateStr
 }
 
 function getBalanceClass(amount: number): string {
@@ -343,6 +357,33 @@ function navigateToChild(childName: string) {
 
 function goBack() {
   router.back()
+}
+
+async function handleReopenAccount() {
+  reopeningAccount.value = true
+
+  try {
+    await accountsApi.reopenAccount(accountName.value)
+
+    f7.toast.create({
+      text: '账户已成功重新开启',
+      position: 'center',
+      closeTimeout: 2000
+    }).open()
+
+    // 重新加载账户详情
+    await loadAccountDetail()
+  } catch (err: any) {
+    console.error('Failed to reopen account:', err)
+    f7.toast.create({
+      text: err.message || '重新开启账户失败',
+      position: 'center',
+      closeTimeout: 2000,
+      cssClass: 'error-toast'
+    }).open()
+  } finally {
+    reopeningAccount.value = false
+  }
 }
 
 onMounted(() => {

@@ -255,6 +255,75 @@ class AccountRepositoryImpl(AccountRepository):
         
         return True
     
+    def reopen(self, account_name: str) -> bool:
+        """
+        重新开启账户（删除关闭记录）
+        
+        从 Beancount 文件中删除指定账户的 Close 指令。
+        """
+        if not self.exists(account_name):
+            return False
+        
+        account = self._accounts[account_name]
+        
+        if account.is_active():
+            # 账户未关闭，无需重新开启
+            return True
+        
+        # 读取账本文件，删除 Close 指令
+        ledger_path = self.beancount_service.ledger_path
+        
+        # 遍历所有 beancount 文件找到 Close 指令
+        files_to_check = [ledger_path]
+        
+        # 检查主文件内的 include 语句，添加所有包含的文件
+        ledger_dir = Path(ledger_path).parent
+        with open(ledger_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            import re
+            includes = re.findall(r'include\s+"([^"]+)"', content)
+            for inc in includes:
+                inc_path = ledger_dir / inc
+                if inc_path.exists():
+                    files_to_check.append(inc_path)
+        
+        # 在所有文件中查找并删除 Close 指令
+        for file_path in files_to_check:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                new_lines = []
+                i = 0
+                modified = False
+                while i < len(lines):
+                    line = lines[i]
+                    # 检查是否是 Close 指令
+                    stripped = line.strip()
+                    if stripped.startswith('close') or (len(stripped.split()) >= 3 and 
+                        stripped.split()[1] == 'close' and 
+                        stripped.split()[2] == account_name):
+                        # 匹配格式: 日期 close 账户名
+                        parts = stripped.split()
+                        if len(parts) >= 3 and parts[1] == 'close' and parts[2] == account_name:
+                            modified = True
+                            i += 1
+                            continue
+                    new_lines.append(line)
+                    i += 1
+                
+                if modified:
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.writelines(new_lines)
+                    break
+            except Exception:
+                continue
+        
+        # 重新加载
+        self.reload()
+        
+        return True
+    
     def exists(self, account_name: str) -> bool:
         """检查账户是否存在"""
         return account_name in self._accounts
