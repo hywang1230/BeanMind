@@ -1,0 +1,18 @@
+[BASE_INFO]
+appname = 'BeanMind'
+
+[CORE_PACKAGE]
+default = ['backend.infrastructure.intelligence.agentic']
+agent = ['backend.infrastructure.intelligence.agentic.agent']
+llm = ['backend.infrastructure.intelligence.agentic.llm']
+
+tool = ['backend.infrastructure.intelligence.agentic.tool']
+
+
+[SUB_CONFIG_PATH]
+log_config_path = './log_config.toml'
+custom_key_path = './custom_key.toml'
+
+[MONITOR]
+activate = true
+dir = './monitor'

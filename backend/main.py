@@ -2,6 +2,12 @@
 
 FastAPI 应用入口
 """
+from pathlib import Path
+from dotenv import load_dotenv
+
+# 加载 .env 文件（确保在导入其他模块之前）
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import settings
@@ -29,12 +35,14 @@ from backend.interfaces.api import account as account_api
 from backend.interfaces.api import transaction as transaction_api
 from backend.interfaces.api import statistics as statistics_api
 from backend.interfaces.api import recurring as recurring_api
+from backend.interfaces.api import ai as ai_api
 
 app.include_router(auth_api.router)
 app.include_router(account_api.router)
 app.include_router(transaction_api.router)
 app.include_router(statistics_api.router)
 app.include_router(recurring_api.router)
+app.include_router(ai_api.router)
 
 
 @app.get("/")
