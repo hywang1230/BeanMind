@@ -134,6 +134,12 @@ const routes: RouteRecordRaw[] = [
         name: 'ExchangeRates',
         component: () => import('../pages/exchange-rates/ExchangeRatesPage.vue'),
         meta: { requiresAuth: true }
+    },
+    {
+        path: '/settings/sync',
+        name: 'Sync',
+        component: () => import('../pages/settings/SyncPage.vue'),
+        meta: { requiresAuth: true }
     }
 ]
 

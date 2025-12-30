@@ -23,13 +23,25 @@ services:
       - SINGLE_USER_USERNAME=${SINGLE_USER_USERNAME:-admin}
       - SINGLE_USER_PASSWORD=${SINGLE_USER_PASSWORD:-changeme}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-super-secret-key-change-this-in-production}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
       - JWT_EXPIRATION_HOURS=${JWT_EXPIRATION_HOURS:-24}
       # 数据配置
       - DATA_DIR=/app/data
       - LEDGER_FILE=/app/data/ledger/main.beancount
       - DATABASE_FILE=/app/data/beanmind.db
+      # GitHub 同步配置
+      - GITHUB_REPO=${GITHUB_REPO:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - GITHUB_BRANCH=${GITHUB_BRANCH:-main}
+      - GITHUB_SYNC_AUTO_ENABLED=${GITHUB_SYNC_AUTO_ENABLED:-false}
+      - GITHUB_SYNC_AUTO_INTERVAL=${GITHUB_SYNC_AUTO_INTERVAL:-300}
       # AI 配置
       - AI_ENABLED=${AI_ENABLED:-false}
+      # 周期记账调度配置
+      - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-true}
+      - SCHEDULER_HOUR=${SCHEDULER_HOUR:-12}
+      - SCHEDULER_MINUTE=${SCHEDULER_MINUTE:-0}
+      - SCHEDULER_TIMEZONE=${SCHEDULER_TIMEZONE:-Asia/Shanghai}
       # 服务器配置
       - DEBUG=${DEBUG:-false}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
@@ -47,3 +59,4 @@ services:
 # volumes:
 #   beanmind-data:
 #   beanmind-logs:
+

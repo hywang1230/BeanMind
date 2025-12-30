@@ -74,6 +74,7 @@ from backend.interfaces.api import ai as ai_api
 from backend.interfaces.api import reports as reports_api
 from backend.interfaces.api import exchange_rate as exchange_rate_api
 from backend.interfaces.api import budget as budget_api
+from backend.interfaces.api import sync as sync_api
 
 app.include_router(auth_api.router)
 app.include_router(account_api.router)
@@ -84,6 +85,7 @@ app.include_router(ai_api.router)
 app.include_router(reports_api.router)
 app.include_router(exchange_rate_api.router)
 app.include_router(budget_api.router)
+app.include_router(sync_api.router)
 
 
 @app.get("/")
@@ -109,7 +111,7 @@ def get_config():
     return {
         "auth_mode": settings.AUTH_MODE,
         "ai_enabled": settings.AI_ENABLED,
-        "backup_provider": settings.BACKUP_PROVIDER,
+        "github_sync_enabled": bool(settings.GITHUB_TOKEN and settings.GITHUB_REPO),
     }
 
 

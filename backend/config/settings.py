@@ -29,22 +29,15 @@ class Settings(BaseSettings):
     LEDGER_FILE: Path = Path("./data/ledger/main.beancount")
     DATABASE_FILE: Path = Path("./data/beanmind.db")
     
-    # ==================== 备份配置 ====================
-    BACKUP_PROVIDER: Literal["github", "local", "s3"] = "github"
-    BACKUP_AUTO_ENABLED: bool = False
-    BACKUP_AUTO_INTERVAL: Literal["hourly", "daily", "weekly"] = "daily"
-    
-    # GitHub 备份配置
+    # ==================== GitHub 同步配置 ====================
     GITHUB_REPO: str = ""
     GITHUB_TOKEN: str = ""
     GITHUB_BRANCH: str = "main"
-    
-    # 本地备份配置
-    LOCAL_BACKUP_DIR: Path = Path("./backups")
+    GITHUB_SYNC_AUTO_ENABLED: bool = False
+    GITHUB_SYNC_AUTO_INTERVAL: int = 300  # 秒
     
     # ==================== AI 配置 ====================
     AI_ENABLED: bool = False
-    AGENTUNIVERSE_CONFIG: Path = Path("./config/agent_config.yaml")
     
     # ==================== 周期记账调度配置 ====================
     SCHEDULER_ENABLED: bool = True
@@ -78,10 +71,6 @@ class Settings(BaseSettings):
             object.__setattr__(self, 'LEDGER_FILE', (PROJECT_ROOT / self.LEDGER_FILE).resolve())
         if not self.DATABASE_FILE.is_absolute():
             object.__setattr__(self, 'DATABASE_FILE', (PROJECT_ROOT / self.DATABASE_FILE).resolve())
-        if not self.LOCAL_BACKUP_DIR.is_absolute():
-            object.__setattr__(self, 'LOCAL_BACKUP_DIR', (PROJECT_ROOT / self.LOCAL_BACKUP_DIR).resolve())
-        if not self.AGENTUNIVERSE_CONFIG.is_absolute():
-            object.__setattr__(self, 'AGENTUNIVERSE_CONFIG', (PROJECT_ROOT / self.AGENTUNIVERSE_CONFIG).resolve())
         return self
     
     # ==================== 辅助方法 ====================
@@ -99,9 +88,6 @@ class Settings(BaseSettings):
         """确保所有必要的目录存在"""
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.LEDGER_FILE.parent.mkdir(parents=True, exist_ok=True)
-        
-        if self.BACKUP_PROVIDER == "local":
-            self.LOCAL_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # 创建全局配置实例

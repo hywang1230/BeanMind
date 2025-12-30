@@ -37,6 +37,12 @@
           <f7-icon ios="f7:arrow_right_arrow_left_circle_fill" md="material:currency_exchange" color="teal"></f7-icon>
         </template>
       </f7-list-item>
+
+      <f7-list-item link="#" title="同步与备份" @click="navigateTo('/settings/sync')">
+        <template #media>
+          <f7-icon ios="f7:cloud_upload_fill" md="material:cloud_sync" color="blue"></f7-icon>
+        </template>
+      </f7-list-item>
     </f7-list>
 
     <f7-block-title class="section-title">外观</f7-block-title>
