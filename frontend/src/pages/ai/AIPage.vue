@@ -6,11 +6,7 @@
         <f7-icon f7="sparkles" class="header-icon" />
         <span>AI 智能助手</span>
       </div>
-      <f7-button 
-        v-if="aiStore.hasMessages" 
-        @click="handleNewChat"
-        class="new-chat-btn"
-      >
+      <f7-button v-if="aiStore.hasMessages" @click="handleNewChat" class="new-chat-btn">
         <f7-icon f7="plus_bubble" size="20" />
       </f7-button>
     </div>
@@ -24,15 +20,11 @@
         </div>
         <h2 class="welcome-title">您好，我是您的财务助手</h2>
         <p class="welcome-subtitle">我可以帮您分析消费、查看账单、提供理财建议</p>
-        
+
         <!-- 快捷问题 -->
         <div class="quick-questions">
-          <div 
-            v-for="question in aiStore.quickQuestions" 
-            :key="question.id"
-            class="quick-question-card"
-            @click="handleQuickQuestion(question.text)"
-          >
+          <div v-for="question in aiStore.quickQuestions" :key="question.id" class="quick-question-card"
+            @click="handleQuickQuestion(question.text)">
             <f7-icon :f7="question.icon || 'lightbulb'" class="question-icon" />
             <span class="question-text">{{ question.text }}</span>
           </div>
@@ -41,20 +33,14 @@
 
       <!-- 消息列表 -->
       <div v-else class="messages-list">
-        <div 
-          v-for="message in aiStore.messages" 
-          :key="message.id"
-          class="message-item"
-          :class="[`message-${message.role}`]"
-        >
+        <div v-for="message in aiStore.messages" :key="message.id" class="message-item"
+          :class="[`message-${message.role}`]">
           <!-- 头像 -->
           <div class="message-avatar">
-            <f7-icon 
-              :f7="message.role === 'user' ? 'person_fill' : 'sparkles'" 
-              :class="message.role === 'user' ? 'user-avatar' : 'ai-avatar'"
-            />
+            <f7-icon :f7="message.role === 'user' ? 'person_fill' : 'sparkles'"
+              :class="message.role === 'user' ? 'user-avatar' : 'ai-avatar'" />
           </div>
-          
+
           <!-- 消息内容 -->
           <div class="message-content">
             <div class="message-bubble">
@@ -63,7 +49,7 @@
             <div class="message-time">{{ formatTime(message.created_at) }}</div>
           </div>
         </div>
-        
+
         <!-- 加载指示器 -->
         <div v-if="aiStore.isLoading" class="loading-indicator">
           <div class="ai-loading-avatar">
@@ -85,21 +71,10 @@
     <div class="input-container">
       <!-- 输入框 -->
       <div class="input-wrapper">
-        <textarea 
-          v-model="inputMessage"
-          @keydown.enter.exact.prevent="handleSend"
-          placeholder="输入您的问题..."
-          rows="1"
-          class="message-input"
-          ref="inputRef"
-          :disabled="aiStore.isLoading"
-        ></textarea>
-        <f7-button 
-          @click="handleSend"
-          :disabled="!inputMessage.trim() || aiStore.isLoading"
-          class="send-btn"
-          :class="{ 'active': inputMessage.trim() && !aiStore.isLoading }"
-        >
+        <textarea v-model="inputMessage" @keydown.enter.exact.prevent="handleSend" placeholder="输入您的问题..." rows="1"
+          class="message-input" ref="inputRef" :disabled="aiStore.isLoading"></textarea>
+        <f7-button @click="handleSend" :disabled="!inputMessage.trim() || aiStore.isLoading" class="send-btn"
+          :class="{ 'active': inputMessage.trim() && !aiStore.isLoading }">
           <f7-icon f7="arrow_up_circle_fill" size="32" />
         </f7-button>
       </div>
@@ -122,7 +97,6 @@ marked.setOptions({
 const aiStore = useAIStore()
 const inputMessage = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
-const inputRef = ref<HTMLTextAreaElement | null>(null)
 
 // 初始化
 onMounted(async () => {
@@ -161,7 +135,7 @@ function scrollToBottom() {
 async function handleSend() {
   const message = inputMessage.value.trim()
   if (!message || aiStore.isLoading) return
-  
+
   inputMessage.value = ''
   await aiStore.sendMessage(message)
 }
@@ -179,7 +153,7 @@ function handleNewChat() {
 // 格式化消息（使用 marked 支持完整 Markdown）
 function formatMessage(content: string): string {
   if (!content) return ''
-  
+
   // 使用 marked 解析 Markdown
   const html = marked.parse(content) as string
   return html
@@ -341,6 +315,7 @@ function formatTime(dateString: string): string {
     opacity: 0;
     transform: translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -434,10 +409,21 @@ function formatTime(dateString: string): string {
   margin-top: 0;
 }
 
-.message-text :deep(h1) { font-size: 1.5em; }
-.message-text :deep(h2) { font-size: 1.3em; }
-.message-text :deep(h3) { font-size: 1.15em; }
-.message-text :deep(h4) { font-size: 1em; }
+.message-text :deep(h1) {
+  font-size: 1.5em;
+}
+
+.message-text :deep(h2) {
+  font-size: 1.3em;
+}
+
+.message-text :deep(h3) {
+  font-size: 1.15em;
+}
+
+.message-text :deep(h4) {
+  font-size: 1em;
+}
 
 /* 表格样式 */
 .message-text :deep(table) {
@@ -603,12 +589,27 @@ function formatTime(dateString: string): string {
   animation: bounce 1.4s infinite ease-in-out both;
 }
 
-.loading-dots span:nth-child(1) { animation-delay: -0.32s; }
-.loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+.loading-dots span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.loading-dots span:nth-child(2) {
+  animation-delay: -0.16s;
+}
 
 @keyframes bounce {
-  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-  40% { transform: scale(1); opacity: 1; }
+
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 /* 输入区域 */

@@ -4,11 +4,11 @@
       <h1>周期任务</h1>
       <button @click="showCreateModal = true" class="create-btn">+ 新建规则</button>
     </div>
-    
+
     <div v-if="loading && rules.length === 0" class="loading">
       加载中...
     </div>
-    
+
     <div v-else-if="rules.length === 0" class="empty-state">
       <div class="empty-icon">🔄</div>
       <div class="empty-text">暂无周期任务</div>
@@ -16,14 +16,9 @@
         创建规则
       </button>
     </div>
-    
+
     <div v-else class="rules-container">
-      <div
-        v-for="rule in rules"
-        :key="rule.id"
-        class="rule-card"
-        :class="{ inactive: !rule.is_active }"
-      >
+      <div v-for="rule in rules" :key="rule.id" class="rule-card" :class="{ inactive: !rule.is_active }">
         <div class="rule-header">
           <div class="rule-info">
             <h3 class="rule-name">{{ rule.name }}</h3>
@@ -39,7 +34,7 @@
             </button>
           </div>
         </div>
-        
+
         <div class="rule-details">
           <div class="detail-item">
             <span class="detail-label">频率配置:</span>
@@ -58,14 +53,10 @@
             <span class="detail-value">{{ formatDate(rule.end_date) }}</span>
           </div>
         </div>
-        
+
         <div class="rule-template">
           <div class="template-header">交易明细:</div>
-          <div
-            v-for="(posting, index) in rule.transaction_template.postings"
-            :key="index"
-            class="posting-item"
-          >
+          <div v-for="(posting, index) in rule.transaction_template.postings" :key="index" class="posting-item">
             <span class="posting-account">{{ posting.account }}</span>
             <span class="posting-amount">
               {{ posting.amount > 0 ? '+' : '' }}{{ posting.currency }} {{ posting.amount }}
@@ -74,7 +65,7 @@
         </div>
       </div>
     </div>
-    
+
     <!-- 创建规则模态框 -->
     <div v-if="showCreateModal" class="modal" @click.self="showCreateModal = false">
       <div class="modal-content">
@@ -82,18 +73,13 @@
           <h3>创建周期规则</h3>
           <button @click="showCreateModal = false" class="close-btn">×</button>
         </div>
-        
+
         <form @submit.prevent="handleCreateRule" class="create-form">
           <div class="form-group">
             <label>规则名称</label>
-            <input
-              v-model="newRule.name"
-              type="text"
-              placeholder="例如: 每月房租"
-              required
-            />
+            <input v-model="newRule.name" type="text" placeholder="例如: 每月房租" required />
           </div>
-          
+
           <div class="form-group">
             <label>频率类型</label>
             <select v-model="newRule.frequency" required>
@@ -104,103 +90,60 @@
               <option value="yearly">每年</option>
             </select>
           </div>
-          
+
           <!-- 按周配置 -->
           <div v-if="newRule.frequency === 'weekly' || newRule.frequency === 'biweekly'" class="form-group">
             <label>选择星期几（可多选）</label>
             <div class="weekday-selector">
-              <label
-                v-for="day in weekdays"
-                :key="day.value"
-                class="weekday-option"
-              >
-                <input
-                  type="checkbox"
-                  :value="day.value"
-                  v-model="newRule.frequency_config.weekdays"
-                />
+              <label v-for="day in weekdays" :key="day.value" class="weekday-option">
+                <input type="checkbox" :value="day.value" v-model="newRule.frequency_config.weekdays" />
                 <span>{{ day.label }}</span>
               </label>
             </div>
           </div>
-          
+
           <!-- 按月配置 -->
           <div v-if="newRule.frequency === 'monthly'" class="form-group">
             <label>选择日期（可多选，-1表示月末）</label>
             <div class="monthday-selector">
-              <label
-                v-for="day in 31"
-                :key="day"
-                class="monthday-option"
-              >
-                <input
-                  type="checkbox"
-                  :value="day"
-                  v-model="newRule.frequency_config.month_days"
-                />
+              <label v-for="day in 31" :key="day" class="monthday-option">
+                <input type="checkbox" :value="day" v-model="newRule.frequency_config.month_days" />
                 <span>{{ day }}</span>
               </label>
               <label class="monthday-option">
-                <input
-                  type="checkbox"
-                  :value="-1"
-                  v-model="newRule.frequency_config.month_days"
-                />
+                <input type="checkbox" :value="-1" v-model="newRule.frequency_config.month_days" />
                 <span>月末</span>
               </label>
             </div>
           </div>
-          
+
           <div class="form-group">
             <label>开始日期</label>
             <input v-model="newRule.start_date" type="date" required />
           </div>
-          
+
           <div class="form-group">
             <label>结束日期（可选）</label>
             <input v-model="newRule.end_date" type="date" />
           </div>
-          
+
           <div class="form-group">
             <label>交易描述</label>
-            <input
-              v-model="newRule.transaction_template.description"
-              type="text"
-              placeholder="例如: 房租支付"
-              required
-            />
+            <input v-model="newRule.transaction_template.description" type="text" placeholder="例如: 房租支付" required />
           </div>
-          
+
           <div class="form-group">
             <label>交易明细</label>
             <div class="postings">
-              <div
-                v-for="(posting, index) in newRule.transaction_template.postings"
-                :key="index"
-                class="posting-row"
-              >
-                <input
-                  v-model="posting.account"
-                  type="text"
-                  placeholder="账户"
-                  class="posting-account-input"
-                />
-                <input
-                  v-model.number="posting.amount"
-                  type="number"
-                  placeholder="金额"
-                  step="0.01"
-                  class="posting-amount-input"
-                />
+              <div v-for="(posting, index) in newRule.transaction_template.postings" :key="index" class="posting-row">
+                <input v-model="posting.account" type="text" placeholder="账户" class="posting-account-input" />
+                <input v-model.number="posting.amount" type="number" placeholder="金额" step="0.01"
+                  class="posting-amount-input" />
                 <select v-model="posting.currency" class="posting-currency-select">
                   <option value="CNY">CNY</option>
                   <option value="USD">USD</option>
                 </select>
-                <button
-                  type="button"
-                  @click="removePosting(index)"
-                  class="remove-posting-btn"
-                >
+                <button type="button" @click="removePosting(index)" class="remove-posting-btn">
                   ×
                 </button>
               </div>
@@ -209,11 +152,11 @@
               + 添加明细
             </button>
           </div>
-          
+
           <div v-if="createError" class="error-message">
             {{ createError }}
           </div>
-          
+
           <div class="form-actions">
             <button type="button" @click="showCreateModal = false" class="cancel-btn">
               取消
@@ -250,7 +193,7 @@ const newRule = ref<CreateRecurringRuleRequest>({
       { account: '', amount: 0, currency: 'CNY' }
     ]
   },
-  start_date: new Date().toISOString().split('T')[0],
+  start_date: new Date().toISOString().split('T')[0] ?? '',
   end_date: '',
   is_active: true
 })
@@ -331,7 +274,7 @@ async function toggleRule(rule: RecurringRule) {
 
 async function executeRule(rule: RecurringRule) {
   try {
-    const today = new Date().toISOString().split('T')[0]
+    const today = new Date().toISOString().split('T')[0] ?? ''
     await recurringApi.executeRule(rule.id, today)
     alert(`规则 "${rule.name}" 已执行`)
   } catch (error: any) {
@@ -356,24 +299,24 @@ async function handleCreateRule() {
     createError.value = '请填写所有必填字段'
     return
   }
-  
+
   if (newRule.value.transaction_template.postings.length < 2) {
     createError.value = '至少需要两条交易明细'
     return
   }
-  
+
   creatingRule.value = true
   createError.value = ''
-  
+
   try {
     await recurringApi.createRule({
       ...newRule.value,
       end_date: newRule.value.end_date || undefined
     })
-    
+
     // Reload rules
     await loadRules()
-    
+
     // Close modal and reset form
     showCreateModal.value = false
     resetForm()
@@ -399,7 +342,7 @@ function resetForm() {
         { account: '', amount: 0, currency: 'CNY' }
       ]
     },
-    start_date: new Date().toISOString().split('T')[0],
+    start_date: new Date().toISOString().split('T')[0] ?? '',
     end_date: '',
     is_active: true
   }
@@ -724,13 +667,15 @@ onMounted(() => {
   border-color: #667eea;
 }
 
-.weekday-selector, .monthday-selector {
+.weekday-selector,
+.monthday-selector {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.weekday-option, .monthday-option {
+.weekday-option,
+.monthday-option {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -741,12 +686,13 @@ onMounted(() => {
   transition: all 0.2s;
 }
 
-.weekday-option:hover, .monthday-option:hover {
+.weekday-option:hover,
+.monthday-option:hover {
   background: #f5f5f5;
 }
 
-.weekday-option input:checked + span,
-.monthday-option input:checked + span {
+.weekday-option input:checked+span,
+.monthday-option input:checked+span {
   font-weight: 600;
   color: #667eea;
 }

@@ -1,7 +1,9 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import Framework7 from 'framework7/bundle'
-import Framework7Vue, { registerComponents } from 'framework7-vue/bundle'
+import Framework7Vue from 'framework7-vue/bundle'
+// @ts-ignore - registerComponents exists in bundle but not in type definitions
+import { registerComponents } from 'framework7-vue/bundle'
 import 'framework7/css/bundle'
 import 'framework7-icons/css/framework7-icons.css'
 import App from './App.vue'
