@@ -31,48 +31,25 @@
 
     <!-- 规则列表 -->
     <f7-list v-else media-list inset strong dividers-ios>
-      <f7-list-item
-        v-for="rule in rules"
-        :key="rule.id"
-        :title="rule.name"
-        :subtitle="formatFrequency(rule)"
-        :text="formatTemplate(rule)"
-        link="#"
-        swipeout
-        @click="showRuleDetails(rule)"
-      >
+      <f7-list-item v-for="rule in rules" :key="rule.id" :title="rule.name" :subtitle="formatFrequency(rule)"
+        :text="formatTemplate(rule)" link="#" swipeout @click="showRuleDetails(rule)">
         <template #media>
           <div class="rule-icon" :class="{ inactive: !rule.is_active }">
             <f7-icon ios="f7:arrow_2_circlepath" md="material:autorenew" />
           </div>
         </template>
         <template #after>
-          <f7-chip
-            v-if="!rule.is_active"
-            text="已停用"
-            color="gray"
-          />
+          <f7-chip v-if="!rule.is_active" text="已停用" color="gray" />
         </template>
 
         <f7-swipeout-actions right>
-          <f7-swipeout-button
-            color="blue"
-            @click.stop="toggleRule(rule)"
-          >
+          <f7-swipeout-button color="blue" @click.stop="toggleRule(rule)">
             {{ rule.is_active ? '停用' : '启用' }}
           </f7-swipeout-button>
-          <f7-swipeout-button
-            color="orange"
-            @click.stop="editRule(rule)"
-          >
+          <f7-swipeout-button color="orange" @click.stop="editRule(rule)">
             编辑
           </f7-swipeout-button>
-          <f7-swipeout-button
-            color="red"
-            delete
-            confirm-text="确定要删除该规则吗？"
-            @click.stop="deleteRule(rule)"
-          >
+          <f7-swipeout-button color="red" delete confirm-text="确定要删除该规则吗？" @click.stop="deleteRule(rule)">
             删除
           </f7-swipeout-button>
         </f7-swipeout-actions>
@@ -80,45 +57,23 @@
     </f7-list>
 
     <!-- 规则详情弹窗 -->
-    <f7-sheet
-      :opened="showDetailSheet"
-      @sheet:closed="showDetailSheet = false"
-      class="rule-detail-sheet"
-      swipe-to-close
-      backdrop
-    >
+    <f7-sheet :opened="showDetailSheet" @sheet:closed="showDetailSheet = false" class="rule-detail-sheet" swipe-to-close
+      backdrop>
       <f7-page-content v-if="selectedRule">
         <div class="sheet-handle" />
         <f7-block-title class="margin-top">{{ selectedRule.name }}</f7-block-title>
-        
+
         <f7-list inset strong>
-          <f7-list-item
-            title="频率"
-            :after="formatFrequency(selectedRule)"
-          />
-          <f7-list-item
-            title="状态"
-            :after="selectedRule.is_active ? '启用' : '停用'"
-          />
-          <f7-list-item
-            title="开始日期"
-            :after="formatDate(selectedRule.start_date)"
-          />
-          <f7-list-item
-            v-if="selectedRule.end_date"
-            title="结束日期"
-            :after="formatDate(selectedRule.end_date)"
-          />
+          <f7-list-item title="频率" :after="formatFrequency(selectedRule)" />
+          <f7-list-item title="状态" :after="selectedRule.is_active ? '启用' : '停用'" />
+          <f7-list-item title="开始日期" :after="formatDate(selectedRule.start_date)" />
+          <f7-list-item v-if="selectedRule.end_date" title="结束日期" :after="formatDate(selectedRule.end_date)" />
         </f7-list>
 
         <f7-block-title>交易明细</f7-block-title>
         <f7-list inset strong>
-          <f7-list-item
-            v-for="(posting, index) in selectedRule.transaction_template.postings"
-            :key="index"
-            :title="formatAccountName(posting.account)"
-            :after="formatAmount(posting.amount, posting.currency)"
-          />
+          <f7-list-item v-for="(posting, index) in selectedRule.transaction_template.postings" :key="index"
+            :title="formatAccountName(posting.account)" :after="formatAmount(posting.amount, posting.currency)" />
         </f7-list>
 
         <f7-block class="action-buttons">
@@ -172,9 +127,9 @@ function formatFrequency(rule: RecurringRule): string {
     monthly: '每月',
     yearly: '每年'
   }
-  
+
   let base = frequencies[rule.frequency] || rule.frequency
-  
+
   if (rule.frequency === 'weekly' || rule.frequency === 'biweekly') {
     if (rule.frequency_config?.weekdays?.length) {
       const days = rule.frequency_config.weekdays.map(d => {
@@ -189,7 +144,7 @@ function formatFrequency(rule: RecurringRule): string {
       base += ` (${days.join(', ')})`
     }
   }
-  
+
   return base
 }
 
@@ -245,10 +200,10 @@ async function toggleRule(rule: RecurringRule) {
       is_active: !rule.is_active
     })
     rule.is_active = !rule.is_active
-    f7.toast.show({ 
-      text: rule.is_active ? '已启用' : '已停用', 
-      position: 'center', 
-      closeTimeout: 1500 
+    f7.toast.show({
+      text: rule.is_active ? '已启用' : '已停用',
+      position: 'center',
+      closeTimeout: 1500
     })
   } catch (error: any) {
     f7.toast.show({ text: error.message || '操作失败', position: 'center', closeTimeout: 2000 })
@@ -278,15 +233,15 @@ async function deleteRule(rule: RecurringRule) {
 
 async function executeRuleNow() {
   if (!selectedRule.value) return
-  
+
   const today = new Date().toISOString().split('T')[0] as string
-  
+
   try {
     await recurringApi.executeRule(selectedRule.value.id, today)
-    f7.toast.show({ 
-      text: `规则 "${selectedRule.value.name}" 已执行`, 
-      position: 'center', 
-      closeTimeout: 2000 
+    f7.toast.show({
+      text: `规则 "${selectedRule.value.name}" 已执行`,
+      position: 'center',
+      closeTimeout: 2000
     })
     showDetailSheet.value = false
   } catch (error: any) {
@@ -325,7 +280,7 @@ onMounted(() => {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
   display: flex;
   align-items: center;
   justify-content: center;
