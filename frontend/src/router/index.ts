@@ -104,6 +104,12 @@ const routes: RouteRecordRaw[] = [
         name: 'EditRecurringRule',
         component: () => import('../pages/recurring/RecurringRuleFormPage.vue'),
         meta: { requiresAuth: true }
+    },
+    {
+        path: '/exchange-rates',
+        name: 'ExchangeRates',
+        component: () => import('../pages/exchange-rates/ExchangeRatesPage.vue'),
+        meta: { requiresAuth: true }
     }
 ]
 

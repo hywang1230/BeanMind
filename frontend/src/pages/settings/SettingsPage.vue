@@ -25,6 +25,12 @@
           <f7-icon ios="f7:creditcard_fill" md="material:account_balance_wallet" color="green"></f7-icon>
         </template>
       </f7-list-item>
+
+      <f7-list-item link="#" title="汇率管理" @click="navigateTo('/exchange-rates')">
+        <template #media>
+          <f7-icon ios="f7:arrow_right_arrow_left_circle_fill" md="material:currency_exchange" color="teal"></f7-icon>
+        </template>
+      </f7-list-item>
     </f7-list>
 
     <f7-block-title class="section-title">外观</f7-block-title>
