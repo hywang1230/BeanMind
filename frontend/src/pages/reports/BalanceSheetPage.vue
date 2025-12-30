@@ -65,7 +65,7 @@
             <div v-for="currency in data.currencies" :key="currency" class="rate-item">
               <span class="rate-currency">{{ currency }}</span>
               <span class="rate-value">{{ currency === 'CNY' ? '1.00' : formatRate(data.exchange_rates[currency])
-                }}</span>
+              }}</span>
             </div>
           </div>
         </div>
@@ -251,6 +251,10 @@ function openDatePicker() {
         const values = value as Date[]
         if (values && values.length > 0 && values[0]) {
           selectedDate.value = formatDateValue(values[0])
+          // 选中日期后自动关闭控件
+          if (dateCalendar) {
+            dateCalendar.close()
+          }
         }
       },
       closed: function () {
