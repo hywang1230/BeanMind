@@ -22,7 +22,8 @@ dependencies = [
     "PyGithub>=2.1.1",
     "python-dateutil>=2.8.2",
     "click>=8.1.7",
-    "agentuniverse>=0.0.19"
+    "agentuniverse>=0.0.19",
+    "mcp"
 ]
 
 [project.optional-dependencies]
