@@ -37,6 +37,7 @@ class BudgetRepositoryImpl(BudgetRepository):
             id=model.id,
             user_id=model.user_id,
             name=model.name,
+            amount=Decimal(str(model.amount)),
             period_type=PeriodType(model.period_type),
             start_date=model.start_date,
             end_date=model.end_date,
@@ -52,6 +53,7 @@ class BudgetRepositoryImpl(BudgetRepository):
             id=entity.id,
             user_id=entity.user_id,
             name=entity.name,
+            amount=entity.amount,
             period_type=entity.period_type.value,
             start_date=entity.start_date,
             end_date=entity.end_date,
@@ -85,6 +87,7 @@ class BudgetRepositoryImpl(BudgetRepository):
         
         self.session.add(model)
         self.session.flush()
+        self.session.commit()
         
         # 重新查询以获取关联数据
         stmt = select(BudgetModel).options(
@@ -154,6 +157,7 @@ class BudgetRepositoryImpl(BudgetRepository):
         
         # 更新基本字段
         model.name = budget.name
+        model.amount = budget.amount
         model.period_type = budget.period_type.value
         model.start_date = budget.start_date
         model.end_date = budget.end_date
@@ -182,6 +186,7 @@ class BudgetRepositoryImpl(BudgetRepository):
                 model.items.append(item_model)
         
         self.session.flush()
+        self.session.commit()
         
         return self._to_entity(model)
     
@@ -196,6 +201,7 @@ class BudgetRepositoryImpl(BudgetRepository):
         
         self.session.delete(model)
         self.session.flush()
+        self.session.commit()
         
         return True
     

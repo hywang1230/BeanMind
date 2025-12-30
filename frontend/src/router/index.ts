@@ -82,6 +82,30 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true }
     },
     {
+        path: '/budgets/create',
+        name: 'CreateBudget',
+        component: () => import('../pages/budgets/BudgetFormPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/budgets/:id',
+        name: 'BudgetDetail',
+        component: () => import('../pages/budgets/BudgetDetailPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/budgets/:id/edit',
+        name: 'EditBudget',
+        component: () => import('../pages/budgets/BudgetFormPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/budgets/:budgetId/items/:itemId/transactions',
+        name: 'BudgetTransactions',
+        component: () => import('../pages/budgets/BudgetTransactionsPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
         path: '/recurring',
         name: 'Recurring',
         component: () => import('../pages/recurring/RecurringPage.vue'),

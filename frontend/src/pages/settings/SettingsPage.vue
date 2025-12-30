@@ -16,6 +16,12 @@
           <f7-icon ios="f7:arrow_2_circlepath" md="material:autorenew" color="purple"></f7-icon>
         </template>
       </f7-list-item>
+
+      <f7-list-item link="#" title="预算管理" @click="navigateTo('/budgets')">
+        <template #media>
+          <f7-icon ios="f7:chart_pie_fill" md="material:pie_chart" color="orange"></f7-icon>
+        </template>
+      </f7-list-item>
     </f7-list>
 
     <f7-block-title class="section-title">系统设置</f7-block-title>

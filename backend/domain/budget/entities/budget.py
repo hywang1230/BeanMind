@@ -1,6 +1,7 @@
 """预算领域实体"""
 from dataclasses import dataclass, field
 from datetime import date
+from decimal import Decimal
 from typing import List, Optional
 from enum import Enum
 
@@ -21,6 +22,7 @@ class Budget:
     id: str
     user_id: str
     name: str
+    amount: Decimal
     period_type: PeriodType
     start_date: date
     end_date: Optional[date]
@@ -59,17 +61,17 @@ class Budget:
         """移除预算项目"""
         self.items = [item for item in self.items if item.id != item_id]
     
-    def get_total_amount(self) -> float:
+    def get_total_amount(self) -> Decimal:
         """获取预算总金额"""
-        return sum(float(item.amount) for item in self.items)
+        return self.amount
     
-    def get_total_spent(self) -> float:
+    def get_total_spent(self) -> Decimal:
         """获取已花费总金额"""
-        return sum(float(item.spent) for item in self.items)
+        return sum((item.spent for item in self.items), Decimal("0"))
     
     def get_execution_rate(self) -> float:
         """获取执行率（百分比）"""
         total_amount = self.get_total_amount()
         if total_amount == 0:
             return 0.0
-        return (self.get_total_spent() / total_amount) * 100
+        return float((self.get_total_spent() / total_amount) * 100)

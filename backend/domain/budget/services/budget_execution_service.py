@@ -34,6 +34,10 @@ class BudgetExecutionService:
         Returns:
             是否匹配
         """
+        if "*" not in pattern:
+            # 默认匹配该账户及其所有子账户
+            return account_name == pattern or account_name.startswith(pattern + ":")
+            
         # 转换模式为正则表达式
         # * 表示匹配任意字符
         regex_pattern = pattern.replace("*", ".*")
@@ -140,6 +144,42 @@ class BudgetExecutionService:
             executions.append(execution)
         
         return executions
+    
+    def get_transactions_for_item(
+        self,
+        budget_item: BudgetItem,
+        start_date: date,
+        end_date: date
+    ) -> List:
+        """获取预算项目的关联交易
+        
+        Args:
+            budget_item: 预算项目
+            start_date: 开始日期
+            end_date: 结束日期
+            
+        Returns:
+            关联的交易列表
+        """
+        # 获取日期范围内的所有交易
+        transactions = self.transaction_repository.find_by_date_range(
+            start_date=start_date,
+            end_date=end_date
+        )
+        
+        matching_transactions = []
+        
+        # 遍历交易，筛选匹配账户模式的交易
+        for transaction in transactions:
+            for posting in transaction.postings:
+                # 检查账户是否匹配模式
+                if self._match_account_pattern(posting.account, budget_item.account_pattern):
+                    # 只匹配相同货币
+                    if posting.currency == budget_item.currency:
+                        matching_transactions.append(transaction)
+                        break # 一个交易只添加一次
+        
+        return matching_transactions
     
     def get_budget_summary(
         self,

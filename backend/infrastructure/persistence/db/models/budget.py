@@ -10,6 +10,7 @@ class Budget(BaseModel):
 
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
+    amount = Column(Numeric(20, 2), nullable=False, default=0)
     period_type = Column(String(20), nullable=False)  # MONTHLY, YEARLY, CUSTOM
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=True)

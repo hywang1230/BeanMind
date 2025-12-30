@@ -867,6 +867,9 @@ onUnmounted(() => {
 .transaction-list {
   margin: 0;
   --f7-list-inset-side-margin: 0;
+  --f7-list-inset-border-radius: 12px;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 /* 交易分组 */

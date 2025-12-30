@@ -27,8 +27,8 @@ class BudgetItem:
             raise ValueError("账户模式不能为空")
         
         # 验证金额
-        if self.amount <= 0:
-            raise ValueError("预算金额必须大于0")
+        if self.amount < 0:
+            raise ValueError("预算金额必须大于等于0")
         
         # 验证已花费金额
         if self.spent < 0:
