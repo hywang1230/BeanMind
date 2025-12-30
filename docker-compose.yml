@@ -1,0 +1,49 @@
+# =============================================================================
+# BeanMind Docker Compose 配置
+# 用于本地开发和部署
+# =============================================================================
+
+services:
+  beanmind:
+    image: pionnerwang/beanmind:latest
+    container_name: beanmind
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # 数据持久化
+      - ./data:/app/data
+      # 日志持久化
+      - ./logs:/app/logs
+    environment:
+      # 鉴权配置
+      - AUTH_MODE=${AUTH_MODE:-single_user}
+      - SINGLE_USER_USERNAME=${SINGLE_USER_USERNAME:-admin}
+      - SINGLE_USER_PASSWORD=${SINGLE_USER_PASSWORD:-changeme}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-super-secret-key-change-this-in-production}
+      - JWT_EXPIRATION_HOURS=${JWT_EXPIRATION_HOURS:-24}
+      # 数据配置
+      - DATA_DIR=/app/data
+      - LEDGER_FILE=/app/data/ledger/main.beancount
+      - DATABASE_FILE=/app/data/beanmind.db
+      # AI 配置
+      - AI_ENABLED=${AI_ENABLED:-false}
+      # 服务器配置
+      - DEBUG=${DEBUG:-false}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+    env_file:
+      - .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# 可选：如果需要使用命名卷
+# volumes:
+#   beanmind-data:
+#   beanmind-logs:

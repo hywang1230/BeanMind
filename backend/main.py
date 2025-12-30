@@ -10,8 +10,10 @@ from dotenv import load_dotenv
 # 加载 .env 文件（确保在导入其他模块之前）
 load_dotenv()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
@@ -222,6 +224,44 @@ def test_password_verify(password: str, hashed: str):
         "message": "Password verified",
         "is_valid": is_valid,
     }
+
+
+# =============================================================================
+# 静态文件服务 (用于 Docker 单容器部署)
+# =============================================================================
+
+# 前端构建产物目录
+FRONTEND_DIST_DIR = Path(__file__).parent.parent / "frontend" / "dist"
+
+if FRONTEND_DIST_DIR.exists():
+    logger.info(f"前端静态文件目录存在: {FRONTEND_DIST_DIR}")
+    
+    # 挂载静态资源目录 (js, css, images 等)
+    assets_dir = FRONTEND_DIST_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+    
+    # 服务其他静态文件
+    @app.get("/{path:path}")
+    async def serve_spa(request: Request, path: str):
+        """服务前端 SPA 应用"""
+        # 如果路径以 /api 开头，说明是 API 请求但未匹配，返回 404
+        if path.startswith("api/"):
+            return {"detail": "Not Found"}
+        
+        # 尝试返回请求的静态文件
+        file_path = FRONTEND_DIST_DIR / path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        
+        # 否则返回 index.html (SPA 路由)
+        index_path = FRONTEND_DIST_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        
+        return {"detail": "Frontend not built"}
+else:
+    logger.info("前端静态文件目录不存在，跳过静态文件服务配置（开发模式）")
 
 
 if __name__ == "__main__":

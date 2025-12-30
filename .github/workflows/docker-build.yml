@@ -1,0 +1,74 @@
+# =============================================================================
+# GitHub Actions: 构建并推送 Docker 镜像到 Docker Hub
+# =============================================================================
+
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches:
+      - main
+  # 允许手动触发
+  workflow_dispatch:
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: pionnerwang/beanmind
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      # 1. 检出代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 设置 Docker Buildx（用于多平台构建）
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. 登录 Docker Hub
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 4. 提取元数据（标签、标识等）
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            # 设置 latest 标签
+            type=raw,value=latest,enable={{is_default_branch}}
+            # 使用 Git SHA 作为标签（短版本）
+            type=sha,prefix=,format=short
+            # 使用提交日期作为标签
+            type=raw,value={{date 'YYYYMMDD-HHmmss'}},enable={{is_default_branch}}
+
+      # 5. 构建并推送 Docker 镜像
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # 启用构建缓存
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # 多平台构建（可选，会增加构建时间）
+          # platforms: linux/amd64,linux/arm64
+
+      # 6. 输出镜像信息
+      - name: Image digest
+        run: echo "Image pushed successfully with tags ${{ steps.meta.outputs.tags }}"

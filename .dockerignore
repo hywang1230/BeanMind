@@ -1,0 +1,72 @@
+# =============================================================================
+# Docker 构建忽略文件
+# =============================================================================
+
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.cursor/
+
+# AI Agent
+.agent/
+CLAUDE.md
+
+# Data (运行时生成)
+data/
+logs/
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Frontend build (前端会重新构建)
+frontend/node_modules/
+frontend/dist/
+frontend/.nuxt/
+
+# Tests
+tests/
+*.test.ts
+*.spec.ts
+
+# Documentation
+*.md
+!README.md
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.bak
+*.tmp
