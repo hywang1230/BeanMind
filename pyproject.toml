@@ -23,7 +23,7 @@ dependencies = [
     "python-dateutil>=2.8.2",
     "click>=8.1.7",
     "agentuniverse>=0.0.19",
-    "mcp"
+    "mcp>=1.21.2"
 ]
 
 [project.optional-dependencies]
