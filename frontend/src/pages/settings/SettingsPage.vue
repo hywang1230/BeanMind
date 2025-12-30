@@ -41,11 +41,14 @@
       </f7-list-item>
     </f7-list>
 
-    <f7-block-title class="section-title">关于</f7-block-title>
+    <f7-block-title class="section-title">其他</f7-block-title>
     <f7-list inset strong>
-      <f7-list-item title="版本" :after="appVersion">
+      <f7-list-item link="#" title="关于" @click="showVersionInfo">
         <template #media>
           <f7-icon ios="f7:info_circle_fill" md="material:info" color="gray"></f7-icon>
+        </template>
+        <template #after>
+          <span class="version-badge">{{ appVersion }}</span>
         </template>
       </f7-list-item>
     </f7-list>
@@ -54,7 +57,7 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
-import { f7List, f7ListItem, f7Icon, f7BlockTitle } from 'framework7-vue';
+import { f7List, f7ListItem, f7Icon, f7BlockTitle, f7 } from 'framework7-vue';
 import { useUIStore, type ThemeMode } from '../../stores/ui';
 import { ref, onMounted, watch } from 'vue';
 
@@ -81,6 +84,21 @@ function onThemeChange(event: Event) {
   const target = event.target as HTMLSelectElement;
   const mode = target.value as ThemeMode;
   uiStore.setThemeMode(mode);
+}
+
+function showVersionInfo() {
+  const content = `
+    <div style="text-align: center; margin-bottom: 10px;">
+      <p><b>BeanMind 智能记账</b></p>
+      <p style="color: var(--f7-text-color-secondary); font-size: 14px;">
+        您的个人财务智能助手，让记账更简单、更专业。
+      </p>
+    </div>
+    <div style="text-align: center; font-size: 13px; color: var(--f7-label-color);">
+      版本: v${appVersion.value}<br>
+    </div>
+  `;
+  f7.dialog.alert(content, '');
 }
 
 function navigateTo(path: string) {
@@ -131,5 +149,21 @@ function navigateTo(path: string) {
 
 :deep(.list strong) {
   background-color: var(--bg-secondary);
+}
+
+.version-badge {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+@media (prefers-color-scheme: dark) {
+  .version-badge {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+  }
 }
 </style>
