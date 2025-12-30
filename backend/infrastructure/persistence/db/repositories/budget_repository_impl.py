@@ -210,3 +210,19 @@ class BudgetRepositoryImpl(BudgetRepository):
         stmt = select(BudgetModel.id).where(BudgetModel.id == budget_id)
         result = self.session.execute(stmt)
         return result.scalar_one_or_none() is not None
+
+    async def find_by_date_range(self, start_date: date, end_date: date) -> List[Budget]:
+        """查找指定日期范围内有效的预算"""
+        stmt = select(BudgetModel).options(
+            selectinload(BudgetModel.items)
+        ).where(
+            and_(
+                BudgetModel.start_date <= end_date,
+                (BudgetModel.end_date == None) | (BudgetModel.end_date >= start_date)
+            )
+        )
+        
+        result = self.session.execute(stmt)
+        models = result.scalars().all()
+        
+        return [self._to_entity(model) for model in models]

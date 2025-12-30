@@ -93,3 +93,18 @@ class BudgetRepository(ABC):
             存在返回True，否则返回False
         """
         pass
+
+    @abstractmethod
+    async def find_by_date_range(self, start_date: date, end_date: date) -> List[Budget]:
+        """查找指定日期范围内有效的预算
+        
+        只有预算的时间与此时间有交叉，即为符合的预算（相交、包含都行）
+        
+        Args:
+            start_date: 开始日期
+            end_date: 结束日期
+            
+        Returns:
+            预算实体列表
+        """
+        pass

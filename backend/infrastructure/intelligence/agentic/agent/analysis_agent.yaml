@@ -12,6 +12,7 @@ action:
   tool: 
     - 'time_parser_tool'
     - 'transaction_tool'
+    - 'budget_tool'
 metadata:
   type: 'AGENT'
   module: 'backend.infrastructure.intelligence.agentic.agent.analysis_agent'

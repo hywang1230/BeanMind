@@ -1,0 +1,14 @@
+name: 'budget_tool'
+description: |
+  查询指定日期范围内的预算执行情况。
+  工具输入参数说明：
+    - start_date: 开始日期，格式为 YYYY-MM-DD
+    - end_date: 结束日期，格式为 YYYY-MM-DD
+  调用示例：
+    Action Input: {"start_date": "2025-12-01", "end_date": "2025-12-31"}
+input_keys: ['start_date', 'end_date']
+metadata:
+  type: 'TOOL'
+  module: 'backend.infrastructure.intelligence.agentic.tool.budget_tool'
+  class: 'BudgetTool'
+
