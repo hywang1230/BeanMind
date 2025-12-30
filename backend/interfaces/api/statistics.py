@@ -5,6 +5,7 @@
 from typing import Optional, Literal
 from fastapi import APIRouter, Depends, Query
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from backend.interfaces.dto.statistics import (
     AssetOverviewResponse,
@@ -12,23 +13,28 @@ from backend.interfaces.dto.statistics import (
     MonthlyTrendResponse
 )
 from backend.config import settings, get_db
-from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
+from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.repositories import AccountRepositoryImpl, TransactionRepositoryImpl
 from backend.application.services import AccountApplicationService, TransactionApplicationService
 
 router = APIRouter(prefix="/api/statistics", tags=["statistics"])
 
 
+def get_beancount_service():
+    """获取共享的 BeancountService 实例"""
+    return BeancountServiceProvider.get_service(settings.LEDGER_FILE)
+
+
 def get_account_service() -> AccountApplicationService:
     """获取账户服务"""
-    beancount_service = BeancountService(settings.LEDGER_FILE)
+    beancount_service = get_beancount_service()
     account_repo = AccountRepositoryImpl(beancount_service)
     return AccountApplicationService(account_repo)
 
 
 def get_transaction_service() -> TransactionApplicationService:
     """获取交易服务"""
-    beancount_service = BeancountService(settings.LEDGER_FILE)
+    beancount_service = get_beancount_service()
     transaction_repo = TransactionRepositoryImpl(beancount_service, next(get_db()))
     account_repo = AccountRepositoryImpl(beancount_service)
     return TransactionApplicationService(transaction_repo, account_repo)
@@ -44,8 +50,7 @@ def get_exchange_rates(as_of_date: datetime = None) -> dict:
     Returns:
         汇率字典 {货币代码: 汇率}，例如 {"USD": 7.13, "CNY": 1}
     """
-    from decimal import Decimal
-    beancount_service = BeancountService(settings.LEDGER_FILE)
+    beancount_service = get_beancount_service()
     # 转换为 date 类型
     date_obj = as_of_date.date() if as_of_date else None
     rates = beancount_service.get_all_exchange_rates(to_currency="CNY", as_of_date=date_obj)
@@ -69,9 +74,7 @@ def convert_to_cny(amount: float, currency: str, exchange_rates: dict) -> float:
 
 
 @router.get("/assets", response_model=AssetOverviewResponse)
-async def get_asset_overview(
-    account_service: AccountApplicationService = Depends(get_account_service)
-) -> AssetOverviewResponse:
+async def get_asset_overview() -> AssetOverviewResponse:
     """
     获取资产概览
     
@@ -84,45 +87,34 @@ async def get_asset_overview(
     
     多币种处理：使用 beancount 账本中的 price 指令获取汇率，将所有货币转换为 CNY
     """
-    from decimal import Decimal
-    
-    # 获取 Beancount 服务以读取汇率
-    beancount_service = BeancountService(settings.LEDGER_FILE)
+    # 获取共享的 Beancount 服务
+    beancount_service = get_beancount_service()
     
     # 获取所有货币到 CNY 的汇率
     exchange_rates = beancount_service.get_all_exchange_rates(to_currency="CNY")
     
-    # 获取所有账户
-    all_accounts = account_service.get_all_accounts(active_only=False)
+    # 一次性批量获取所有账户余额（性能优化：避免逐账户查询）
+    all_balances = beancount_service.get_account_balances()
     
     total_assets = Decimal("0")
     total_liabilities = Decimal("0")  # 存储负债原始值（负数）
     
     # 统计资产和负债
-    for account_dict in all_accounts:
-        account_name = account_dict.get("name", "")
-        
-        # 获取该账户余额
-        balances = account_service.get_account_balance(account_name)
-        
+    for account_name, balances in all_balances.items():
         # 累加余额
-        if balances:
-            # balances 是一个字典，键为货币，值为余额字符串
-            for currency, amount_str in balances.items():
-                amount = Decimal(amount_str)
-                
-                # 获取汇率，如果没有则默认为 1（假设是 CNY）
-                rate = exchange_rates.get(currency, Decimal("1"))
-                
-                # 转换为 CNY
-                amount_in_cny = amount * rate
-                
-                # 资产类账户：正数表示拥有的价值
-                if account_name.startswith("Assets:"):
-                    total_assets += amount_in_cny
-                # 负债类账户：负数表示欠款，直接累加原始值
-                elif account_name.startswith("Liabilities:"):
-                    total_liabilities += amount_in_cny
+        for currency, amount in balances.items():
+            # 获取汇率，如果没有则默认为 1（假设是 CNY）
+            rate = exchange_rates.get(currency, Decimal("1"))
+            
+            # 转换为 CNY
+            amount_in_cny = amount * rate
+            
+            # 资产类账户：正数表示拥有的价值
+            if account_name.startswith("Assets:"):
+                total_assets += amount_in_cny
+            # 负债类账户：负数表示欠款，直接累加原始值
+            elif account_name.startswith("Liabilities:"):
+                total_liabilities += amount_in_cny
     
     # 净资产 = 资产 + 负债（负债为负数）
     net_assets = total_assets + total_liabilities
@@ -239,9 +231,15 @@ async def get_monthly_trend(
     获取月度趋势数据
     
     返回最近 N 个月的收入、支出、净收入趋势（统一转换为 CNY）
+    
+    性能优化：一次性获取汇率，避免每月重复获取
     """
     result = []
     now = datetime.now()
+    
+    # 性能优化：一次性获取当前汇率（用于所有月份的转换）
+    # 对于历史趋势，使用当前汇率是合理的近似
+    exchange_rates = get_exchange_rates()
     
     # 倒序遍历最近 N 个月
     for i in range(months - 1, -1, -1):
@@ -264,10 +262,7 @@ async def get_monthly_trend(
         start_date = start_of_month.strftime("%Y-%m-%d")
         end_date = end_of_month.strftime("%Y-%m-%d")
         
-        # 获取该月对应的汇率（使用月末日期）
-        exchange_rates = get_exchange_rates(as_of_date=end_of_month)
-        
-        # 获取该月统计数据
+        # 获取该月统计数据（由于使用了单例提供者，性能已大幅提升）
         stats = transaction_service.get_statistics(start_date, end_date)
         
         # income_total 和 expense_total 是按货币的字典

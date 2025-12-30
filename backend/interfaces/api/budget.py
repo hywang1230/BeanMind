@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import settings, get_db
 from backend.infrastructure.persistence.db.repositories.budget_repository_impl import BudgetRepositoryImpl
-from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
+from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.repositories import TransactionRepositoryImpl
 from backend.domain.budget.services.budget_execution_service import BudgetExecutionService
 from backend.application.services import BudgetApplicationService
@@ -41,8 +41,8 @@ def get_budget_service(db: Session = Depends(get_db)) -> BudgetApplicationServic
     # 创建预算仓储
     budget_repo = BudgetRepositoryImpl(db)
     
-    # 创建交易仓储（用于计算执行情况）
-    beancount_service = BeancountService(settings.LEDGER_FILE)
+    # 创建交易仓储（用于计算执行情况）- 使用共享的 Beancount 服务
+    beancount_service = BeancountServiceProvider.get_service(settings.LEDGER_FILE)
     transaction_repo = TransactionRepositoryImpl(beancount_service, db)
     
     # 创建执行计算服务

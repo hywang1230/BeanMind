@@ -693,25 +693,30 @@ async function loadExchangeRates() {
 }
 
 onMounted(async () => {
-  // 加载汇率数据（用于多币种转换）
-  await loadExchangeRates()
-
   // 检查是否需要刷新数据（在删除、新增、编辑操作后）
   const needsRefresh = uiStore.checkAndClearTransactionsRefresh()
 
   if (needsRefresh) {
     // 恢复筛选条件
     restoreFilters()
-    // 重新加载数据（保留筛选条件）
-    await loadTransactions(true)
+    // 并行加载汇率和交易数据（性能优化：减少首屏渲染阻塞）
+    await Promise.all([
+      loadExchangeRates(),
+      loadTransactions(true)
+    ])
     // 不恢复滚动位置，因为数据已经变化了
   } else if (transactionStore.transactions.length === 0) {
-    // 首次加载
-    await loadTransactions(true)
+    // 首次加载：并行加载汇率和交易数据
+    await Promise.all([
+      loadExchangeRates(),
+      loadTransactions(true)
+    ])
   } else {
     // 正常返回，恢复筛选条件和滚动位置
     restoreFilters()
     restoreScrollPosition()
+    // 后台刷新汇率（不阻塞）
+    loadExchangeRates()
     // 重新设置 IntersectionObserver（返回页面时原来的 observer 已失效）
     await nextTick()
     setupIntersectionObserver()

@@ -20,6 +20,7 @@ from backend.interfaces.dto.reports import (
     AccountTransactionItem,
 )
 from backend.config import settings
+from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
 from beancount.core.data import Transaction, Open
 
@@ -28,8 +29,8 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 
 
 def get_beancount_service() -> BeancountService:
-    """获取 Beancount 服务"""
-    return BeancountService(settings.LEDGER_FILE)
+    """获取共享的 Beancount 服务"""
+    return BeancountServiceProvider.get_service(settings.LEDGER_FILE)
 
 
 def get_display_name(account: str) -> str:

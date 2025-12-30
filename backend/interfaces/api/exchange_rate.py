@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 
 from backend.config import settings
-from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
+from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.repositories import ExchangeRateRepositoryImpl
 from backend.application.services.exchange_rate_service import ExchangeRateApplicationService
 
@@ -88,7 +88,7 @@ def get_exchange_rate_service() -> ExchangeRateApplicationService:
     
     依赖注入工厂函数。
     """
-    beancount_service = BeancountService(settings.LEDGER_FILE)
+    beancount_service = BeancountServiceProvider.get_service(settings.LEDGER_FILE)
     exchange_rate_repo = ExchangeRateRepositoryImpl(beancount_service)
     return ExchangeRateApplicationService(exchange_rate_repo)
 

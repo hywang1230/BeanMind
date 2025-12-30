@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Optional, List
 
 from backend.config import settings, get_db
-from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
+from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.repositories import TransactionRepositoryImpl, AccountRepositoryImpl
 from backend.application.services import TransactionApplicationService
 from backend.interfaces.dto.request.transaction import (
@@ -35,8 +35,8 @@ def get_transaction_service() -> TransactionApplicationService:
     
     依赖注入工厂函数。
     """
-    # 获取 Beancount 服务
-    beancount_service = BeancountService(settings.LEDGER_FILE)
+    # 获取共享的 Beancount 服务
+    beancount_service = BeancountServiceProvider.get_service(settings.LEDGER_FILE)
     
     # 创建仓储
     transaction_repo = TransactionRepositoryImpl(beancount_service, next(get_db()))
@@ -124,7 +124,7 @@ def get_exchange_rates():
     Returns:
         汇率字典，例如 {"USD": 7.13, "CNY": 1, "EUR": 7.80}
     """
-    beancount_service = BeancountService(settings.LEDGER_FILE)
+    beancount_service = BeancountServiceProvider.get_service(settings.LEDGER_FILE)
     rates = beancount_service.get_all_exchange_rates(to_currency="CNY")
     # 转换 Decimal 为 float 以便 JSON 序列化
     return {k: float(v) for k, v in rates.items()}

@@ -93,10 +93,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import VueApexCharts from 'vue3-apexcharts'
-import { statisticsApi, type AssetOverview, type CategoryStatistics, type MonthlyTrend } from '../../api/statistics'
+import { useStatisticsStore } from '../../stores/statistics'
 import { useUIStore } from '../../stores/ui'
+import type { AssetOverview, CategoryStatistics, MonthlyTrend } from '../../api/statistics'
 
 const apexchart = VueApexCharts
+const statisticsStore = useStatisticsStore()
 
 const loading = ref(true)
 
@@ -188,26 +190,23 @@ function formatNumber(num: number | undefined | null): string {
 async function loadDashboardData() {
   loading.value = true
   try {
-    const [assets, categories, trend] = await Promise.all([
-      statisticsApi.getAssetOverview().catch(() => ({
-        net_assets: 0, total_assets: 0, total_liabilities: 0, currency: 'CNY'
-      })),
-      statisticsApi.getCategoryStatistics({ type: 'expense', limit: 3 }).catch(() => []),
-      statisticsApi.getMonthlyTrend({ months: 6 }).catch(() => [])
-    ])
+    // 使用统计缓存 Store（自动处理缓存逻辑）
+    const { assets, categories, trend } = await statisticsStore.fetchDashboardData()
 
-    assetData.value = assets
+    assetData.value = assets || {
+      net_assets: 0, total_assets: 0, total_liabilities: 0, currency: 'CNY'
+    }
 
     // 从 trend 数据获取本月概览（最后一个月即为当前月）
-    const currentMonthTrend = trend.length > 0 ? trend[trend.length - 1] : null
+    const currentMonthTrend = trend && trend.length > 0 ? trend[trend.length - 1] : null
     monthlyData.value = {
       income: currentMonthTrend?.income || 0,
       expense: Math.abs(currentMonthTrend?.expense || 0),
       net: currentMonthTrend?.net || 0
     }
 
-    topCategories.value = categories
-    trendData.value = trend
+    topCategories.value = categories || []
+    trendData.value = trend || []
   } catch (error) {
     console.error('Failed to load dashboard data:', error)
   } finally {

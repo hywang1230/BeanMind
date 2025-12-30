@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Optional
 
 from backend.config import settings
-from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
+from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.repositories import AccountRepositoryImpl
 from backend.application.services import AccountApplicationService
 from backend.interfaces.dto.request.account import (
@@ -34,8 +34,8 @@ def get_account_service() -> AccountApplicationService:
     
     依赖注入工厂函数。
     """
-    # 获取 Beancount 服务
-    beancount_service = BeancountService(settings.LEDGER_FILE)
+    # 获取共享的 Beancount 服务
+    beancount_service = BeancountServiceProvider.get_service(settings.LEDGER_FILE)
     # 创建仓储
     account_repo = AccountRepositoryImpl(beancount_service)
     # 创建应用服务
