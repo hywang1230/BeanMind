@@ -88,9 +88,9 @@ app.include_router(budget_api.router)
 app.include_router(sync_api.router)
 
 
-@app.get("/")
+@app.get("/api")
 def read_root():
-    """健康检查"""
+    """API 欢迎页"""
     return {
         "message": "Welcome to BeanMind API",
         "version": "0.1.0",
