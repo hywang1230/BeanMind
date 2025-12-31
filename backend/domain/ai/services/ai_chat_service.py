@@ -3,6 +3,7 @@
 负责与 Agent 交互，提供对话能力。
 """
 import logging
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -46,7 +47,8 @@ class AIChatService:
                 AIChatService._initialized = True
                 logger.info("AgentUniverse 初始化成功")
             except Exception as e:
-                logger.error(f"AgentUniverse 初始化失败: {e}")
+                logger.error(f"AgentUniverse 初始化失败: {type(e).__name__}: {e}")
+                logger.error(f"详细堆栈追踪:\n{traceback.format_exc()}")
                 raise
     
     def _get_agent(self, agent_name: str = 'analysis_agent') -> Agent:
@@ -99,7 +101,8 @@ class AIChatService:
             return result
             
         except Exception as e:
-            logger.error(f"AI 对话失败: {e}")
+            logger.error(f"AI 对话失败: {type(e).__name__}: {e}")
+            logger.error(f"详细堆栈追踪:\n{traceback.format_exc()}")
             raise
     
     def _format_chat_history(self, history: list) -> str:

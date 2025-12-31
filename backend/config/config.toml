@@ -5,7 +5,7 @@ appname = 'BeanMind'
 default = ['backend.infrastructure.intelligence.agentic']
 agent = ['backend.infrastructure.intelligence.agentic.agent']
 llm = ['backend.infrastructure.intelligence.agentic.llm']
-
+prompt = ['backend.infrastructure.intelligence.agentic.prompt']
 tool = ['backend.infrastructure.intelligence.agentic.tool']
 
 
