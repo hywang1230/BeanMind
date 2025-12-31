@@ -31,14 +31,18 @@ FROM python:3.11-slim AS production
 # 设置环境变量
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app \
+    PYTHONPATH=/home/app/project \
     TZ=Asia/Shanghai
 
-WORKDIR /app
+# 使用更深的目录结构以满足 AgentUniverse 对 parents[1] 的要求
+# AgentUniverse 使用 current_work_directory.parents[1] 获取项目根路径
+# /home/app/project 的 parents: [0]=/home/app, [1]=/home, [2]=/
+WORKDIR /home/app/project
 
 # 安装系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/* \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
@@ -56,13 +60,13 @@ COPY pyproject.toml ./
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # 复制入口脚本
-COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY docker-entrypoint.sh /home/app/project/docker-entrypoint.sh
 
 # 创建数据目录
-RUN mkdir -p /app/data/ledger /app/data/backups /app/logs
+RUN mkdir -p /home/app/project/data/ledger /home/app/project/data/backups /home/app/project/logs
 
 # 使用 root 用户运行（解决开发环境权限问题）
-RUN chmod +x /app/docker-entrypoint.sh
+RUN chmod +x /home/app/project/docker-entrypoint.sh
 
 # 暴露端口
 EXPOSE 8000
@@ -73,7 +77,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 
 # 设置入口脚本
-ENTRYPOINT ["/app/docker-entrypoint.sh"]
+ENTRYPOINT ["/home/app/project/docker-entrypoint.sh"]
 
 # 默认启动命令
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

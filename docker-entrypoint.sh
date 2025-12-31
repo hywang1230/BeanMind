@@ -12,11 +12,11 @@ echo "🚀 BeanMind 容器启动中..."
 echo "=========================================="
 
 # 设置环境变量
-export PYTHONPATH=/app
+export PYTHONPATH=/home/app/project
 
 # 数据文件路径
-DB_FILE="${DATABASE_FILE:-/app/data/beanmind.db}"
-LEDGER_FILE="${LEDGER_FILE:-/app/data/ledger/main.beancount}"
+DB_FILE="${DATABASE_FILE:-/home/app/project/data/beanmind.db}"
+LEDGER_FILE="${LEDGER_FILE:-/home/app/project/data/ledger/main.beancount}"
 
 # ==================== 1. 初始化数据库 ====================
 echo ""
