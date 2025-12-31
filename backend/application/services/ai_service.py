@@ -19,9 +19,9 @@ _DEFAULT_CONFIG_PATH = str(Path(__file__).parent.parent.parent / 'config' / 'con
 # 预定义的快捷问题
 QUICK_QUESTIONS = [
     {"id": "q1", "text": "本月支出分析", "icon": "chart_pie"},
-    {"id": "q2", "text": "最近消费趋势", "icon": "chart_line_uptrend_xyaxis"},
+    {"id": "q2", "text": "最近消费趋势", "icon": "graph_square"},
     {"id": "q3", "text": "上月账单总结", "icon": "doc_text"},
-    {"id": "q4", "text": "今日消费情况", "icon": "calendar_badge_clock"},
+    {"id": "q4", "text": "今日消费情况", "icon": "calendar"},
     {"id": "q5", "text": "本周支出最多的类别", "icon": "list_bullet"},
     {"id": "q6", "text": "账户余额概览", "icon": "creditcard"},
 ]

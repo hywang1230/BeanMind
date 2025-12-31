@@ -46,9 +46,9 @@ export const useAIStore = defineStore('ai', () => {
             // 使用默认问题
             quickQuestions.value = [
                 { id: 'q1', text: '本月支出分析', icon: 'chart_pie' },
-                { id: 'q2', text: '最近消费趋势', icon: 'chart_line_uptrend_xyaxis' },
+                { id: 'q2', text: '最近消费趋势', icon: 'graph_square' },
                 { id: 'q3', text: '上月账单总结', icon: 'doc_text' },
-                { id: 'q4', text: '今日消费情况', icon: 'calendar_badge_clock' },
+                { id: 'q4', text: '今日消费情况', icon: 'calendar' },
             ]
         }
     }
