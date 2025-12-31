@@ -56,12 +56,16 @@ COPY pyproject.toml ./
 # 从前端构建阶段复制构建产物
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
+# 复制入口脚本
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+
 # 创建数据目录
 RUN mkdir -p /app/data/ledger /app/data/backups /app/logs
 
 # 创建非 root 用户
 RUN groupadd -r beanmind && useradd -r -g beanmind beanmind \
-    && chown -R beanmind:beanmind /app
+    && chown -R beanmind:beanmind /app \
+    && chmod +x /app/docker-entrypoint.sh
 
 # 暴露端口
 EXPOSE 8000
@@ -73,5 +77,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # 切换到非 root 用户
 USER beanmind
 
-# 启动命令
+# 设置入口脚本
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+
+# 默认启动命令
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

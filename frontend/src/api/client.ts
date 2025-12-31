@@ -2,7 +2,9 @@ import axios, { type AxiosInstance, type AxiosError, type InternalAxiosRequestCo
 
 // 创建 axios 实例
 const apiClient: AxiosInstance = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
+    // 使用 ?? 而不是 ||，这样空字符串不会被视为 falsy
+    // 空字符串表示使用相对路径（适用于前后端同域部署）
+    baseURL: import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000',
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
