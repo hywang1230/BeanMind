@@ -53,7 +53,20 @@ class GitHubSyncService:
         if self._repo is not None:
             return self._repo
         
-        self._repo_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            # 确保父目录存在且有正确权限
+            self._data_dir.mkdir(parents=True, exist_ok=True)
+            self._repo_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 检查目录是否可写
+            if not os.access(self._repo_dir, os.W_OK):
+                raise PermissionError(f"目录 {self._repo_dir} 不可写，请检查权限")
+        except PermissionError as e:
+            logger.error(f"创建或访问 Git 仓库目录失败: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"创建 Git 仓库目录时出错: {e}")
+            raise
         
         try:
             self._repo = Repo(self._repo_dir)
@@ -64,6 +77,7 @@ class GitHubSyncService:
                 self._repo.create_remote("origin", self._get_remote_url())
         except InvalidGitRepositoryError:
             # 初始化新仓库
+            logger.info(f"初始化新的 Git 仓库: {self._repo_dir}")
             self._repo = Repo.init(self._repo_dir)
             self._repo.create_remote("origin", self._get_remote_url())
             

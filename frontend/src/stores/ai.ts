@@ -2,9 +2,19 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { aiApi, type ChatMessage, type QuickQuestion } from '../api/ai'
 
-// 生成 UUID（使用浏览器内置 API）
+// 生成 UUID（使用浏览器内置 API，带 fallback）
 function generateId(): string {
-    return crypto.randomUUID()
+    // 优先使用原生 API
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID()
+    }
+
+    // Fallback: 生成符合 UUID v4 格式的字符串
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = Math.random() * 16 | 0
+        const v = c === 'x' ? r : (r & 0x3 | 0x8)
+        return v.toString(16)
+    })
 }
 
 export const useAIStore = defineStore('ai', () => {
@@ -50,7 +60,7 @@ export const useAIStore = defineStore('ai', () => {
         initSession()
         error.value = null
         isLoading.value = true
-        
+
         // 添加用户消息
         const userMessage: ChatMessage = {
             id: generateId(),
@@ -59,12 +69,12 @@ export const useAIStore = defineStore('ai', () => {
             created_at: new Date().toISOString(),
         }
         messages.value.push(userMessage)
-        
+
         // 构建历史
         const history = messages.value
             .slice(0, -1)  // 排除刚添加的用户消息
             .map(m => ({ role: m.role, content: m.content }))
-        
+
         try {
             // 发起请求
             const response = await aiApi.chat({
@@ -72,19 +82,19 @@ export const useAIStore = defineStore('ai', () => {
                 session_id: sessionId.value,
                 history,
             })
-            
+
             // 更新 session_id
             if (response.session_id) {
                 sessionId.value = response.session_id
             }
-            
+
             // 添加 AI 回复消息
             messages.value.push(response.message)
-            
+
         } catch (e) {
             const errorMsg = e instanceof Error ? e.message : '请求失败'
             error.value = errorMsg
-            
+
             // 添加错误消息
             const errorMessage: ChatMessage = {
                 id: generateId(),
@@ -102,7 +112,7 @@ export const useAIStore = defineStore('ai', () => {
     function clearMessages() {
         messages.value = []
         error.value = null
-        
+
         // 如果有会话，清空服务端会话
         if (sessionId.value) {
             aiApi.clearSession(sessionId.value).catch(console.error)
@@ -137,11 +147,11 @@ export const useAIStore = defineStore('ai', () => {
         isLoading,
         quickQuestions,
         error,
-        
+
         // 计算属性
         hasMessages,
         lastMessage,
-        
+
         // 方法
         initSession,
         fetchQuickQuestions,

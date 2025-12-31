@@ -212,7 +212,7 @@ class RecurringApplicationService:
             "description": template.get("description", "周期记账"),
             "postings": postings,
             "payee": template.get("payee"),
-            "tags": template.get("tags", []) + ["recurring"],  # 添加 recurring 标签
+            "tags": (template.get("tags") or []) + ["recurring"],  # 添加 recurring 标签
         }
         
         # 创建交易
