@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # CORS 允许的源
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
     
+    # ==================== 日志配置 ====================
+    LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+    LOG_DIR: Path = Path("./logs")  # 日志目录
+    
     # ==================== Pydantic 配置 ====================
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -71,6 +75,8 @@ class Settings(BaseSettings):
             object.__setattr__(self, 'LEDGER_FILE', (PROJECT_ROOT / self.LEDGER_FILE).resolve())
         if not self.DATABASE_FILE.is_absolute():
             object.__setattr__(self, 'DATABASE_FILE', (PROJECT_ROOT / self.DATABASE_FILE).resolve())
+        if not self.LOG_DIR.is_absolute():
+            object.__setattr__(self, 'LOG_DIR', (PROJECT_ROOT / self.LOG_DIR).resolve())
         return self
     
     # ==================== 辅助方法 ====================
@@ -88,6 +94,7 @@ class Settings(BaseSettings):
         """确保所有必要的目录存在"""
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.LEDGER_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self.LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # 创建全局配置实例

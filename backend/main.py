@@ -16,6 +16,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from backend.config import settings
 
+# ==================== 配置日志系统（最早执行） ====================
+from backend.config.logging_config import setup_logging
+
+setup_logging(
+    log_level=settings.LOG_LEVEL,
+    log_dir=settings.LOG_DIR,
+)
+
 logger = logging.getLogger(__name__)
 
 

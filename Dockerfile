@@ -39,7 +39,6 @@ WORKDIR /app
 # 安装系统依赖
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    git \
     && rm -rf /var/lib/apt/lists/* \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
@@ -59,8 +58,8 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # 复制入口脚本
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
-# 创建数据目录和同步目录
-RUN mkdir -p /app/data/ledger /app/data/backups /app/data/.git_sync /app/logs
+# 创建数据目录
+RUN mkdir -p /app/data/ledger /app/data/backups /app/logs
 
 # 创建非 root 用户
 RUN groupadd -r beanmind && useradd -r -g beanmind beanmind \

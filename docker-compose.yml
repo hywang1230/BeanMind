@@ -45,6 +45,8 @@ services:
       # 服务器配置
       - DEBUG=${DEBUG:-false}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      # 日志配置
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
     env_file:
       - .env
     restart: unless-stopped
