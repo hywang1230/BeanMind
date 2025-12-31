@@ -190,8 +190,11 @@ class BeancountService:
             postings=postings
         )
         
-        # 追加到文件
-        with open(self.ledger_path, "a", encoding="utf-8") as f:
+        # 根据交易日期确定目标文件（按年份分账本）
+        target_file = self.ensure_year_file(txn_date.year)
+        
+        # 追加到年份文件
+        with open(target_file, "a", encoding="utf-8") as f:
             f.write("\n")
             f.write(printer.format_entry(txn))
             f.write("\n")

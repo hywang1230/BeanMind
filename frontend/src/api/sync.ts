@@ -81,26 +81,26 @@ export async function getSyncHistory(limit: number = 20): Promise<{ logs: SyncLo
  * 触发同步
  */
 export async function triggerSync(message?: string): Promise<SyncResult> {
-    return apiClient.post('/api/sync', { message })
+    return apiClient.post('/api/sync', { message }, { timeout: 120000 })
 }
 
 /**
  * 推送到 GitHub
  */
 export async function pushToGitHub(message?: string): Promise<SyncResult> {
-    return apiClient.post('/api/sync/push', { message })
+    return apiClient.post('/api/sync/push', { message }, { timeout: 120000 })
 }
 
 /**
  * 从 GitHub 拉取
  */
 export async function pullFromGitHub(): Promise<SyncResult> {
-    return apiClient.post('/api/sync/pull')
+    return apiClient.post('/api/sync/pull', {}, { timeout: 120000 })
 }
 
 /**
  * 测试 GitHub 连接
  */
 export async function testConnection(): Promise<TestConnectionResult> {
-    return apiClient.post('/api/sync/test')
+    return apiClient.post('/api/sync/test', {}, { timeout: 30000 })
 }

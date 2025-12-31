@@ -305,10 +305,10 @@ class GitHubSyncService:
             # 获取当前分支的最新 commit
             try:
                 branch = repo.get_branch(self.config.github_branch)
-                base_tree_sha = branch.commit.commit.tree.sha
+                base_tree = branch.commit.commit.tree
             except UnknownObjectException:
                 # 分支不存在，创建初始提交
-                base_tree_sha = None
+                base_tree = None
             
             # 创建 blob 对象和树
             tree_elements = []
@@ -323,13 +323,13 @@ class GitHubSyncService:
                 ))
             
             # 创建树
-            if base_tree_sha:
-                tree = repo.create_git_tree(tree_elements, base_tree=base_tree_sha)
+            if base_tree:
+                tree = repo.create_git_tree(tree_elements, base_tree=base_tree)
             else:
                 tree = repo.create_git_tree(tree_elements)
             
             # 创建提交
-            if base_tree_sha:
+            if base_tree:
                 parent = branch.commit
                 commit = repo.create_git_commit(message, tree, [parent.commit])
             else:
