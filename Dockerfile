@@ -61,10 +61,8 @@ COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 # 创建数据目录
 RUN mkdir -p /app/data/ledger /app/data/backups /app/logs
 
-# 创建非 root 用户
-RUN groupadd -r beanmind && useradd -r -g beanmind beanmind \
-    && chown -R beanmind:beanmind /app \
-    && chmod +x /app/docker-entrypoint.sh
+# 使用 root 用户运行（解决开发环境权限问题）
+RUN chmod +x /app/docker-entrypoint.sh
 
 # 暴露端口
 EXPOSE 8000
@@ -73,8 +71,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# 切换到非 root 用户
-USER beanmind
 
 # 设置入口脚本
 ENTRYPOINT ["/app/docker-entrypoint.sh"]
