@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List
 
-from github import Github, Repository, GithubException, UnknownObjectException
+from github import Github, Repository, GithubException, UnknownObjectException, InputGitTreeElement
 from github.GithubException import RateLimitExceededException
 
 from backend.config.settings import settings
@@ -315,12 +315,12 @@ class GitHubSyncService:
             for file_path, content in local_files.items():
                 # 创建 blob
                 blob = repo.create_git_blob(base64.b64encode(content).decode(), "base64")
-                tree_elements.append({
-                    "path": file_path,
-                    "mode": "100644",  # 普通文件
-                    "type": "blob",
-                    "sha": blob.sha
-                })
+                tree_elements.append(InputGitTreeElement(
+                    path=file_path,
+                    mode="100644",
+                    type="blob",
+                    sha=blob.sha
+                ))
             
             # 创建树
             if base_tree_sha:

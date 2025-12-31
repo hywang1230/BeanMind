@@ -17,23 +17,13 @@
     <!-- 基本信息 -->
     <f7-block-title>基本信息</f7-block-title>
     <f7-list strong-ios dividers-ios inset-ios>
-      <f7-list-input
-        label="规则名称"
-        type="text"
-        v-model:value="formData.name"
-        placeholder="例如：每月房租"
-        required
-      >
+      <f7-list-input label="规则名称" type="text" v-model:value="formData.name" placeholder="例如：每月房租" required>
         <template #media>
           <f7-icon ios="f7:textformat" md="material:title" />
         </template>
       </f7-list-input>
 
-      <f7-list-item
-        title="频率类型"
-        smart-select
-        :smart-select-params="{ openIn: 'sheet', closeOnSelect: true }"
-      >
+      <f7-list-item title="频率类型" smart-select :smart-select-params="{ openIn: 'sheet', closeOnSelect: true }">
         <template #media>
           <f7-icon ios="f7:clock" md="material:schedule" />
         </template>
@@ -52,14 +42,10 @@
       <f7-block-title>选择星期几</f7-block-title>
       <f7-block>
         <div class="weekday-selector">
-          <f7-chip
-            v-for="day in weekdays"
-            :key="day.value"
-            :text="day.label"
+          <f7-chip v-for="day in weekdays" :key="day.value" :text="day.label"
             :outline="!formData.frequency_config.weekdays?.includes(day.value)"
             :color="formData.frequency_config.weekdays?.includes(day.value) ? 'primary' : undefined"
-            @click="toggleWeekday(day.value)"
-          />
+            @click="toggleWeekday(day.value)" />
         </div>
       </f7-block>
     </template>
@@ -69,20 +55,13 @@
       <f7-block-title>选择日期</f7-block-title>
       <f7-block>
         <div class="monthday-selector">
-          <f7-chip
-            v-for="day in 31"
-            :key="day"
-            :text="String(day)"
+          <f7-chip v-for="day in 31" :key="day" :text="String(day)"
             :outline="!formData.frequency_config.month_days?.includes(day)"
             :color="formData.frequency_config.month_days?.includes(day) ? 'primary' : undefined"
-            @click="toggleMonthDay(day)"
-          />
-          <f7-chip
-            text="月末"
-            :outline="!formData.frequency_config.month_days?.includes(-1)"
+            @click="toggleMonthDay(day)" />
+          <f7-chip text="月末" :outline="!formData.frequency_config.month_days?.includes(-1)"
             :color="formData.frequency_config.month_days?.includes(-1) ? 'primary' : undefined"
-            @click="toggleMonthDay(-1)"
-          />
+            @click="toggleMonthDay(-1)" />
         </div>
       </f7-block>
     </template>
@@ -90,22 +69,12 @@
     <!-- 日期范围 -->
     <f7-block-title>有效期</f7-block-title>
     <f7-list strong-ios dividers-ios inset-ios>
-      <f7-list-item
-        title="开始日期"
-        :after="formData.start_date"
-        link="#"
-        @click="openStartDatePicker"
-      >
+      <f7-list-item title="开始日期" :after="formData.start_date" link="#" @click="openStartDatePicker">
         <template #media>
           <f7-icon ios="f7:calendar" md="material:event" />
         </template>
       </f7-list-item>
-      <f7-list-item
-        title="结束日期"
-        :after="formData.end_date || '不限'"
-        link="#"
-        @click="openEndDatePicker"
-      >
+      <f7-list-item title="结束日期" :after="formData.end_date || '不限'" link="#" @click="openEndDatePicker">
         <template #media>
           <f7-icon ios="f7:calendar_badge_minus" md="material:event_busy" />
         </template>
@@ -116,38 +85,23 @@
     <f7-block-title>交易模板</f7-block-title>
     <f7-list strong-ios dividers-ios inset-ios>
       <!-- 交易方（弹窗选择） -->
-      <f7-list-item
-        title="交易方"
-        :after="formData.transaction_template.payee || '请选择'"
-        link="#"
-        @click="openPayeePicker"
-      >
+      <f7-list-item title="交易方" :after="formData.transaction_template.payee || '请选择'" link="#" @click="openPayeePicker">
         <template #media>
           <f7-icon ios="f7:person_2_fill" md="material:people" />
         </template>
       </f7-list-item>
 
       <!-- 备注 -->
-      <f7-list-input
-        label="备注"
-        type="textarea"
-        v-model:value="formData.transaction_template.description"
-        placeholder="添加备注"
-        resizable
-      >
+      <f7-list-input label="备注" type="textarea" v-model:value="formData.transaction_template.description"
+        placeholder="添加备注" resizable>
         <template #media>
           <f7-icon ios="f7:pencil_circle" md="material:edit" />
         </template>
       </f7-list-input>
 
       <!-- 标签 -->
-      <f7-list-input
-        label="标签"
-        type="text"
-        v-model:value="formData.transaction_template.tagString"
-        placeholder="标签用空格分隔"
-        info="例如: 旅行 餐饮"
-      >
+      <f7-list-input label="标签" type="text" v-model:value="formData.transaction_template.tagString"
+        placeholder="标签用空格分隔" info="例如: 旅行 餐饮">
         <template #media>
           <f7-icon ios="f7:tag_fill" md="material:label" />
         </template>
@@ -157,11 +111,8 @@
     <!-- 交易明细 -->
     <f7-block-title>交易明细</f7-block-title>
     <f7-list strong-ios dividers-ios inset-ios>
-      <f7-list-item
-        v-for="(posting, index) in formData.transaction_template.postings"
-        :key="index"
-        class="posting-item"
-      >
+      <f7-list-item v-for="(posting, index) in formData.transaction_template.postings" :key="index"
+        class="posting-item">
         <template #inner>
           <div class="posting-row">
             <div class="posting-main" @click="openAccountPicker(index)">
@@ -178,11 +129,8 @@
               <div class="posting-amount-input" @click="openAmountInput(index)">
                 {{ formatAmount(posting.amount) }}
               </div>
-              <f7-link
-                v-if="formData.transaction_template.postings.length > 2"
-                @click.stop="removePosting(index)"
-                class="remove-posting-btn"
-              >
+              <f7-link v-if="formData.transaction_template.postings.length > 2" @click.stop="removePosting(index)"
+                class="remove-posting-btn">
                 <f7-icon ios="f7:minus_circle_fill" md="material:remove_circle" color="red" />
               </f7-link>
             </div>
@@ -212,30 +160,15 @@
     </f7-block>
 
     <!-- 账户选择弹窗（支持所有账户，单选） -->
-    <AccountSelectionPopup
-      v-model:opened="showAccountPicker"
-      title="选择类别"
-      :root-types="allAccountTypes"
-      :allow-multi-select="false"
-      @select="onAccountSelect"
-    />
+    <AccountSelectionPopup v-model:opened="showAccountPicker" title="选择类别" :root-types="allAccountTypes"
+      :allow-multi-select="false" @select="onAccountSelect" />
 
     <!-- 交易方选择弹窗 -->
-    <PayeeSelectionPopup
-      v-model:opened="showPayeePicker"
-      @select="onPayeeSelect"
-    />
+    <PayeeSelectionPopup v-model:opened="showPayeePicker" @select="onPayeeSelect" />
 
     <!-- 金额输入键盘 -->
-    <f7-sheet
-      class="amount-keypad-sheet"
-      :opened="showAmountKeypad"
-      @sheet:closed="onAmountKeypadClosed"
-      style="height: auto;"
-      backdrop
-      close-by-backdrop-click
-      swipe-to-close
-    >
+    <f7-sheet class="amount-keypad-sheet" :opened="showAmountKeypad" @sheet:closed="onAmountKeypadClosed"
+      style="height: auto;" backdrop close-by-backdrop-click swipe-to-close>
       <div class="keypad-header">
         <span class="keypad-currency">{{ currentEditingPosting?.currency || 'CNY' }}</span>
         <span class="keypad-value">{{ amountExpression || '0' }}</span>
@@ -399,10 +332,10 @@ let startDateCalendar: any = null
 let endDateCalendar: any = null
 
 function openStartDatePicker() {
-  const currentDate = formData.value.start_date 
-    ? new Date(formData.value.start_date) 
+  const currentDate = formData.value.start_date
+    ? new Date(formData.value.start_date)
     : new Date()
-  
+
   if (!startDateCalendar) {
     startDateCalendar = f7.calendar.create({
       closeOnSelect: true,
@@ -424,10 +357,10 @@ function openStartDatePicker() {
 }
 
 function openEndDatePicker() {
-  const currentDate = formData.value.end_date 
-    ? new Date(formData.value.end_date) 
+  const currentDate = formData.value.end_date
+    ? new Date(formData.value.end_date)
     : new Date()
-  
+
   if (!endDateCalendar) {
     endDateCalendar = f7.calendar.create({
       closeOnSelect: true,
@@ -503,7 +436,7 @@ function appendAmount(char: string) {
     const currentNum = parts[parts.length - 1]
     if (currentNum && currentNum.includes('.')) return
   }
-  
+
   // Prevent multiple operators
   if (['+', '-'].includes(char)) {
     const lastChar = amountExpression.value.slice(-1)
@@ -529,20 +462,20 @@ function confirmAmount() {
       updatePostingAmount(0)
       return
     }
-    
+
     let sanitized = amountExpression.value.replace(/[^0-9+\-.]/g, '')
     if (['+', '-'].includes(sanitized.slice(-1))) {
       sanitized = sanitized.slice(0, -1)
     }
-    
+
     let result = Function('"use strict";return (' + sanitized + ')')()
     result = Math.round(result * 100) / 100
-    
+
     updatePostingAmount(result)
   } catch (e) {
     updatePostingAmount(0)
   }
-  
+
   showAmountKeypad.value = false
 }
 
@@ -573,11 +506,11 @@ function removePosting(index: number) {
 // 加载编辑数据
 async function loadRule() {
   if (!ruleId.value) return
-  
+
   loading.value = true
   try {
     const rule = await recurringApi.getRule(ruleId.value)
-    
+
     formData.value = {
       name: rule.name,
       frequency: rule.frequency as any,
@@ -611,21 +544,21 @@ function validateForm(): boolean {
     f7.toast.show({ text: '请输入规则名称', position: 'center', closeTimeout: 2000 })
     return false
   }
-  
+
   if (formData.value.frequency === 'weekly' || formData.value.frequency === 'biweekly') {
     if (!formData.value.frequency_config.weekdays?.length) {
       f7.toast.show({ text: '请选择执行的星期', position: 'center', closeTimeout: 2000 })
       return false
     }
   }
-  
+
   if (formData.value.frequency === 'monthly') {
     if (!formData.value.frequency_config.month_days?.length) {
       f7.toast.show({ text: '请选择执行的日期', position: 'center', closeTimeout: 2000 })
       return false
     }
   }
-  
+
   const validPostings = formData.value.transaction_template.postings.filter(p => p.account)
   if (validPostings.length < 2) {
     f7.toast.show({ text: '至少需要配置两个有效的交易明细', position: 'center', closeTimeout: 2000 })
@@ -639,29 +572,29 @@ function validateForm(): boolean {
     if (!sums[currency]) sums[currency] = 0
     sums[currency] += (Number(p.amount) || 0)
   }
-  
+
   for (const currency in sums) {
     // 使用少量误差容忍浮点数运算
     if (Math.abs(sums[currency] || 0) > 0.001) {
-      f7.toast.show({ 
-        text: `借贷不平衡：${currency} 金额之和必须为 0 (当前: ${(sums[currency] || 0).toFixed(2)})`, 
-        position: 'center', 
-        closeTimeout: 3000 
+      f7.toast.show({
+        text: `借贷不平衡：${currency} 金额之和必须为 0 (当前: ${(sums[currency] || 0).toFixed(2)})`,
+        position: 'center',
+        closeTimeout: 3000
       })
       return false
     }
   }
-  
+
   return true
 }
 
 // 提交表单
 async function handleSubmit() {
   if (!validateForm()) return
-  
+
   loading.value = true
   error.value = ''
-  
+
   try {
     const tags = formData.value.transaction_template.tagString
       .split(' ')
@@ -685,7 +618,7 @@ async function handleSubmit() {
       end_date: formData.value.end_date || undefined,
       is_active: formData.value.is_active
     }
-    
+
     if (isEditMode.value && ruleId.value) {
       await recurringApi.updateRule(ruleId.value, request)
       f7.toast.show({ text: '更新成功', position: 'center', closeTimeout: 1500 })
@@ -693,7 +626,7 @@ async function handleSubmit() {
       await recurringApi.createRule(request)
       f7.toast.show({ text: '创建成功', position: 'center', closeTimeout: 1500 })
     }
-    
+
     router.back()
   } catch (err: any) {
     error.value = err.message || '保存失败'
@@ -834,7 +767,7 @@ onMounted(() => {
   font-weight: 500;
   color: #000;
   padding: 15px 0;
-  box-shadow: 0 1px 1px rgba(0,0,0,0.2);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -861,5 +794,73 @@ onMounted(() => {
 .op-key {
   background: #f4d03f;
   color: black;
+}
+</style>
+
+<style>
+/* Global overrides for this specific page in dark mode */
+.theme-dark .page[data-name="recurring-rule-form"] .item-title,
+.dark .page[data-name="recurring-rule-form"] .item-title {
+  color: #fff !important;
+}
+
+.theme-dark .page[data-name="recurring-rule-form"] .item-label,
+.dark .page[data-name="recurring-rule-form"] .item-label {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+.theme-dark .page[data-name="recurring-rule-form"] .item-input-wrap input,
+.theme-dark .page[data-name="recurring-rule-form"] .item-input-wrap textarea,
+.theme-dark .page[data-name="recurring-rule-form"] .item-input-wrap select,
+.dark .page[data-name="recurring-rule-form"] .item-input-wrap input,
+.dark .page[data-name="recurring-rule-form"] .item-input-wrap textarea,
+.dark .page[data-name="recurring-rule-form"] .item-input-wrap select {
+  color: #fff !important;
+  -webkit-text-fill-color: #fff !important;
+  /* Safari/iOS specific */
+}
+
+.theme-dark .page[data-name="recurring-rule-form"] .item-after,
+.dark .page[data-name="recurring-rule-form"] .item-after {
+  color: rgba(255, 255, 255, 0.7) !important;
+}
+
+/* Custom components in dark mode */
+.theme-dark .page[data-name="recurring-rule-form"] .keypad-header,
+.dark .page[data-name="recurring-rule-form"] .keypad-header {
+  background: #1c1c1d !important;
+  border-bottom-color: #333 !important;
+}
+
+.theme-dark .page[data-name="recurring-rule-form"] .keypad-value,
+.dark .page[data-name="recurring-rule-form"] .keypad-value {
+  color: #fff !important;
+}
+
+.theme-dark .page[data-name="recurring-rule-form"] .keypad-grid,
+.dark .page[data-name="recurring-rule-form"] .keypad-grid {
+  background: #000 !important;
+}
+
+.theme-dark .page[data-name="recurring-rule-form"] .key-btn,
+.dark .page[data-name="recurring-rule-form"] .key-btn {
+  background: #333 !important;
+  color: #fff !important;
+}
+
+.theme-dark .page[data-name="recurring-rule-form"] .posting-main,
+.theme-dark .page[data-name="recurring-rule-form"] .posting-currency-select,
+.theme-dark .page[data-name="recurring-rule-form"] .posting-amount-input,
+.dark .page[data-name="recurring-rule-form"] .posting-main,
+.dark .page[data-name="recurring-rule-form"] .posting-currency-select,
+.dark .page[data-name="recurring-rule-form"] .posting-amount-input {
+  background: #1c1c1d !important;
+  border-color: #333 !important;
+  color: #fff !important;
+}
+
+.theme-dark .page[data-name="recurring-rule-form"] .posting-account,
+.dark .page[data-name="recurring-rule-form"] .posting-account {
+  color: #fff !important;
 }
 </style>

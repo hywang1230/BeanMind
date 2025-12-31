@@ -35,7 +35,7 @@ export type RecurringExecution = {
     rule_id: number | string
     execution_date: string
     transaction_id?: string
-    status: 'pending' | 'executed' | 'failed'
+    status: 'SUCCESS' | 'FAILED' | 'PENDING'
     error_message?: string
     created_at?: string
 }

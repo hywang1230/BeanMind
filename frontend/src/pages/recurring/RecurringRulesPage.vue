@@ -14,47 +14,112 @@
       </f7-nav-right>
     </f7-navbar>
 
-    <!-- 加载中 -->
-    <f7-block v-if="loading && rules.length === 0" class="text-align-center">
-      <f7-preloader />
-      <p>加载中...</p>
-    </f7-block>
+    <div class="filter-section">
+      <f7-segmented strong tag="div">
+        <f7-button :active="activeTab === 'rules'" @click="activeTab = 'rules'">规则列表</f7-button>
+        <f7-button :active="activeTab === 'history'" @click="switchToHistory">执行日志</f7-button>
+      </f7-segmented>
+    </div>
 
-    <!-- 空状态 -->
-    <f7-block v-else-if="!loading && rules.length === 0" class="empty-state">
-      <div class="empty-icon">🔄</div>
-      <div class="empty-text">暂无周期记账规则</div>
-      <f7-button fill round @click="goToAddRule" class="empty-action-btn">
-        创建规则
-      </f7-button>
-    </f7-block>
+    <!-- 规则列表视图 -->
+    <div v-if="activeTab === 'rules'">
+      <!-- 加载中 -->
+      <f7-block v-if="loading && rules.length === 0" class="text-align-center">
+        <f7-preloader />
+        <p>加载中...</p>
+      </f7-block>
 
-    <!-- 规则列表 -->
-    <f7-list v-else media-list inset strong dividers-ios>
-      <f7-list-item v-for="rule in rules" :key="rule.id" :title="rule.name" :subtitle="formatFrequency(rule)"
-        :text="formatTemplate(rule)" link="#" swipeout @click="showRuleDetails(rule)">
-        <template #media>
-          <div class="rule-icon" :class="{ inactive: !rule.is_active }">
-            <f7-icon ios="f7:arrow_2_circlepath" md="material:autorenew" />
-          </div>
-        </template>
-        <template #after>
-          <f7-chip v-if="!rule.is_active" text="已停用" color="gray" />
-        </template>
+      <!-- 空状态 -->
+      <f7-block v-else-if="!loading && rules.length === 0" class="empty-state">
+        <div class="empty-icon">🔄</div>
+        <div class="empty-text">暂无周期记账规则</div>
+        <f7-button fill round @click="goToAddRule" class="empty-action-btn">
+          创建规则
+        </f7-button>
+      </f7-block>
 
-        <f7-swipeout-actions right>
-          <f7-swipeout-button color="blue" @click.stop="toggleRule(rule)">
-            {{ rule.is_active ? '停用' : '启用' }}
-          </f7-swipeout-button>
-          <f7-swipeout-button color="orange" @click.stop="editRule(rule)">
-            编辑
-          </f7-swipeout-button>
-          <f7-swipeout-button color="red" delete confirm-text="确定要删除该规则吗？" @click.stop="deleteRule(rule)">
-            删除
-          </f7-swipeout-button>
-        </f7-swipeout-actions>
-      </f7-list-item>
-    </f7-list>
+      <!-- 规则列表 -->
+      <f7-list v-else media-list inset strong dividers-ios>
+        <f7-list-item v-for="rule in rules" :key="rule.id" link="#" swipeout @click="showRuleDetails(rule)">
+          <template #media>
+            <div class="rule-icon" :class="{ inactive: !rule.is_active }">
+              <f7-icon ios="f7:arrow_2_circlepath" md="material:autorenew" />
+            </div>
+          </template>
+
+          <template #title>
+            <div class="rule-title">{{ rule.name }}</div>
+          </template>
+
+          <template #subtitle>
+            <div class="rule-info">{{ formatFrequency(rule) }}</div>
+          </template>
+
+          <template #text>
+            <div class="rule-desc">{{ formatTemplate(rule) }}</div>
+          </template>
+
+          <template #after>
+            <f7-chip v-if="!rule.is_active" text="已停用" color="gray" />
+          </template>
+
+          <f7-swipeout-actions right>
+            <f7-swipeout-button color="blue" @click.stop="toggleRule(rule)">
+              {{ rule.is_active ? '停用' : '启用' }}
+            </f7-swipeout-button>
+            <f7-swipeout-button color="orange" @click.stop="editRule(rule)">
+              编辑
+            </f7-swipeout-button>
+            <f7-swipeout-button color="red" delete confirm-text="确定要删除该规则吗？" @click.stop="deleteRule(rule)">
+              删除
+            </f7-swipeout-button>
+          </f7-swipeout-actions>
+        </f7-list-item>
+      </f7-list>
+    </div>
+
+    <!-- 执行日志视图 -->
+    <div v-if="activeTab === 'history'">
+      <!-- 加载中 -->
+      <f7-block v-if="loadingHistory && executions.length === 0" class="text-align-center">
+        <f7-preloader />
+        <p>加载日志中...</p>
+      </f7-block>
+
+      <!-- 空状态 -->
+      <f7-block v-else-if="!loadingHistory && executions.length === 0" class="empty-state">
+        <div class="empty-icon">📝</div>
+        <div class="empty-text">暂无执行记录</div>
+      </f7-block>
+
+      <!-- 日志列表 -->
+      <f7-list v-else media-list inset strong dividers-ios>
+        <f7-list-item v-for="execution in executions" :key="execution.id">
+          <template #title>
+            <div class="rule-title">{{ getRuleName(execution.rule_id) }}</div>
+          </template>
+          <template #subtitle>
+            <div class="rule-info">{{ execution.execution_date }}</div>
+          </template>
+          <template #footer>
+            <div class="rule-desc">{{ execution.created_at ? new Date(execution.created_at).toLocaleString() : '' }}
+            </div>
+          </template>
+
+          <template #media>
+            <div class="execution-icon" :class="execution.status.toLowerCase()">
+              <f7-icon v-if="execution.status === 'SUCCESS'" ios="f7:checkmark_circle_fill"
+                md="material:check_circle" />
+              <f7-icon v-else ios="f7:xmark_circle_fill" md="material:error" />
+            </div>
+          </template>
+          <template #after>
+            <f7-chip :text="execution.status === 'SUCCESS' ? '成功' : '失败'"
+              :color="execution.status === 'SUCCESS' ? 'green' : 'red'" />
+          </template>
+        </f7-list-item>
+      </f7-list>
+    </div>
 
     <!-- 规则详情弹窗 -->
     <f7-sheet :opened="showDetailSheet" @sheet:closed="showDetailSheet = false" class="rule-detail-sheet" swipe-to-close
@@ -101,11 +166,14 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { f7 } from 'framework7-vue'
-import { recurringApi, type RecurringRule } from '../../api/recurring'
+import { recurringApi, type RecurringRule, type RecurringExecution } from '../../api/recurring'
 
 const router = useRouter()
+const activeTab = ref('rules')
 const loading = ref(false)
+const loadingHistory = ref(false)
 const rules = ref<RecurringRule[]>([])
+const executions = ref<RecurringExecution[]>([])
 const showDetailSheet = ref(false)
 const selectedRule = ref<RecurringRule | null>(null)
 
@@ -170,6 +238,11 @@ function formatAmount(amount: number, currency: string): string {
   return `${sign}${amount.toFixed(2)} ${currency}`
 }
 
+function getRuleName(ruleId: string | number): string {
+  const rule = rules.value.find(r => r.id === ruleId)
+  return rule ? rule.name : `规则 ID: ${ruleId}`
+}
+
 function goBack() {
   router.back()
 }
@@ -178,14 +251,34 @@ function goToAddRule() {
   router.push('/recurring/add')
 }
 
+function switchToHistory() {
+  activeTab.value = 'history'
+  loadExecutions()
+}
+
 async function loadRules() {
   loading.value = true
   try {
     rules.value = await recurringApi.getRules()
   } catch (error: any) {
-    f7.toast.show({ text: error.message || '加载失败', position: 'center', closeTimeout: 2000 })
+    f7.toast.show({ text: error.message || '加载规则失败', position: 'center', closeTimeout: 2000 })
   } finally {
     loading.value = false
+  }
+}
+
+async function loadExecutions() {
+  loadingHistory.value = true
+  try {
+    executions.value = await recurringApi.getExecutions()
+    // 确保规则也加载了，以便显示名称
+    if (rules.value.length === 0) {
+      await loadRules()
+    }
+  } catch (error: any) {
+    f7.toast.show({ text: error.message || '加载日志失败', position: 'center', closeTimeout: 2000 })
+  } finally {
+    loadingHistory.value = false
   }
 }
 
@@ -244,6 +337,10 @@ async function executeRuleNow() {
       closeTimeout: 2000
     })
     showDetailSheet.value = false
+    // If in history tab, reload
+    if (activeTab.value === 'history') {
+      loadExecutions()
+    }
   } catch (error: any) {
     f7.toast.show({ text: error.message || '执行失败', position: 'center', closeTimeout: 2000 })
   }
@@ -291,6 +388,22 @@ onMounted(() => {
   background: var(--f7-list-item-after-text-color);
 }
 
+.execution-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.execution-icon.success {
+  color: var(--f7-color-green);
+}
+
+.execution-icon.failed {
+  color: var(--f7-color-red);
+}
+
 .rule-detail-sheet {
   height: auto;
   max-height: 70vh;
@@ -321,4 +434,71 @@ onMounted(() => {
   justify-content: center;
   gap: 8px;
 }
+
+.filter-section {
+  padding: 16px;
+  background: var(--f7-page-bg-color);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+/* Custom styles for list content */
+.rule-title {
+  font-weight: 600;
+  color: var(--f7-text-color);
+}
+
+.rule-info {
+  font-size: 14px;
+  color: var(--f7-list-item-footer-text-color);
+}
+
+.rule-desc {
+  font-size: 14px;
+  color: var(--f7-list-item-text-text-color);
+}
+
+/* Dark mode overrides */
+@media (prefers-color-scheme: dark) {
+  .rule-title {
+    color: #fff;
+  }
+
+  .rule-info {
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  .rule-desc {
+    color: rgba(255, 255, 255, 0.55);
+  }
+}
+
+:global(.theme-dark) .rule-title,
+:global(.dark) .rule-title {
+  color: #fff;
+}
+
+:global(.theme-dark) .rule-info,
+:global(.dark) .rule-info {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+:global(.theme-dark) .rule-desc,
+:global(.dark) .rule-desc {
+  color: rgba(255, 255, 255, 0.55);
+}
 </style>
+
+/* Fix for Rule Details Sheet in Dark Mode */
+:global(.theme-dark) .rule-detail-sheet .item-title,
+:global(.dark) .rule-detail-sheet .item-title,
+:global(.theme-dark) .rule-detail-sheet .block-title,
+:global(.dark) .rule-detail-sheet .block-title {
+color: #fff !important;
+}
+
+:global(.theme-dark) .rule-detail-sheet .item-after,
+:global(.dark) .rule-detail-sheet .item-after {
+color: rgba(255, 255, 255, 0.7) !important;
+}
