@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List
 
-from github import Github, Repository, GithubException, UnknownObjectException, InputGitTreeElement
+from github import Github, Repository, GithubException, UnknownObjectException
 from github.GithubException import RateLimitExceededException
 
 from backend.config.settings import settings
@@ -273,8 +273,40 @@ class GitHubSyncService:
         
         return status
     
+    def _calculate_content_hash(self, content: bytes) -> str:
+        """计算文件内容的 hash 值（与 GitHub blob SHA 兼容）
+        
+        GitHub 使用 git blob SHA 格式: sha1("blob {size}\0{content}")
+        """
+        import hashlib
+        # Git blob SHA 计算方式
+        header = f"blob {len(content)}\0".encode()
+        return hashlib.sha1(header + content).hexdigest()
+    
+    def _get_remote_file_info(self, repo, file_path: str) -> Optional[Tuple[str, str]]:
+        """获取远程文件信息
+        
+        Returns:
+            (sha, content_hash) 或 None（文件不存在）
+        """
+        try:
+            content_file = repo.get_contents(file_path, ref=self.config.github_branch)
+            if isinstance(content_file, list):
+                return None
+            return (content_file.sha, content_file.sha)  # GitHub 的 SHA 就是 blob SHA
+        except UnknownObjectException:
+            return None
+        except Exception as e:
+            logger.warning(f"获取远程文件信息失败 {file_path}: {e}")
+            return None
+    
     def push(self, message: str = "Auto sync from BeanMind") -> SyncResult:
         """推送本地变更到 GitHub
+        
+        使用逐文件更新方式（参考 beancount-web 实现）：
+        - 先检查远程文件是否存在
+        - 比较内容 hash，只更新有变化的文件
+        - 使用 update_file/create_file API
         
         Args:
             message: 提交消息
@@ -302,51 +334,81 @@ class GitHubSyncService:
                     direction=SyncDirection.PUSH
                 )
             
-            # 获取当前分支的最新 commit
-            try:
-                branch = repo.get_branch(self.config.github_branch)
-                base_tree = branch.commit.commit.tree
-            except UnknownObjectException:
-                # 分支不存在，创建初始提交
-                base_tree = None
+            pushed_files = []
+            skipped_files = []
+            failed_files = []
             
-            # 创建 blob 对象和树
-            tree_elements = []
             for file_path, content in local_files.items():
-                # 创建 blob
-                blob = repo.create_git_blob(base64.b64encode(content).decode(), "base64")
-                tree_elements.append(InputGitTreeElement(
-                    path=file_path,
-                    mode="100644",
-                    type="blob",
-                    sha=blob.sha
-                ))
+                try:
+                    # 计算本地文件的 blob SHA
+                    local_blob_sha = self._calculate_content_hash(content)
+                    
+                    # 获取远程文件信息
+                    remote_info = self._get_remote_file_info(repo, file_path)
+                    
+                    # 解码内容为字符串（GitHub API 需要字符串）
+                    try:
+                        content_str = content.decode('utf-8')
+                    except UnicodeDecodeError:
+                        # 二进制文件使用 base64
+                        content_str = base64.b64encode(content).decode('utf-8')
+                    
+                    if remote_info:
+                        remote_sha, remote_blob_sha = remote_info
+                        
+                        # 比较 SHA，如果相同则跳过
+                        if local_blob_sha == remote_blob_sha:
+                            skipped_files.append(file_path)
+                            logger.debug(f"文件未变更，跳过: {file_path}")
+                            continue
+                        
+                        # 更新已存在的文件
+                        repo.update_file(
+                            path=file_path,
+                            message=f"{message}: {file_path}",
+                            content=content_str,
+                            sha=remote_sha,
+                            branch=self.config.github_branch
+                        )
+                        logger.info(f"更新文件: {file_path}")
+                    else:
+                        # 创建新文件
+                        repo.create_file(
+                            path=file_path,
+                            message=f"{message}: {file_path}",
+                            content=content_str,
+                            branch=self.config.github_branch
+                        )
+                        logger.info(f"创建文件: {file_path}")
+                    
+                    pushed_files.append(file_path)
+                    
+                except GithubException as e:
+                    logger.error(f"推送文件失败 {file_path}: {e}")
+                    failed_files.append(file_path)
+                except Exception as e:
+                    logger.error(f"处理文件失败 {file_path}: {e}")
+                    failed_files.append(file_path)
             
-            # 创建树
-            if base_tree:
-                tree = repo.create_git_tree(tree_elements, base_tree=base_tree)
+            # 构建结果消息
+            if pushed_files:
+                msg_parts = [f"成功推送 {len(pushed_files)} 个文件"]
+                if skipped_files:
+                    msg_parts.append(f"跳过 {len(skipped_files)} 个未变更文件")
+                if failed_files:
+                    msg_parts.append(f"{len(failed_files)} 个文件失败")
+                result_message = "，".join(msg_parts)
+                success = True
+            elif skipped_files and not failed_files:
+                result_message = f"所有 {len(skipped_files)} 个文件均未变更"
+                success = True
             else:
-                tree = repo.create_git_tree(tree_elements)
+                result_message = f"推送失败，{len(failed_files)} 个文件出错"
+                success = False
             
-            # 创建提交
-            if base_tree:
-                parent = branch.commit
-                commit = repo.create_git_commit(message, tree, [parent.commit])
-            else:
-                commit = repo.create_git_commit(message, tree, [])
-            
-            # 更新分支引用
-            try:
-                ref = repo.get_git_ref(f"heads/{self.config.github_branch}")
-                ref.edit(commit.sha, force=True)  # force=True 实现本地优先策略
-            except UnknownObjectException:
-                # 分支不存在，创建新分支
-                repo.create_git_ref(f"refs/heads/{self.config.github_branch}", commit.sha)
-            
-            pushed_files = list(local_files.keys())
             return SyncResult(
-                success=True,
-                message=f"成功推送 {len(pushed_files)} 个文件",
+                success=success,
+                message=result_message,
                 direction=SyncDirection.PUSH,
                 pushed_files=pushed_files
             )
@@ -367,8 +429,14 @@ class GitHubSyncService:
         finally:
             self._is_syncing = False
     
-    def pull(self) -> SyncResult:
+    def pull(self, force: bool = False) -> SyncResult:
         """从 GitHub 拉取更新
+        
+        智能拉取：只拉取本地不存在或远程有更新的文件。
+        如果本地文件有变更（与远程不同），不会覆盖，除非 force=True。
+        
+        Args:
+            force: 是否强制覆盖本地文件（危险操作）
         
         Returns:
             拉取结果
@@ -383,7 +451,8 @@ class GitHubSyncService:
         try:
             self._is_syncing = True
             
-            # 获取远程文件列表
+            # 获取本地和远程文件
+            local_files = self._get_local_files()
             github_files = self._get_github_files()
             
             if not github_files:
@@ -393,12 +462,33 @@ class GitHubSyncService:
                     direction=SyncDirection.PULL
                 )
             
-            # 下载并保存所有文件
+            # 智能拉取：只拉取需要更新的文件
             pulled_files = []
+            skipped_files = []
+            conflict_files = []
             failed_files = []
             
-            for file_path in github_files.keys():
-                # 下载文件
+            for file_path, remote_sha in github_files.items():
+                # 检查本地是否存在该文件
+                if file_path in local_files:
+                    # 计算本地文件的 blob SHA
+                    local_content = local_files[file_path]
+                    local_blob_sha = self._calculate_content_hash(local_content)
+                    
+                    # 如果本地和远程 SHA 相同，跳过
+                    if local_blob_sha == remote_sha:
+                        skipped_files.append(file_path)
+                        logger.debug(f"文件未变更，跳过拉取: {file_path}")
+                        continue
+                    
+                    # 本地和远程不同，这是一个潜在冲突
+                    if not force:
+                        # 非强制模式下，跳过有本地修改的文件，避免数据丢失
+                        conflict_files.append(file_path)
+                        logger.warning(f"文件存在本地修改，跳过拉取以保护数据: {file_path}")
+                        continue
+                
+                # 下载文件（本地不存在，或强制模式）
                 content = self._download_file_from_github(file_path)
                 if content is None:
                     failed_files.append(file_path)
@@ -407,26 +497,36 @@ class GitHubSyncService:
                 # 保存到本地
                 if self._save_local_file(file_path, content):
                     pulled_files.append(file_path)
+                    logger.info(f"拉取文件: {file_path}")
                 else:
                     failed_files.append(file_path)
             
             if failed_files:
                 logger.warning(f"部分文件拉取失败: {failed_files}")
             
-            if not pulled_files:
-                return SyncResult(
-                    success=False,
-                    message="所有文件拉取失败",
-                    direction=SyncDirection.PULL
-                )
-            
-            message = f"成功拉取 {len(pulled_files)} 个文件"
+            # 构建结果消息
+            msg_parts = []
+            if pulled_files:
+                msg_parts.append(f"拉取 {len(pulled_files)} 个文件")
+            if skipped_files:
+                msg_parts.append(f"跳过 {len(skipped_files)} 个未变更文件")
+            if conflict_files:
+                msg_parts.append(f"保护 {len(conflict_files)} 个本地修改文件")
             if failed_files:
-                message += f"，{len(failed_files)} 个文件失败"
+                msg_parts.append(f"{len(failed_files)} 个文件失败")
+            
+            if not msg_parts:
+                result_message = "无需拉取"
+            else:
+                result_message = "，".join(msg_parts)
+            
+            # 如果有冲突文件，提醒用户
+            if conflict_files:
+                result_message += "（建议先推送本地变更）"
             
             return SyncResult(
                 success=True,
-                message=message,
+                message=result_message,
                 direction=SyncDirection.PULL,
                 pulled_files=pulled_files
             )
@@ -448,7 +548,15 @@ class GitHubSyncService:
             self._is_syncing = False
     
     def sync(self, message: str = "Auto sync from BeanMind") -> SyncResult:
-        """执行完整同步（先拉取后推送）
+        """执行完整同步（先推送后拉取）
+        
+        正确的同步顺序：
+        1. 先推送本地变更到远程（保护本地数据）
+        2. 再拉取远程新增的文件（只拉取本地不存在的文件）
+        
+        这样可以确保：
+        - 本地修改的数据不会被远程覆盖
+        - 远程新增的文件会被同步到本地
         
         Args:
             message: 提交消息
@@ -456,18 +564,29 @@ class GitHubSyncService:
         Returns:
             同步结果
         """
-        # 先拉取
-        pull_result = self.pull()
-        if not pull_result.success and "为空" not in pull_result.message:
-            return pull_result
-        
-        # 再推送
+        # 1. 先推送本地变更（保护本地数据）
         push_result = self.push(message)
+        if not push_result.success:
+            return push_result
         
-        # 合并结果
+        # 2. 再拉取远程新文件（智能拉取，不覆盖本地已有文件）
+        pull_result = self.pull()
+        
+        # 合并结果消息
+        msg_parts = []
+        if push_result.pushed_files:
+            msg_parts.append(f"推送 {len(push_result.pushed_files)} 个文件")
+        if pull_result.pulled_files:
+            msg_parts.append(f"拉取 {len(pull_result.pulled_files)} 个文件")
+        
+        if not msg_parts:
+            result_message = "所有文件已同步，无需更新"
+        else:
+            result_message = "，".join(msg_parts)
+        
         return SyncResult(
-            success=push_result.success,
-            message=push_result.message,
+            success=True,
+            message=result_message,
             direction=SyncDirection.BOTH,
             pushed_files=push_result.pushed_files,
             pulled_files=pull_result.pulled_files

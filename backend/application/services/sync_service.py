@@ -183,14 +183,17 @@ class SyncApplicationService:
             "pushed_files": result.pushed_files
         }
     
-    def pull(self) -> dict:
+    def pull(self, force: bool = False) -> dict:
         """从 GitHub 拉取
+        
+        Args:
+            force: 是否强制覆盖本地文件（危险操作，会丢失本地修改）
         
         Returns:
             拉取结果字典
         """
         service = self._get_sync_service()
-        result = service.pull()
+        result = service.pull(force=force)
         
         # 保存同步日志
         if result.success:

@@ -1,8 +1,16 @@
 """GitHub 同步数据模型"""
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from enum import Enum
+
+# 东八区时区
+TIMEZONE_CN = timezone(timedelta(hours=8))
+
+
+def _now_cn() -> datetime:
+    """获取当前东八区时间"""
+    return datetime.now(TIMEZONE_CN)
 
 
 class SyncDirection(str, Enum):
@@ -34,7 +42,7 @@ class SyncResult:
     pushed_files: List[str] = field(default_factory=list)
     pulled_files: List[str] = field(default_factory=list)
     conflicts: List[str] = field(default_factory=list)
-    synced_at: datetime = field(default_factory=datetime.now)
+    synced_at: datetime = field(default_factory=_now_cn)
 
 
 @dataclass

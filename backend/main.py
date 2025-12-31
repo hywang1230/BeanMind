@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
+    
+    # 1. 周期记账调度器
     if settings.SCHEDULER_ENABLED:
         from backend.infrastructure.scheduler import recurring_scheduler
         
@@ -45,6 +47,16 @@ async def lifespan(app: FastAPI):
             f"({settings.SCHEDULER_TIMEZONE}) 执行"
         )
     
+    # 2. GitHub 自动同步调度器
+    if settings.GITHUB_SYNC_AUTO_ENABLED:
+        from backend.infrastructure.scheduler import sync_scheduler
+        
+        sync_scheduler.start()
+        sync_scheduler.add_sync_job(interval_seconds=settings.GITHUB_SYNC_AUTO_INTERVAL)
+        logger.info(
+            f"GitHub 自动同步调度器已启动: 每 {settings.GITHUB_SYNC_AUTO_INTERVAL} 秒执行"
+        )
+    
     yield
     
     # 关闭时
@@ -52,6 +64,11 @@ async def lifespan(app: FastAPI):
         from backend.infrastructure.scheduler import recurring_scheduler
         recurring_scheduler.shutdown()
         logger.info("周期记账调度器已关闭")
+    
+    if settings.GITHUB_SYNC_AUTO_ENABLED:
+        from backend.infrastructure.scheduler import sync_scheduler
+        sync_scheduler.shutdown()
+        logger.info("GitHub 自动同步调度器已关闭")
 
 
 app = FastAPI(

@@ -5,8 +5,11 @@
 import json
 import uuid
 from typing import List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
+
+# 东八区时区
+TIMEZONE_CN = timezone(timedelta(hours=8))
 
 from backend.infrastructure.persistence.db.models.sync_log import SyncLog
 
@@ -50,7 +53,7 @@ class SyncLogRepository:
             pulled_files=json.dumps(pulled_files),
             repo=repo,
             branch=branch,
-            synced_at=datetime.now(timezone.utc)
+            synced_at=datetime.now(TIMEZONE_CN)
         )
         self._session.add(log)
         self._session.commit()

@@ -22,6 +22,11 @@ class SyncTriggerRequest(BaseModel):
     message: Optional[str] = None
 
 
+class PullRequest(BaseModel):
+    """拉取请求"""
+    force: bool = False  # 是否强制覆盖本地文件（危险操作）
+
+
 class SyncConfigResponse(BaseModel):
     """同步配置响应"""
     github_repo: str
@@ -129,7 +134,7 @@ async def get_history(
     "",
     response_model=SyncResultResponse,
     summary="触发同步",
-    description="执行完整同步（先拉取后推送）"
+    description="执行完整同步（先推送后拉取，保护本地数据）"
 )
 async def trigger_sync(
     request: SyncTriggerRequest = SyncTriggerRequest(),
@@ -157,13 +162,20 @@ async def push(
     "/pull",
     response_model=SyncResultResponse,
     summary="从 GitHub 拉取",
-    description="从 GitHub 拉取更新"
+    description="从 GitHub 拉取更新（智能拉取，默认不覆盖本地修改的文件）"
 )
 async def pull(
+    request: PullRequest = PullRequest(),
     sync_service: SyncApplicationService = Depends(get_sync_service)
 ):
-    """从 GitHub 拉取"""
-    return sync_service.pull()
+    """从 GitHub 拉取
+    
+    智能拉取策略：
+    - 默认情况下，只拉取本地不存在的文件
+    - 如果本地文件有修改，会跳过拉取以保护本地数据
+    - 设置 force=True 可以强制覆盖本地文件（危险操作）
+    """
+    return sync_service.pull(force=request.force)
 
 
 @router.post(
@@ -178,3 +190,38 @@ async def test_connection(
     """测试 GitHub 连接"""
     success, message = sync_service.test_connection()
     return {"success": success, "message": message}
+
+
+# ========== 自动同步调度器 API ==========
+
+class SchedulerStatusResponse(BaseModel):
+    """调度器状态响应"""
+    job_id: Optional[str]
+    name: Optional[str]
+    running: bool
+    next_run_time: Optional[str]
+    interval_seconds: Optional[float]
+
+
+@router.get(
+    "/scheduler/status",
+    response_model=SchedulerStatusResponse,
+    summary="获取自动同步调度器状态",
+    description="获取 GitHub 自动同步调度器的运行状态"
+)
+async def get_scheduler_status():
+    """获取调度器状态"""
+    from backend.infrastructure.scheduler import sync_scheduler
+    return sync_scheduler.get_job_info()
+
+
+@router.post(
+    "/scheduler/trigger",
+    summary="手动触发自动同步",
+    description="立即触发一次自动同步任务"
+)
+async def trigger_scheduler():
+    """手动触发同步"""
+    from backend.infrastructure.scheduler import sync_scheduler
+    return sync_scheduler.trigger_now()
+
