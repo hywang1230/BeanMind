@@ -1,36 +1,4 @@
 import apiClient from './client'
-import axios from 'axios'
-
-// AI 专用 axios 实例，超时时间更长
-const aiClient = axios.create({
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000',
-    timeout: 120000,  // 120 秒超时，AI 对话需要更长时间
-    headers: {
-        'Content-Type': 'application/json'
-    }
-})
-
-// 请求拦截器 - 添加 token
-aiClient.interceptors.request.use((config) => {
-    const token = localStorage.getItem('token')
-    if (token && config.headers) {
-        config.headers.Authorization = `Bearer ${token}`
-    }
-    return config
-})
-
-// 响应拦截器 - 处理错误
-aiClient.interceptors.response.use(
-    (response) => response.data,
-    (error) => {
-        if (error.response?.status === 401) {
-            localStorage.removeItem('token')
-            window.location.href = '/login'
-        }
-        const errorMessage = error.response?.data?.detail || error.message || '请求失败'
-        return Promise.reject({ status: error.response?.status, message: errorMessage })
-    }
-)
 
 // 类型定义
 export type MessageRole = 'user' | 'assistant' | 'system'
@@ -81,9 +49,12 @@ export const aiApi = {
 
     /**
      * AI 对话
+     * 注意：AI 对话需要更长的超时时间（120秒）
      */
     chat(request: ChatRequest): Promise<ChatResponse> {
-        return aiClient.post('/api/ai/chat', request)
+        return apiClient.post('/api/ai/chat', request, {
+            timeout: 120000  // 120 秒超时，AI 对话需要更长时间
+        })
     },
 
     /**
