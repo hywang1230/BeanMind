@@ -17,7 +17,7 @@
         <!-- 基本信息 -->
         <f7-block-title>基本信息</f7-block-title>
         <f7-list strong-ios dividers-ios inset>
-            <f7-list-input label="预算名称" type="text" placeholder="例如: 2025年1月预算" :value="form.name"
+            <f7-list-input label="预算名称" type="text" placeholder="例如: 2025年生活费预算" :value="form.name"
                 @input="form.name = $event.target.value" required />
 
             <f7-list-input label="预算总金额" type="number" placeholder="请输入金额" :value="form.amount"
@@ -25,13 +25,6 @@
                 <template #media>
                     <span class="currency-symbol">¥</span>
                 </template>
-            </f7-list-input>
-
-            <f7-list-input label="周期类型" type="select" :value="form.period_type"
-                @change="handlePeriodTypeChange($event.target.value)">
-                <option value="MONTHLY">月度</option>
-                <option value="YEARLY">年度</option>
-                <option value="CUSTOM">自定义</option>
             </f7-list-input>
         </f7-list>
 
@@ -41,10 +34,41 @@
             <f7-list-input label="开始日期" type="datepicker" :value="[form.start_date]" readonly
                 :calendar-params="{ dateFormat: 'yyyy-mm-dd', closeOnSelect: true }"
                 @calendar:change="onCalendarStartChange" />
-            <f7-list-input label="结束日期" type="datepicker" :value="[form.end_date]"
-                :disabled="form.period_type !== 'CUSTOM'" readonly
+            <f7-list-input label="结束日期" type="datepicker" :value="[form.end_date]" readonly
                 :calendar-params="{ dateFormat: 'yyyy-mm-dd', closeOnSelect: true }"
                 @calendar:change="onCalendarEndChange" />
+        </f7-list>
+
+        <!-- 循环预算设置 -->
+        <f7-block-title>循环预算</f7-block-title>
+        <f7-list strong-ios dividers-ios inset>
+            <f7-list-input label="循环类型" type="select" :value="form.cycle_type"
+                @change="handleCycleTypeChange($event.target.value)">
+                <option value="NONE">不循环</option>
+                <option value="MONTHLY">按月循环</option>
+                <option value="YEARLY">按年循环</option>
+            </f7-list-input>
+
+            <f7-list-item v-if="form.cycle_type !== 'NONE'" title="启用预算延续">
+                <template #after>
+                    <f7-toggle :checked="form.carry_over_enabled" @toggle:change="form.carry_over_enabled = $event" />
+                </template>
+            </f7-list-item>
+
+            <f7-block-footer v-if="form.cycle_type !== 'NONE'" class="cycle-hint">
+                <p v-if="form.cycle_type === 'MONTHLY'">
+                    <f7-icon ios="f7:info_circle" md="material:info" />
+                    按月循环：系统将在预算时间范围内按月生成预算周期。
+                </p>
+                <p v-else-if="form.cycle_type === 'YEARLY'">
+                    <f7-icon ios="f7:info_circle" md="material:info" />
+                    按年循环：系统将在预算时间范围内按年生成预算周期。
+                </p>
+                <p v-if="form.carry_over_enabled">
+                    <f7-icon ios="f7:checkmark_circle" md="material:check_circle" />
+                    启用延续后，上个周期的剩余预算（正或负）将自动带入下个周期。
+                </p>
+            </f7-block-footer>
         </f7-list>
 
         <!-- 选择支出账户 -->
@@ -72,7 +96,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, defineComponent, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { budgetsApi, type PeriodType } from '../../api/budgets'
+import { budgetsApi, type PeriodType, type CycleType } from '../../api/budgets'
 import { accountsApi, type Account } from '../../api/accounts'
 import { f7, f7TreeviewItem, f7Treeview, f7Checkbox } from 'framework7-vue'
 
@@ -152,10 +176,13 @@ interface AccountNode extends Account {
 const form = ref({
     name: '',
     amount: undefined as number | undefined,
-    period_type: 'MONTHLY' as PeriodType,
+    period_type: 'CUSTOM' as PeriodType,  // 默认使用CUSTOM，日期完全自定义
     start_date: '',
     end_date: '',
-    selected_accounts: [] as string[]
+    selected_accounts: [] as string[],
+    // 循环预算相关字段
+    cycle_type: 'NONE' as CycleType,
+    carry_over_enabled: false
 })
 
 // 筛选出支出类账户树（只保留 Expenses 开头的账户树）
@@ -171,12 +198,14 @@ const expenseAccounts = computed(() => {
 const selectedAccountsCount = computed(() => form.value.selected_accounts.length)
 
 const canSubmit = computed(() => {
-    return (
+    const basicValid =
         form.value.name.trim() !== '' &&
         (form.value.amount !== undefined && form.value.amount > 0) &&
         form.value.start_date !== '' &&
+        form.value.end_date !== '' &&
         form.value.selected_accounts.length > 0
-    )
+
+    return basicValid
 })
 
 function toggleAccount(accountName: string) {
@@ -293,18 +322,18 @@ function formatDateForInput(date: Date): string {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-function handlePeriodTypeChange(type: PeriodType) {
-    form.value.period_type = type
-    if (form.value.start_date) {
-        calculateEndDate(form.value.start_date)
+
+function handleCycleTypeChange(type: CycleType) {
+    form.value.cycle_type = type
+    // 如果切换到不循环，清空延续设置
+    if (type === 'NONE') {
+        form.value.carry_over_enabled = false
     }
 }
 
 function handleStartDateChange(dateStr: string) {
     form.value.start_date = dateStr
-    if (form.value.period_type !== 'CUSTOM') {
-        calculateEndDate(dateStr)
-    }
+    // 不再自动计算结束日期
 }
 
 function onCalendarStartChange(val: any) {
@@ -321,20 +350,6 @@ function onCalendarEndChange(val: any) {
     }
 }
 
-function calculateEndDate(startDateStr: string) {
-    const startDate = new Date(startDateStr)
-    let endDate: Date
-
-    if (form.value.period_type === 'MONTHLY') {
-        endDate = new Date(startDate.getFullYear(), startDate.getMonth() + 1, 0)
-    } else if (form.value.period_type === 'YEARLY') {
-        endDate = new Date(startDate.getFullYear(), 11, 31)
-    } else {
-        return
-    }
-
-    form.value.end_date = formatDateForInput(endDate)
-}
 
 async function loadBudget() {
     const budgetId = route.params.id as string
@@ -348,6 +363,9 @@ async function loadBudget() {
         form.value.start_date = budget.start_date
         form.value.end_date = budget.end_date || ''
         form.value.selected_accounts = budget.items.map(item => item.account_pattern)
+        // 循环预算相关字段
+        form.value.cycle_type = budget.cycle_type || 'NONE'
+        form.value.carry_over_enabled = budget.carry_over_enabled || false
     } catch (err) {
         console.error('Failed to load budget:', err)
         f7.toast.create({
@@ -365,7 +383,7 @@ async function handleSubmit() {
     error.value = ''
 
     try {
-        const data = {
+        const data: any = {
             name: form.value.name,
             amount: form.value.amount!,
             period_type: form.value.period_type,
@@ -376,6 +394,12 @@ async function handleSubmit() {
                 amount: 0, // 后端已改为忽略此值
                 currency: 'CNY'
             }))
+        }
+
+        // 添加循环预算相关字段
+        if (form.value.cycle_type !== 'NONE') {
+            data.cycle_type = form.value.cycle_type
+            data.carry_over_enabled = form.value.carry_over_enabled
         }
 
         if (isEdit.value) {
@@ -455,6 +479,24 @@ onMounted(async () => {
 .disabled {
     opacity: 0.5;
     pointer-events: none;
+}
+
+.cycle-hint {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.cycle-hint p {
+    margin: 8px 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.cycle-hint .icon {
+    flex-shrink: 0;
+    margin-top: 2px;
 }
 
 :root {

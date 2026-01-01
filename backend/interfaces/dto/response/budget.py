@@ -62,15 +62,18 @@ class BudgetResponse(BaseModel):
     status: BudgetStatusEnum = Field(..., description="整体状态")
     created_at: Optional[str] = Field(None, description="创建时间")
     updated_at: Optional[str] = Field(None, description="更新时间")
-    
+    # 循环预算相关字段
+    cycle_type: str = Field(default="NONE", description="循环类型")
+    carry_over_enabled: bool = Field(default=False, description="是否启用预算延续")
+
     class Config:
         json_schema_extra = {
             "example": {
                 "id": "budget-456",
-                "name": "2025年1月预算",
+                "name": "2025年月度预算",
                 "period_type": "MONTHLY",
                 "start_date": "2025-01-01",
-                "end_date": "2025-01-31",
+                "end_date": "2025-12-31",
                 "is_active": True,
                 "items": [],
                 "total_budget": 5000.00,
@@ -78,10 +81,54 @@ class BudgetResponse(BaseModel):
                 "total_remaining": 2500.00,
                 "overall_usage_rate": 50.0,
                 "status": "normal",
+                "cycle_type": "MONTHLY",
+                "carry_over_enabled": True,
                 "created_at": "2025-01-01T00:00:00",
                 "updated_at": "2025-01-15T12:00:00"
             }
         }
+
+
+class BudgetCycleResponse(BaseModel):
+    """预算周期响应"""
+    id: str = Field(..., description="周期ID")
+    budget_id: str = Field(..., description="预算ID")
+    period_number: int = Field(..., description="周期序号")
+    period_start: str = Field(..., description="周期开始日期")
+    period_end: str = Field(..., description="周期结束日期")
+    base_amount: float = Field(..., description="基础预算金额")
+    carried_over_amount: float = Field(..., description="延续的金额")
+    total_amount: float = Field(..., description="总预算金额")
+    spent_amount: float = Field(..., description="已花费金额")
+    remaining_amount: float = Field(..., description="剩余金额")
+    usage_rate: float = Field(..., description="使用率")
+    status: BudgetStatusEnum = Field(..., description="状态")
+    created_at: Optional[str] = Field(None, description="创建时间")
+    updated_at: Optional[str] = Field(None, description="更新时间")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "id": "cycle_1",
+                "budget_id": "budget-456",
+                "period_number": 1,
+                "period_start": "2025-01-01",
+                "period_end": "2025-01-31",
+                "base_amount": 5000.0,
+                "carried_over_amount": 0.0,
+                "total_amount": 5000.0,
+                "spent_amount": 3500.0,
+                "remaining_amount": 1500.0,
+                "usage_rate": 70.0,
+                "status": "normal"
+            }
+        }
+
+
+class BudgetCycleListResponse(BaseModel):
+    """预算周期列表响应"""
+    cycles: List[BudgetCycleResponse] = Field(..., description="周期列表")
+    total: int = Field(..., description="总数")
 
 
 class BudgetListResponse(BaseModel):

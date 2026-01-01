@@ -100,6 +100,12 @@ const routes: RouteRecordRaw[] = [
         meta: { requiresAuth: true }
     },
     {
+        path: '/budgets/:id/cycles',
+        name: 'BudgetCycles',
+        component: () => import('../pages/budgets/BudgetCyclesPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
         path: '/budgets/:budgetId/items/:itemId/transactions',
         name: 'BudgetTransactions',
         component: () => import('../pages/budgets/BudgetTransactionsPage.vue'),

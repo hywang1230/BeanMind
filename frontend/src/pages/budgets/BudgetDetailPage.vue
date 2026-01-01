@@ -103,6 +103,11 @@
 
             <!-- 操作区域 -->
             <f7-block class="actions-block">
+                <!-- 循环预算：查看周期按钮 -->
+                <f7-button v-if="budget.cycle_type !== 'NONE'" color="blue" fill round @click="navigateToCycles">
+                    查看周期 ({{ getCycleTypeText(budget.cycle_type) }})
+                </f7-button>
+
                 <f7-button v-if="budget.is_active" color="orange" outline round @click="toggleBudgetStatus">
                     停用预算
                 </f7-button>
@@ -181,6 +186,15 @@ function getProgressColor(status: string): string {
         exceeded: 'var(--ios-red)'
     }
     return colors[status] || 'var(--ios-blue)'
+}
+
+function getCycleTypeText(type: string): string {
+    const types: Record<string, string> = {
+        NONE: '不循环',
+        MONTHLY: '按月',
+        YEARLY: '按年'
+    }
+    return types[type] || type
 }
 
 function formatAccountPattern(pattern: string): string {
@@ -266,6 +280,11 @@ function navigateToEdit() {
     }
 }
 
+function navigateToCycles() {
+    if (budget.value) {
+        router.push(`/budgets/${budget.value.id}/cycles`)
+    }
+}
 
 function navigateToBudgetTransactions(item: any) {
     if (!budget.value) return

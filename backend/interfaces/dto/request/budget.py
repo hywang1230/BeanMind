@@ -14,6 +14,13 @@ class PeriodTypeEnum(str, Enum):
     CUSTOM = "CUSTOM"
 
 
+class CycleTypeEnum(str, Enum):
+    """循环预算类型"""
+    NONE = "NONE"
+    MONTHLY = "MONTHLY"
+    YEARLY = "YEARLY"
+
+
 class BudgetItemRequest(BaseModel):
     """
     预算项目请求
@@ -37,13 +44,15 @@ class BudgetItemRequest(BaseModel):
 class CreateBudgetRequest(BaseModel):
     """
     创建预算请求
-    
+
     Example:
         {
-            "name": "2025年1月预算",
+            "name": "2025年月度预算",
             "period_type": "MONTHLY",
             "start_date": "2025-01-01",
-            "end_date": "2025-01-31",
+            "end_date": "2025-12-31",
+            "cycle_type": "MONTHLY",
+            "carry_over_enabled": true,
             "items": [
                 {"account_pattern": "Expenses:Food:*", "amount": 3000, "currency": "CNY"},
                 {"account_pattern": "Expenses:Transport:*", "amount": 500, "currency": "CNY"}
@@ -56,14 +65,18 @@ class CreateBudgetRequest(BaseModel):
     start_date: str = Field(..., description="开始日期（格式：YYYY-MM-DD）")
     end_date: Optional[str] = Field(None, description="结束日期（格式：YYYY-MM-DD）")
     items: List[BudgetItemRequest] = Field(default_factory=list, description="预算项目列表")
-    
+    cycle_type: CycleTypeEnum = Field(default=CycleTypeEnum.NONE, description="循环类型")
+    carry_over_enabled: bool = Field(default=False, description="是否启用预算延续")
+
     class Config:
         json_schema_extra = {
             "example": {
-                "name": "2025年1月预算",
+                "name": "2025年月度预算",
                 "period_type": "MONTHLY",
                 "start_date": "2025-01-01",
-                "end_date": "2025-01-31",
+                "end_date": "2025-12-31",
+                "cycle_type": "MONTHLY",
+                "carry_over_enabled": True,
                 "items": [
                     {"account_pattern": "Expenses:Food:*", "amount": 3000, "currency": "CNY"},
                     {"account_pattern": "Expenses:Transport:*", "amount": 500, "currency": "CNY"}
@@ -83,11 +96,13 @@ class UpdateBudgetRequest(BaseModel):
     end_date: Optional[str] = Field(None, description="结束日期")
     is_active: Optional[bool] = Field(None, description="是否启用")
     items: Optional[List[BudgetItemRequest]] = Field(None, description="预算项目列表（完整替换）")
-    
+    cycle_type: Optional[CycleTypeEnum] = Field(None, description="循环类型")
+    carry_over_enabled: Optional[bool] = Field(None, description="是否启用预算延续")
+
     class Config:
         json_schema_extra = {
             "example": {
-                "name": "2025年1月预算 (修改)",
+                "name": "2025年月度预算 (修改)",
                 "is_active": True
             }
         }

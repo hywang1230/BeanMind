@@ -8,10 +8,12 @@ from decimal import Decimal
 from datetime import date, datetime
 import uuid
 
-from backend.domain.budget.entities.budget import Budget, PeriodType
+from backend.domain.budget.entities.budget import Budget, PeriodType, CycleType
 from backend.domain.budget.entities.budget_item import BudgetItem
+from backend.domain.budget.entities.budget_cycle import BudgetCycle
 from backend.domain.budget.repositories.budget_repository import BudgetRepository
 from backend.domain.budget.services.budget_execution_service import BudgetExecutionService
+from backend.domain.budget.services.cyclic_budget_service import CyclicBudgetService
 from backend.domain.budget.value_objects.budget_execution import BudgetStatus
 
 
@@ -35,13 +37,16 @@ class BudgetApplicationService:
     ):
         """
         初始化应用服务
-        
+
         Args:
             budget_repository: 预算仓储
             budget_execution_service: 预算执行计算服务
         """
         self.budget_repository = budget_repository
         self.budget_execution_service = budget_execution_service
+        self.cyclic_budget_service = CyclicBudgetService(
+            budget_execution_service.transaction_repository
+        )
     
     async def create_budget(
         self,
@@ -51,11 +56,13 @@ class BudgetApplicationService:
         period_type: str,
         start_date: str,
         end_date: Optional[str] = None,
-        items: Optional[List[Dict]] = None
+        items: Optional[List[Dict]] = None,
+        cycle_type: str = "NONE",
+        carry_over_enabled: bool = False
     ) -> Dict:
         """
         创建预算
-        
+
         Args:
             user_id: 用户ID
             name: 预算名称
@@ -63,20 +70,22 @@ class BudgetApplicationService:
             start_date: 开始日期（YYYY-MM-DD）
             end_date: 结束日期（可选）
             items: 预算项目列表
-            
+            cycle_type: 循环类型（NONE/MONTHLY/YEARLY）
+            carry_over_enabled: 是否启用预算延续
+
         Returns:
             预算 DTO
         """
         budget_id = str(uuid.uuid4())
-        
+
         # 转换日期
         start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
         end_dt = datetime.strptime(end_date, "%Y-%m-%d").date() if end_date else None
-        
+
         # 自动计算结束日期（如果是月度或年度）
         if not end_dt:
             end_dt = self._calculate_period_end_date(start_dt, period_type)
-        
+
         # 创建预算项目实体
         budget_items = []
         if items:
@@ -91,7 +100,7 @@ class BudgetApplicationService:
                     updated_at=date.today()
                 )
                 budget_items.append(item)
-        
+
         # 创建预算实体
         budget = Budget(
             id=budget_id,
@@ -104,12 +113,18 @@ class BudgetApplicationService:
             is_active=True,
             items=budget_items,
             created_at=date.today(),
-            updated_at=date.today()
+            updated_at=date.today(),
+            cycle_type=CycleType(cycle_type),
+            carry_over_enabled=carry_over_enabled
         )
         
         # 保存到仓储
         created_budget = await self.budget_repository.create(budget)
-        
+
+        # 如果是循环预算，生成周期
+        if created_budget.cycle_type != CycleType.NONE:
+            await self._initialize_cycles(created_budget)
+
         return self._budget_to_dto(created_budget)
     
     async def get_budget(self, budget_id: str) -> Optional[Dict]:
@@ -454,7 +469,7 @@ class BudgetApplicationService:
         return {
             "id": budget.id,
             "name": budget.name,
-            "period_type": budget.period_type.value,
+            "period_type": budget.period_type.value,  # 保持原始值
             "start_date": budget.start_date.isoformat() if budget.start_date else None,
             "end_date": budget.end_date.isoformat() if budget.end_date else None,
             "is_active": budget.is_active,
@@ -465,7 +480,9 @@ class BudgetApplicationService:
             "overall_usage_rate": overall_rate,
             "status": self._get_status_from_rate(overall_rate),
             "created_at": budget.created_at.isoformat() if budget.created_at else None,
-            "updated_at": budget.updated_at.isoformat() if budget.updated_at else None
+            "updated_at": budget.updated_at.isoformat() if budget.updated_at else None,
+            "cycle_type": budget.cycle_type.value,
+            "carry_over_enabled": budget.carry_over_enabled
         }
 
     async def get_budget_item_transactions(
@@ -513,7 +530,7 @@ class BudgetApplicationService:
     def _transaction_to_dto(self, transaction) -> Dict:
         """
         将交易实体转换为 DTO
-        
+
         这里简单转换必要的字段用于前端显示
         """
         postings = []
@@ -523,7 +540,7 @@ class BudgetApplicationService:
                 "amount": str(p.amount),
                 "currency": p.currency
             })
-            
+
         return {
             "id": transaction.id,
             "date": transaction.date.isoformat(),
@@ -532,6 +549,146 @@ class BudgetApplicationService:
             "flag": transaction.flag,
             "transaction_type": transaction.detect_transaction_type().value,
             "postings": postings
+        }
+
+    # ========== 循环预算相关方法 ==========
+
+    async def get_budget_cycles(self, budget_id: str) -> List[Dict]:
+        """获取预算的所有周期
+
+        Args:
+            budget_id: 预算ID
+
+        Returns:
+            周期 DTO 列表
+        """
+        budget = await self.budget_repository.get_by_id(budget_id)
+        if not budget:
+            return []
+
+        cycles = await self.budget_repository.get_cycles_by_budget_id(budget_id)
+
+        # 计算所有周期的执行情况
+        cycles = self.cyclic_budget_service.calculate_all_cycles_execution(budget, cycles)
+
+        return [self._cycle_to_dto(c) for c in cycles]
+
+    async def get_current_budget_cycle(
+        self,
+        budget_id: str,
+        target_date: Optional[str] = None
+    ) -> Optional[Dict]:
+        """获取当前周期
+
+        Args:
+            budget_id: 预算ID
+            target_date: 目标日期（YYYY-MM-DD，默认今天）
+
+        Returns:
+            当前周期 DTO，不存在返回None
+        """
+        budget = await self.budget_repository.get_by_id(budget_id)
+        if not budget:
+            return None
+
+        if target_date:
+            dt = datetime.strptime(target_date, "%Y-%m-%d").date()
+        else:
+            dt = date.today()
+
+        cycles = await self.budget_repository.get_cycles_by_budget_id(budget_id)
+        if not cycles:
+            return None
+
+        # 计算所有周期的执行情况
+        cycles = self.cyclic_budget_service.calculate_all_cycles_execution(budget, cycles)
+
+        current_cycle = self.cyclic_budget_service.get_current_cycle(budget, cycles, dt)
+        if not current_cycle:
+            return None
+
+        return self._cycle_to_dto(current_cycle)
+
+    async def get_budget_cycle_summary(self, budget_id: str) -> Optional[Dict]:
+        """获取预算周期概览
+
+        Args:
+            budget_id: 预算ID
+
+        Returns:
+            周期概览 DTO
+        """
+        budget = await self.budget_repository.get_by_id(budget_id)
+        if not budget:
+            return None
+
+        # 首先检查是否是循环预算
+        if budget.cycle_type.value == 'NONE':
+            return {
+                "budget_id": budget_id,
+                "is_cyclic": False,
+                "message": "该预算不是循环预算"
+            }
+
+        # 获取周期记录
+        cycles = await self.budget_repository.get_cycles_by_budget_id(budget_id)
+        if not cycles:
+            # 如果是循环预算但没有周期记录，尝试生成
+            await self._initialize_cycles(budget)
+            cycles = await self.budget_repository.get_cycles_by_budget_id(budget_id)
+            if not cycles:
+                return {
+                    "budget_id": budget_id,
+                    "is_cyclic": True,
+                    "message": "周期生成中，请稍后查看"
+                }
+
+        # 计算所有周期的执行情况
+        cycles = self.cyclic_budget_service.calculate_all_cycles_execution(budget, cycles)
+
+        summary = self.cyclic_budget_service.get_cycle_summary(cycles)
+        summary["budget_id"] = budget_id
+        summary["is_cyclic"] = True
+
+        return summary
+
+    async def _initialize_cycles(self, budget: Budget) -> None:
+        """初始化预算的周期
+
+        Args:
+            budget: 预算实体
+        """
+        # 生成所有周期
+        cycles = self.cyclic_budget_service.generate_cycles_for_budget(budget)
+
+        # 保存到数据库
+        for cycle in cycles:
+            await self.budget_repository.create_cycle(cycle)
+
+    def _cycle_to_dto(self, cycle: BudgetCycle) -> Dict:
+        """将周期实体转换为 DTO
+
+        Args:
+            cycle: 周期实体
+
+        Returns:
+            周期 DTO
+        """
+        return {
+            "id": cycle.id,
+            "budget_id": cycle.budget_id,
+            "period_number": cycle.period_number,
+            "period_start": cycle.period_start.isoformat(),
+            "period_end": cycle.period_end.isoformat(),
+            "base_amount": float(cycle.base_amount),
+            "carried_over_amount": float(cycle.carried_over_amount),
+            "total_amount": float(cycle.total_amount),
+            "spent_amount": float(cycle.spent_amount),
+            "remaining_amount": float(cycle.remaining_amount),
+            "usage_rate": cycle.usage_rate,
+            "status": self._get_status_from_rate(cycle.usage_rate),
+            "created_at": cycle.created_at.isoformat() if cycle.created_at else None,
+            "updated_at": cycle.updated_at.isoformat() if cycle.updated_at else None
         }
 
 

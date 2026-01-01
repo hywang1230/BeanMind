@@ -13,10 +13,17 @@ class PeriodType(str, Enum):
     CUSTOM = "CUSTOM"
 
 
+class CycleType(str, Enum):
+    """循环预算类型"""
+    NONE = "NONE"  # 不循环
+    MONTHLY = "MONTHLY"  # 按月循环
+    YEARLY = "YEARLY"  # 按年循环
+
+
 @dataclass
 class Budget:
     """预算实体
-    
+
     预算用于控制一段时期内的支出
     """
     id: str
@@ -30,20 +37,28 @@ class Budget:
     items: List["BudgetItem"] = field(default_factory=list)
     created_at: Optional[date] = None
     updated_at: Optional[date] = None
-    
+
+    # 循环预算相关字段
+    cycle_type: CycleType = CycleType.NONE
+    carry_over_enabled: bool = False  # 是否启用预算延续
+
     def __post_init__(self):
         """验证预算数据"""
         # 验证名称
         if not self.name or not self.name.strip():
             raise ValueError("预算名称不能为空")
-        
+
         # 验证日期
         if self.end_date and self.end_date < self.start_date:
             raise ValueError("结束日期不能早于开始日期")
-        
+
         # 验证周期类型
         if self.period_type == PeriodType.CUSTOM and not self.end_date:
             raise ValueError("自定义周期必须设置结束日期")
+
+        # 验证循环预算
+        if self.cycle_type != CycleType.NONE and not self.end_date:
+            raise ValueError("循环预算必须设置结束日期")
     
     def deactivate(self):
         """停用预算"""

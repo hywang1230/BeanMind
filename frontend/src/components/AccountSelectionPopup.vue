@@ -244,10 +244,6 @@ async function loadFrequentAccounts() {
   }
 }
 
-function formatAccountName(name: string): string {
-  const parts = name.split(':')
-  return parts[parts.length - 1] || name
-}
 
 // 格式化常用账户名称：显示完整路径，但突出显示末级
 function formatFrequentAccountName(name: string): string {

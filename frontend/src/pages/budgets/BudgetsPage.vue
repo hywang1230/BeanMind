@@ -126,6 +126,17 @@ function formatNumber(num: number): string {
 }
 
 function getPeriodText(budget: Budget): string {
+  // 如果是循环预算，优先显示循环类型
+  if (budget.cycle_type && budget.cycle_type !== 'NONE') {
+    const cycleTypes: Record<string, string> = {
+      MONTHLY: '按月循环',
+      YEARLY: '按年循环'
+    }
+    const cycleTypeText = cycleTypes[budget.cycle_type] || budget.cycle_type
+    return `${cycleTypeText} · ${budget.items.length} 个类别`
+  }
+
+  // 非循环预算，显示周期类型
   const types: Record<string, string> = {
     MONTHLY: '月度预算',
     YEARLY: '年度预算',

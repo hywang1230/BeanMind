@@ -20,7 +20,9 @@ from backend.interfaces.dto.request.budget import (
 from backend.interfaces.dto.response.budget import (
     BudgetResponse,
     BudgetListResponse,
-    BudgetSummaryResponse
+    BudgetSummaryResponse,
+    BudgetCycleResponse,
+    BudgetCycleListResponse
 )
 from backend.interfaces.dto.response.auth import MessageResponse, ErrorResponse
 
@@ -82,7 +84,9 @@ async def create_budget(
             period_type=request.period_type.value,
             start_date=request.start_date,
             end_date=request.end_date,
-            items=items
+            items=items,
+            cycle_type=request.cycle_type.value,
+            carry_over_enabled=request.carry_over_enabled
         )
         return budget_dto
     except ValueError as e:
@@ -403,3 +407,93 @@ async def get_budget_item_transactions(
         "transactions": transactions,
         "total": len(transactions)
     }
+
+
+# ========== 循环预算相关端点 ==========
+
+@router.get(
+    "/{budget_id}/cycles",
+    response_model=BudgetCycleListResponse,
+    summary="获取预算的所有周期",
+    description="获取循环预算的所有周期执行记录",
+    responses={
+        200: {"description": "获取成功", "model": BudgetCycleListResponse},
+        404: {"description": "预算不存在", "model": ErrorResponse},
+    }
+)
+async def get_budget_cycles(
+    budget_id: str,
+    budget_service: BudgetApplicationService = Depends(get_budget_service)
+):
+    """
+    获取预算的所有周期
+
+    返回该预算的所有周期记录，包括每个周期的执行情况。
+    """
+    cycles = await budget_service.get_budget_cycles(budget_id)
+
+    return {
+        "cycles": cycles,
+        "total": len(cycles)
+    }
+
+
+@router.get(
+    "/{budget_id}/cycles/current",
+    response_model=BudgetCycleResponse,
+    summary="获取当前周期",
+    description="获取指定日期的当前周期（默认今天）",
+    responses={
+        200: {"description": "获取成功", "model": BudgetCycleResponse},
+        404: {"description": "预算或周期不存在", "model": ErrorResponse},
+    }
+)
+async def get_current_budget_cycle(
+    budget_id: str,
+    date: Optional[str] = Query(None, description="目标日期（YYYY-MM-DD）"),
+    budget_service: BudgetApplicationService = Depends(get_budget_service)
+):
+    """
+    获取当前周期
+
+    返回指定日期（默认今天）的周期执行情况。
+    """
+    cycle = await budget_service.get_current_budget_cycle(budget_id, date)
+
+    if not cycle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"预算 '{budget_id}' 在指定日期没有活跃周期"
+        )
+
+    return cycle
+
+
+@router.get(
+    "/{budget_id}/cycles/summary",
+    response_model=dict,
+    summary="获取周期概览",
+    description="获取预算周期的统计概览",
+    responses={
+        200: {"description": "获取成功"},
+        404: {"description": "预算不存在", "model": ErrorResponse},
+    }
+)
+async def get_budget_cycle_summary(
+    budget_id: str,
+    budget_service: BudgetApplicationService = Depends(get_budget_service)
+):
+    """
+    获取周期概览
+
+    返回周期的统计信息，包括总数、执行情况等。
+    """
+    summary = await budget_service.get_budget_cycle_summary(budget_id)
+
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"预算 '{budget_id}' 不存在"
+        )
+
+    return summary

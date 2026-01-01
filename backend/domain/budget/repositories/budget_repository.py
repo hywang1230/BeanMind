@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 from datetime import date
 from backend.domain.budget.entities.budget import Budget
+from backend.domain.budget.entities.budget_cycle import BudgetCycle
 
 
 class BudgetRepository(ABC):
@@ -97,14 +98,92 @@ class BudgetRepository(ABC):
     @abstractmethod
     async def find_by_date_range(self, start_date: date, end_date: date) -> List[Budget]:
         """查找指定日期范围内有效的预算
-        
+
         只有预算的时间与此时间有交叉，即为符合的预算（相交、包含都行）
-        
+
         Args:
             start_date: 开始日期
             end_date: 结束日期
-            
+
         Returns:
             预算实体列表
+        """
+        pass
+
+    # BudgetCycle 相关方法
+    @abstractmethod
+    async def create_cycle(self, cycle: BudgetCycle) -> BudgetCycle:
+        """创建预算周期
+
+        Args:
+            cycle: 周期实体
+
+        Returns:
+            创建后的周期实体
+        """
+        pass
+
+    @abstractmethod
+    async def get_cycles_by_budget_id(self, budget_id: str) -> List[BudgetCycle]:
+        """获取预算的所有周期
+
+        Args:
+            budget_id: 预算ID
+
+        Returns:
+            周期实体列表
+        """
+        pass
+
+    @abstractmethod
+    async def get_cycle_by_id(self, cycle_id: str) -> Optional[BudgetCycle]:
+        """根据ID获取周期
+
+        Args:
+            cycle_id: 周期ID
+
+        Returns:
+            周期实体，不存在返回None
+        """
+        pass
+
+    @abstractmethod
+    async def update_cycle(self, cycle: BudgetCycle) -> BudgetCycle:
+        """更新周期
+
+        Args:
+            cycle: 周期实体
+
+        Returns:
+            更新后的周期实体
+        """
+        pass
+
+    @abstractmethod
+    async def delete_cycle(self, cycle_id: str) -> bool:
+        """删除周期
+
+        Args:
+            cycle_id: 周期ID
+
+        Returns:
+            删除成功返回True
+        """
+        pass
+
+    @abstractmethod
+    async def get_current_cycle(
+        self,
+        budget_id: str,
+        target_date: date
+    ) -> Optional[BudgetCycle]:
+        """获取当前周期
+
+        Args:
+            budget_id: 预算ID
+            target_date: 目标日期
+
+        Returns:
+            当前周期，不存在返回None
         """
         pass

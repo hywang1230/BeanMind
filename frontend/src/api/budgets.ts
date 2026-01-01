@@ -6,6 +6,9 @@ export type BudgetStatus = 'normal' | 'warning' | 'exceeded'
 // 周期类型枚举
 export type PeriodType = 'MONTHLY' | 'YEARLY' | 'CUSTOM'
 
+// 循环类型枚举
+export type CycleType = 'NONE' | 'MONTHLY' | 'YEARLY'
+
 // 预算项目
 export type BudgetItem = {
     id: string
@@ -17,6 +20,53 @@ export type BudgetItem = {
     remaining: number
     usage_rate: number
     status: BudgetStatus
+}
+
+// 预算周期
+export type BudgetCycle = {
+    id: string
+    budget_id: string
+    period_number: number
+    period_start: string
+    period_end: string
+    base_amount: number
+    carried_over_amount: number
+    total_amount: number
+    spent_amount: number
+    remaining_amount: number
+    usage_rate: number
+    status: BudgetStatus
+    created_at?: string
+    updated_at?: string
+}
+
+// 周期列表响应
+export type BudgetCycleListResponse = {
+    cycles: BudgetCycle[]
+    total: number
+}
+
+// 周期概览
+export type BudgetCycleSummary = {
+    budget_id: string
+    is_cyclic: boolean
+    message?: string
+    total_cycles?: number
+    completed_cycles?: number
+    total_base_amount?: number
+    total_carried_over?: number
+    total_amount?: number
+    total_spent?: number
+    total_remaining?: number
+    current_cycle?: {
+        period_number: number
+        period_start: string
+        period_end: string
+        total_amount: number
+        spent_amount: number
+        remaining_amount: number
+        usage_rate: number
+    }
 }
 
 // 预算
@@ -35,6 +85,9 @@ export type Budget = {
     status: BudgetStatus
     created_at?: string
     updated_at?: string
+    // 循环预算相关字段
+    cycle_type: CycleType
+    carry_over_enabled: boolean
 }
 
 // 预算列表响应
@@ -72,6 +125,9 @@ export type CreateBudgetRequest = {
     start_date: string
     end_date?: string
     items?: CreateBudgetItemRequest[]
+    // 循环预算相关
+    cycle_type?: CycleType
+    carry_over_enabled?: boolean
 }
 
 // 更新预算请求
@@ -83,6 +139,9 @@ export type UpdateBudgetRequest = {
     end_date?: string
     is_active?: boolean
     items?: CreateBudgetItemRequest[]
+    // 循环预算相关
+    cycle_type?: CycleType
+    carry_over_enabled?: boolean
 }
 
 import type { Transaction } from './accounts'
@@ -149,5 +208,23 @@ export const budgetsApi = {
     // 获取预算项目流水
     getBudgetItemTransactions(budgetId: string, itemId: string): Promise<BudgetItemTransactionListResponse> {
         return apiClient.get(`/api/budgets/${budgetId}/items/${itemId}/transactions`)
+    },
+
+    // ========== 循环预算相关 API ==========
+
+    // 获取预算的所有周期
+    getBudgetCycles(budgetId: string): Promise<BudgetCycleListResponse> {
+        return apiClient.get(`/api/budgets/${budgetId}/cycles`)
+    },
+
+    // 获取当前周期
+    getCurrentBudgetCycle(budgetId: string, date?: string): Promise<BudgetCycle> {
+        const params = date ? { date } : {}
+        return apiClient.get(`/api/budgets/${budgetId}/cycles/current`, { params })
+    },
+
+    // 获取周期概览
+    getBudgetCycleSummary(budgetId: string): Promise<BudgetCycleSummary> {
+        return apiClient.get(`/api/budgets/${budgetId}/cycles/summary`)
     }
 }

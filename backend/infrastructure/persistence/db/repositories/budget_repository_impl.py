@@ -5,10 +5,11 @@ from decimal import Decimal
 from sqlalchemy import select, and_
 from sqlalchemy.orm import Session, selectinload
 
-from backend.domain.budget.entities.budget import Budget, PeriodType
+from backend.domain.budget.entities.budget import Budget, PeriodType, CycleType
 from backend.domain.budget.entities.budget_item import BudgetItem
+from backend.domain.budget.entities.budget_cycle import BudgetCycle
 from backend.domain.budget.repositories.budget_repository import BudgetRepository
-from backend.infrastructure.persistence.db.models.budget import Budget as BudgetModel, BudgetItem as BudgetItemModel
+from backend.infrastructure.persistence.db.models.budget import Budget as BudgetModel, BudgetItem as BudgetItemModel, BudgetCycle as BudgetCycleModel
 
 
 class BudgetRepositoryImpl(BudgetRepository):
@@ -32,7 +33,7 @@ class BudgetRepositoryImpl(BudgetRepository):
                 updated_at=item_model.updated_at
             )
             items.append(item)
-        
+
         return Budget(
             id=model.id,
             user_id=model.user_id,
@@ -44,7 +45,9 @@ class BudgetRepositoryImpl(BudgetRepository):
             is_active=model.is_active,
             items=items,
             created_at=model.created_at,
-            updated_at=model.updated_at
+            updated_at=model.updated_at,
+            cycle_type=CycleType(model.cycle_type) if model.cycle_type else CycleType.NONE,
+            carry_over_enabled=model.carry_over_enabled if model.carry_over_enabled is not None else False
         )
     
     def _to_model(self, entity: Budget) -> BudgetModel:
@@ -59,7 +62,9 @@ class BudgetRepositoryImpl(BudgetRepository):
             end_date=entity.end_date,
             is_active=entity.is_active,
             created_at=entity.created_at,
-            updated_at=entity.updated_at
+            updated_at=entity.updated_at,
+            cycle_type=entity.cycle_type.value,
+            carry_over_enabled=entity.carry_over_enabled
         )
         return model
     
@@ -163,6 +168,8 @@ class BudgetRepositoryImpl(BudgetRepository):
         model.end_date = budget.end_date
         model.is_active = budget.is_active
         model.updated_at = budget.updated_at
+        model.cycle_type = budget.cycle_type.value
+        model.carry_over_enabled = budget.carry_over_enabled
         
         # 更新预算项目
         # 删除不存在的项目
@@ -221,8 +228,127 @@ class BudgetRepositoryImpl(BudgetRepository):
                 (BudgetModel.end_date == None) | (BudgetModel.end_date >= start_date)
             )
         )
-        
+
         result = self.session.execute(stmt)
         models = result.scalars().all()
-        
+
         return [self._to_entity(model) for model in models]
+
+    # BudgetCycle 相关方法实现
+    def _cycle_to_entity(self, model: BudgetCycleModel) -> BudgetCycle:
+        """将周期ORM模型转换为领域实体"""
+        return BudgetCycle(
+            id=model.id,
+            budget_id=model.budget_id,
+            period_start=model.period_start,
+            period_end=model.period_end,
+            period_number=model.period_number,
+            base_amount=Decimal(str(model.base_amount)),
+            carried_over_amount=Decimal(str(model.carried_over_amount)),
+            total_amount=Decimal(str(model.total_amount)),
+            spent_amount=Decimal(str(model.spent_amount)),
+            created_at=model.created_at,
+            updated_at=model.updated_at
+        )
+
+    def _cycle_to_model(self, entity: BudgetCycle) -> BudgetCycleModel:
+        """将周期领域实体转换为ORM模型"""
+        return BudgetCycleModel(
+            id=entity.id,
+            budget_id=entity.budget_id,
+            period_start=entity.period_start,
+            period_end=entity.period_end,
+            period_number=entity.period_number,
+            base_amount=entity.base_amount,
+            carried_over_amount=entity.carried_over_amount,
+            total_amount=entity.total_amount,
+            spent_amount=entity.spent_amount,
+            created_at=entity.created_at,
+            updated_at=entity.updated_at
+        )
+
+    async def create_cycle(self, cycle: BudgetCycle) -> BudgetCycle:
+        """创建预算周期"""
+        model = self._cycle_to_model(cycle)
+        self.session.add(model)
+        self.session.flush()
+        self.session.commit()
+
+        return self._cycle_to_entity(model)
+
+    async def get_cycles_by_budget_id(self, budget_id: str) -> List[BudgetCycle]:
+        """获取预算的所有周期"""
+        stmt = select(BudgetCycleModel).where(
+            BudgetCycleModel.budget_id == budget_id
+        ).order_by(BudgetCycleModel.period_number)
+
+        result = self.session.execute(stmt)
+        models = result.scalars().all()
+
+        return [self._cycle_to_entity(model) for model in models]
+
+    async def get_cycle_by_id(self, cycle_id: str) -> Optional[BudgetCycle]:
+        """根据ID获取周期"""
+        stmt = select(BudgetCycleModel).where(BudgetCycleModel.id == cycle_id)
+        result = self.session.execute(stmt)
+        model = result.scalar_one_or_none()
+
+        if model is None:
+            return None
+
+        return self._cycle_to_entity(model)
+
+    async def update_cycle(self, cycle: BudgetCycle) -> BudgetCycle:
+        """更新周期"""
+        stmt = select(BudgetCycleModel).where(BudgetCycleModel.id == cycle.id)
+        result = self.session.execute(stmt)
+        model = result.scalar_one()
+
+        # 更新字段
+        model.period_start = cycle.period_start
+        model.period_end = cycle.period_end
+        model.period_number = cycle.period_number
+        model.base_amount = cycle.base_amount
+        model.carried_over_amount = cycle.carried_over_amount
+        model.total_amount = cycle.total_amount
+        model.spent_amount = cycle.spent_amount
+        model.updated_at = cycle.updated_at
+
+        self.session.flush()
+        self.session.commit()
+
+        return self._cycle_to_entity(model)
+
+    async def delete_cycle(self, cycle_id: str) -> bool:
+        """删除周期"""
+        stmt = select(BudgetCycleModel).where(BudgetCycleModel.id == cycle_id)
+        result = self.session.execute(stmt)
+        model = result.scalar_one_or_none()
+
+        if model is None:
+            return False
+
+        self.session.delete(model)
+        self.session.flush()
+        self.session.commit()
+
+        return True
+
+    async def get_current_cycle(self, budget_id: str, target_date: date) -> Optional[BudgetCycle]:
+        """获取当前周期"""
+        stmt = select(BudgetCycleModel).where(
+            and_(
+                BudgetCycleModel.budget_id == budget_id,
+                BudgetCycleModel.period_start <= target_date,
+                BudgetCycleModel.period_end >= target_date
+            )
+        )
+
+        result = self.session.execute(stmt)
+        model = result.scalar_one_or_none()
+
+        if model is None:
+            return None
+
+        return self._cycle_to_entity(model)
+
