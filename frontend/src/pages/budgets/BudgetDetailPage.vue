@@ -254,24 +254,37 @@ async function toggleBudgetStatus() {
 }
 
 function confirmDeleteBudget() {
-    f7.dialog.confirm('确定要删除这个预算吗？此操作不可恢复。', '删除确认', async () => {
-        if (!budget.value) return
-        try {
-            await budgetsApi.deleteBudget(budget.value.id)
-            f7.toast.create({
-                text: '预算已删除',
-                position: 'center',
-                closeTimeout: 2000
-            }).open()
-            router.replace('/budgets')
-        } catch (error) {
-            f7.toast.create({
-                text: '删除失败',
-                position: 'center',
-                closeTimeout: 2000
-            }).open()
-        }
-    })
+    f7.dialog.create({
+        title: '删除确认',
+        text: '确定要删除这个预算吗？此操作不可恢复。',
+        buttons: [
+            {
+                text: '取消',
+                color: 'gray'
+            },
+            {
+                text: '确定',
+                onClick: async () => {
+                    if (!budget.value) return
+                    try {
+                        await budgetsApi.deleteBudget(budget.value.id)
+                        f7.toast.create({
+                            text: '预算已删除',
+                            position: 'center',
+                            closeTimeout: 2000
+                        }).open()
+                        router.replace('/budgets')
+                    } catch (error) {
+                        f7.toast.create({
+                            text: '删除失败',
+                            position: 'center',
+                            closeTimeout: 2000
+                        }).open()
+                    }
+                }
+            }
+        ]
+    }).open()
 }
 
 function navigateToEdit() {

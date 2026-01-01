@@ -515,76 +515,94 @@ function editHistoryRate(rate: ExchangeRate) {
 
 // 删除历史汇率
 function confirmDeleteHistoryRate(rate: ExchangeRate) {
-    f7.dialog.confirm(
-        `确定要删除 ${formatDate(rate.effective_date)} 的汇率记录吗？`,
-        '确认删除',
-        async () => {
-            try {
-                await exchangeRatesApi.deleteExchangeRate(
-                    rate.currency,
-                    rate.effective_date,
-                    quoteCurrency.value
-                )
-                f7.toast.create({
-                    text: '汇率已删除',
-                    position: 'center',
-                    closeTimeout: 2000
-                }).open()
+    f7.dialog.create({
+        title: '确认删除',
+        text: `确定要删除 ${formatDate(rate.effective_date)} 的汇率记录吗？`,
+        buttons: [
+            {
+                text: '取消',
+                color: 'gray'
+            },
+            {
+                text: '确定',
+                onClick: async () => {
+                    try {
+                        await exchangeRatesApi.deleteExchangeRate(
+                            rate.currency,
+                            rate.effective_date,
+                            quoteCurrency.value
+                        )
+                        f7.toast.create({
+                            text: '汇率已删除',
+                            position: 'center',
+                            closeTimeout: 2000
+                        }).open()
 
-                // 重新加载历史汇率
-                if (selectedRate.value) {
-                    rateHistory.value = await exchangeRatesApi.getExchangeRateHistory(
-                        selectedRate.value.currency,
-                        quoteCurrency.value
-                    )
-                    // 如果历史汇率为空，关闭详情弹窗
-                    if (rateHistory.value.length === 0) {
-                        showDetailModal.value = false
-                    } else {
-                        // 更新 selectedRate 为最新的汇率
-                        selectedRate.value = rateHistory.value[0]!
+                        // 重新加载历史汇率
+                        if (selectedRate.value) {
+                            rateHistory.value = await exchangeRatesApi.getExchangeRateHistory(
+                                selectedRate.value.currency,
+                                quoteCurrency.value
+                            )
+                            // 如果历史汇率为空，关闭详情弹窗
+                            if (rateHistory.value.length === 0) {
+                                showDetailModal.value = false
+                            } else {
+                                // 更新 selectedRate 为最新的汇率
+                                selectedRate.value = rateHistory.value[0]!
+                            }
+                        }
+                        await loadExchangeRates()
+                    } catch (error: any) {
+                        f7.toast.create({
+                            text: error.message || '删除失败',
+                            position: 'center',
+                            closeTimeout: 2000
+                        }).open()
                     }
                 }
-                await loadExchangeRates()
-            } catch (error: any) {
-                f7.toast.create({
-                    text: error.message || '删除失败',
-                    position: 'center',
-                    closeTimeout: 2000
-                }).open()
             }
-        }
-    )
+        ]
+    }).open()
 }
 
 function confirmDeleteRate(rate: ExchangeRate) {
-    f7.dialog.confirm(
-        `确定要删除 ${rate.currency}/${rate.quote_currency} (${formatDate(rate.effective_date)}) 的汇率记录吗？`,
-        '确认删除',
-        async () => {
-            try {
-                await exchangeRatesApi.deleteExchangeRate(
-                    rate.currency,
-                    rate.effective_date,
-                    quoteCurrency.value
-                )
-                f7.toast.create({
-                    text: '汇率已删除',
-                    position: 'center',
-                    closeTimeout: 2000
-                }).open()
+    f7.dialog.create({
+        title: '确认删除',
+        text: `确定要删除 ${rate.currency}/${rate.quote_currency} (${formatDate(rate.effective_date)}) 的汇率记录吗？`,
+        buttons: [
+            {
+                text: '取消',
+                color: 'gray'
+            },
+            {
+                text: '确定',
+                onClick: async () => {
+                    try {
+                        await exchangeRatesApi.deleteExchangeRate(
+                            rate.currency,
+                            rate.effective_date,
+                            quoteCurrency.value
+                        )
+                        f7.toast.create({
+                            text: '汇率已删除',
+                            position: 'center',
+                            closeTimeout: 2000
+                        }).open()
 
-                showDetailModal.value = false
-                await loadExchangeRates()
-            } catch (error: any) {
-                f7.toast.create({
-                    text: error.message || '删除失败',
-                    position: 'center',
-                    closeTimeout: 2000
-                }).open()
+                        showDetailModal.value = false
+                        await loadExchangeRates()
+                    } catch (error: any) {
+                        f7.toast.create({
+                            text: error.message || '删除失败',
+                            position: 'center',
+                            closeTimeout: 2000
+                        }).open()
+                    }
+                }
             }
-        }
-    )
+        ]
+    }).open()
 }
 
 function goBack() {

@@ -81,12 +81,8 @@
       <!-- 账户分录 -->
       <div class="section-header">账户分录</div>
       <f7-list strong-ios dividers-ios inset class="postings-list">
-        <f7-list-item
-          v-for="(posting, index) in transaction.postings"
-          :key="index"
-          :title="formatAccountName(posting.account)"
-          :subtitle="posting.account"
-        >
+        <f7-list-item v-for="(posting, index) in transaction.postings" :key="index"
+          :title="formatAccountName(posting.account)" :subtitle="posting.account">
           <template #media>
             <div class="posting-icon" :class="getPostingIconClass(posting)">
               <f7-icon :ios="getPostingIcon(posting)" size="18"></f7-icon>
@@ -215,11 +211,11 @@ function getAmountClass(): string {
 
 function formatTotalAmount(): string {
   if (!transaction.value || transaction.value.postings.length === 0) return '¥0.00'
-  
+
   const type = transaction.value.transaction_type
   let totalAmount = 0
   let currency = 'CNY'
-  
+
   if (type === 'expense') {
     // 支出：汇总所有 Expenses 账户的金额（保留原始符号）
     for (const posting of transaction.value.postings) {
@@ -250,11 +246,11 @@ function formatTotalAmount(): string {
       }
     }
   }
-  
+
   const symbol = getCurrencySymbol(currency)
   // 根据实际金额正负自动添加符号
   const sign = totalAmount >= 0 ? '+' : ''
-  
+
   return `${sign}${symbol}${totalAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
@@ -277,7 +273,7 @@ function formatDate(dateStr: string): string {
   const day = date.getDate()
   const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
   const weekDay = weekDays[date.getDay()]
-  
+
   return `${year}年${month}月${day}日 ${weekDay}`
 }
 
@@ -288,7 +284,7 @@ function formatDateTime(dateTimeStr: string): string {
   const day = String(date.getDate()).padStart(2, '0')
   const hour = String(date.getHours()).padStart(2, '0')
   const minute = String(date.getMinutes()).padStart(2, '0')
-  
+
   return `${year}-${month}-${day} ${hour}:${minute}`
 }
 
@@ -324,32 +320,42 @@ function formatPostingAmount(posting: Posting): string {
   const currency = posting.currency || 'CNY'
   const symbol = getCurrencySymbol(currency)
   const sign = amount >= 0 ? '+' : ''
-  
+
   return `${sign}${symbol}${amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function confirmDelete() {
-  f7.dialog.confirm(
-    '确定要删除这笔交易吗？此操作无法撤销。',
-    '删除交易',
-    async () => {
-      try {
-        await transactionsApi.deleteTransaction(transaction.value!.id)
-        // 标记交易列表需要刷新
-        uiStore.markTransactionsNeedsRefresh()
-        f7.toast.show({
-          text: '交易已删除',
-          closeTimeout: 2000
-        })
-        router.back()
-      } catch (e: any) {
-        f7.toast.show({
-          text: e.message || '删除失败',
-          closeTimeout: 2000
-        })
+  f7.dialog.create({
+    title: '删除交易',
+    text: '确定要删除这笔交易吗？此操作无法撤销。',
+    buttons: [
+      {
+        text: '取消',
+        color: 'gray'
+      },
+      {
+        text: '确定',
+        // bold: true, // Removed due to type error
+        onClick: async () => {
+          try {
+            await transactionsApi.deleteTransaction(transaction.value!.id)
+            // 标记交易列表需要刷新
+            uiStore.markTransactionsNeedsRefresh()
+            f7.toast.show({
+              text: '交易已删除',
+              closeTimeout: 2000
+            })
+            router.back()
+          } catch (e: any) {
+            f7.toast.show({
+              text: e.message || '删除失败',
+              closeTimeout: 2000
+            })
+          }
+        }
       }
-    }
-  )
+    ]
+  }).open()
 }
 
 onMounted(() => {
@@ -535,48 +541,48 @@ onMounted(() => {
   .amount-card {
     background: linear-gradient(135deg, #5856d6 0%, #5e5ce6 100%);
   }
-  
+
   .amount-card.income-card {
     background: linear-gradient(135deg, #30d158 0%, #28cd41 100%);
   }
-  
+
   .amount-card.expense-card {
     background: linear-gradient(135deg, #ff453a 0%, #ff3b30 100%);
   }
-  
+
   .amount-card.transfer-card {
     background: linear-gradient(135deg, #0a84ff 0%, #007aff 100%);
   }
-  
+
   .tag-chip {
     background: rgba(10, 132, 255, 0.18);
     color: #0a84ff;
   }
-  
+
   .posting-icon.income-posting {
     background: rgba(48, 209, 88, 0.18);
     color: #30d158;
   }
-  
+
   .posting-icon.expense-posting {
     background: rgba(255, 69, 58, 0.18);
     color: #ff453a;
   }
-  
+
   .posting-icon.asset-posting {
     background: rgba(10, 132, 255, 0.18);
     color: #0a84ff;
   }
-  
+
   .posting-icon.liability-posting {
     background: rgba(191, 90, 242, 0.18);
     color: #bf5af2;
   }
-  
+
   .posting-amount.positive {
     color: #30d158;
   }
-  
+
   .posting-amount.negative {
     color: #ff453a;
   }

@@ -70,7 +70,7 @@
             <f7-swipeout-button color="orange" @click.stop="editRule(rule)">
               编辑
             </f7-swipeout-button>
-            <f7-swipeout-button color="red" delete confirm-text="确定要删除该规则吗？" @click.stop="deleteRule(rule)">
+            <f7-swipeout-button color="red" @click.stop="deleteRule(rule)">
               删除
             </f7-swipeout-button>
           </f7-swipeout-actions>
@@ -315,13 +315,28 @@ function editSelectedRule() {
 }
 
 async function deleteRule(rule: RecurringRule) {
-  try {
-    await recurringApi.deleteRule(rule.id)
-    rules.value = rules.value.filter(r => r.id !== rule.id)
-    f7.toast.show({ text: '删除成功', position: 'center', closeTimeout: 1500 })
-  } catch (error: any) {
-    f7.toast.show({ text: error.message || '删除失败', position: 'center', closeTimeout: 2000 })
-  }
+  f7.dialog.create({
+    title: '删除确认',
+    text: '确定要删除该规则吗？',
+    buttons: [
+      {
+        text: '取消',
+        color: 'gray'
+      },
+      {
+        text: '确定',
+        onClick: async () => {
+          try {
+            await recurringApi.deleteRule(rule.id)
+            rules.value = rules.value.filter(r => r.id !== rule.id)
+            f7.toast.show({ text: '删除成功', position: 'center', closeTimeout: 1500 })
+          } catch (error: any) {
+            f7.toast.show({ text: error.message || '删除失败', position: 'center', closeTimeout: 2000 })
+          }
+        }
+      }
+    ]
+  }).open()
 }
 
 async function executeRuleNow() {
