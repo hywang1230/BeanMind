@@ -19,6 +19,26 @@
       <f7-searchbar placeholder="搜索账户" v-model:value="searchQuery" :disable-button="false"
         @searchbar:clear="searchQuery = ''"></f7-searchbar>
 
+      <!-- 常用账户区域 -->
+      <f7-block v-if="frequentAccounts.length > 0 && !searchQuery" class="frequent-section">
+        <div class="frequent-title">最近常用</div>
+        <f7-list>
+          <f7-list-item
+            v-for="account in frequentAccounts"
+            :key="account.name"
+            link="#"
+            @click="onAccountSelect(account.name)"
+          >
+            <template #title>
+              <span class="frequent-account-name">{{ formatFrequentAccountName(account.name) }}</span>
+            </template>
+            <template #media>
+              <f7-icon f7="star_fill" class="frequent-icon"></f7-icon>
+            </template>
+          </f7-list-item>
+        </f7-list>
+      </f7-block>
+
       <f7-list class="account-tree-list">
         <f7-treeview v-if="filteredAccounts.length > 0">
           <account-tree-item v-for="account in filteredAccounts" :key="account.name" :account="account"
@@ -32,8 +52,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { accountsApi, type Account } from '../api/accounts'
+import { statisticsApi, type FrequentItem } from '../api/statistics'
 import AccountTreeItem from './AccountTreeItem.vue'
 
 // 定义树节点类型（与 Account 类型兼容）
@@ -52,8 +73,10 @@ const props = withDefaults(defineProps<{
   title: string
   rootTypes?: string[] // e.g. ['Expenses', 'Income']
   allowMultiSelect?: boolean
+  transactionType?: 'expense' | 'income' | 'transfer' // 交易类型，用于获取常用账户
 }>(), {
-  allowMultiSelect: true
+  allowMultiSelect: true,
+  transactionType: undefined
 })
 
 const emit = defineEmits<{
@@ -65,6 +88,7 @@ const searchQuery = ref('')
 const isMultiSelect = ref(false)
 const selectedNames = ref<string[]>([])
 const accounts = ref<Account[]>([])
+const frequentAccounts = ref<FrequentItem[]>([])
 
 // 默认筛选 Assets 和 Liabilities
 const defaultRootTypes = ['Assets', 'Liabilities']
@@ -178,6 +202,65 @@ async function loadAccounts() {
   }
 }
 
+async function loadFrequentAccounts() {
+  // 如果没有指定交易类型，不加载常用账户
+  if (!props.transactionType) {
+    frequentAccounts.value = []
+    return
+  }
+
+  try {
+    let type: 'expense' | 'income' | 'transfer' | 'account' = 'account'
+
+    // 根据交易类型和账户类型确定要获取的常用账户类型
+    if (props.transactionType === 'expense') {
+      // 支出：如果选择分类，显示Expenses的常用项
+      type = props.rootTypes?.includes('Expenses') ? 'expense' : 'account'
+    } else if (props.transactionType === 'income') {
+      // 收入：如果选择分类，显示Income的常用项
+      type = props.rootTypes?.includes('Income') ? 'income' : 'account'
+    } else if (props.transactionType === 'transfer') {
+      // 转账：显示账户的常用项
+      type = 'account'
+    }
+
+    const result = await statisticsApi.getFrequentItems({
+      type,
+      days: 30,
+      limit: 3
+    })
+
+    // 过滤出符合当前rootTypes的常用账户
+    const types = (props.rootTypes && props.rootTypes.length > 0)
+      ? props.rootTypes
+      : defaultRootTypes
+
+    frequentAccounts.value = result.filter(item => {
+      return types.some(rootType => item.name.startsWith(rootType))
+    })
+  } catch (e) {
+    console.error('Failed to load frequent accounts', e)
+    frequentAccounts.value = []
+  }
+}
+
+function formatAccountName(name: string): string {
+  const parts = name.split(':')
+  return parts[parts.length - 1] || name
+}
+
+// 格式化常用账户名称：显示完整路径，但突出显示末级
+function formatFrequentAccountName(name: string): string {
+  const parts = name.split(':')
+  if (parts.length <= 2) {
+    // 如果只有两级，直接返回完整路径
+    return name
+  }
+  // 三级及以上，显示完整路径，让用户能看到上下文
+  // 例如：Expenses:Food:Restaurant
+  return name
+}
+
 function onAccountSelect(name: string) {
   if (!isMultiSelect.value) {
     emit('select', [name])
@@ -205,6 +288,13 @@ function onPopupClosed() {
   selectedNames.value = []
   searchQuery.value = ''
 }
+
+// 监听popup打开状态，加载常用账户
+watch(() => props.opened, async (newVal) => {
+  if (newVal) {
+    await loadFrequentAccounts()
+  }
+})
 
 onMounted(() => {
   loadAccounts()
@@ -261,4 +351,42 @@ onMounted(() => {
 }
 
 /* 选中状态（如果需要高亮）可以在这里处理，但目前 AccountTreeItem 已经处理了 selected-item 类 */
+
+/* 常用账户区域样式 */
+.frequent-section {
+  padding: 0;
+  margin: 0;
+}
+
+.frequent-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  background: var(--bg-primary);
+}
+
+.frequent-icon {
+  color: #ff9500;
+  font-size: 20px;
+}
+
+.frequent-account-name {
+  font-size: 15px;
+  color: var(--text-primary);
+  word-break: break-all;
+}
+
+.frequent-section :deep(.list) {
+  margin: 0;
+  background: var(--bg-primary);
+}
+
+.frequent-section :deep(.item-content) {
+  background: transparent;
+}
+
+.frequent-section :deep(.item-title) {
+  font-size: 15px;
+}
 </style>

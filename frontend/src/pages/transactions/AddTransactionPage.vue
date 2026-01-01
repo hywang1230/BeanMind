@@ -101,16 +101,16 @@
 
     <!-- Pickers -->
     <AccountSelectionPopup v-model:opened="showCategoryPicker" title="选择分类" :root-types="categoryRoots"
-      @select="onCategorySelect" />
+      :transaction-type="formData.type" @select="onCategorySelect" />
 
     <PayeeSelectionPopup v-model:opened="showPayeePicker" @select="onPayeeSelect" />
 
     <AccountSelectionPopup v-model:opened="showFromAccountPicker"
       :title="formData.type === 'transfer' ? '选择转出账户' : '选择账户'" :root-types="accountRoots"
-      @select="onFromAccountSelect" />
+      :transaction-type="formData.type" @select="onFromAccountSelect" />
 
     <AccountSelectionPopup v-model:opened="showToAccountPicker" title="选择转入账户" :root-types="['Assets', 'Liabilities']"
-      @select="onToAccountSelect" />
+      :transaction-type="formData.type" @select="onToAccountSelect" />
 
     <!-- Currency Popover -->
     <f7-popover class="currency-popover" :opened="showCurrencyPopover" @popover:closed="showCurrencyPopover = false"

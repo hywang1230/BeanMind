@@ -24,6 +24,13 @@ export type MonthlyTrend = {
     net: number
 }
 
+// 常用账户/分类数据类型
+export type FrequentItem = {
+    name: string               // 账户/分类名称
+    count: number              // 使用次数
+    last_used: string          // 最后使用日期
+}
+
 export const statisticsApi = {
     // 获取资产概览
     getAssetOverview(): Promise<AssetOverview> {
@@ -45,5 +52,14 @@ export const statisticsApi = {
         months?: number  // 默认 6 个月
     }): Promise<MonthlyTrend[]> {
         return apiClient.get('/api/statistics/trend', { params })
+    },
+
+    // 获取常用账户/分类
+    getFrequentItems(params: {
+        type: 'expense' | 'income' | 'transfer' | 'account'
+        days?: number      // 默认 30 天
+        limit?: number     // 默认 3 个
+    }): Promise<FrequentItem[]> {
+        return apiClient.get('/api/statistics/frequent', { params })
     }
 }

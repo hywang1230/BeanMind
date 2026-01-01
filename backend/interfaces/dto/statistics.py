@@ -26,3 +26,10 @@ class MonthlyTrendResponse(BaseModel):
     income: float = Field(..., description="收入")
     expense: float = Field(..., description="支出")
     net: float = Field(..., description="净收入")
+
+
+class FrequentItemResponse(BaseModel):
+    """常用账户/分类响应"""
+    name: str = Field(..., description="账户/分类名称")
+    count: int = Field(..., description="使用次数")
+    last_used: str = Field(..., description="最后使用日期 YYYY-MM-DD")
