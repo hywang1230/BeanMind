@@ -1,93 +1,95 @@
 <template>
-  <div class="dashboard-page">
-    <!-- 顶部标题 -->
-    <div class="page-header">
-      <h1>首页</h1>
-    </div>
-
-    <!-- 加载状态 -->
-    <div v-if="loading" class="loading-container">
-      <div class="loading-spinner"></div>
-    </div>
-
-    <div v-else class="dashboard-content">
-      <!-- 总资产卡片 -->
-      <div class="card assets-card">
-        <!-- 净资产 - 主要信息 -->
-        <div class="net-worth-section">
-          <div class="net-worth-label">净资产</div>
-          <div class="net-worth-value" :class="{ negative: assetData.net_assets < 0 }">
-            {{ assetData.net_assets >= 0 ? '' : '-' }}¥{{ formatNumber(assetData.net_assets) }}
-          </div>
-        </div>
-
-        <!-- 资产与负债 - 次要信息 -->
-        <div class="asset-liability-row">
-          <div class="al-item">
-            <span class="al-label">资产</span>
-            <span class="al-value assets">¥{{ formatNumber(assetData.total_assets) }}</span>
-          </div>
-          <div class="al-divider"></div>
-          <div class="al-item">
-            <span class="al-label">负债</span>
-            <span class="al-value liabilities">¥{{ formatNumber(assetData.total_liabilities) }}</span>
-          </div>
-        </div>
+  <PullToRefresh @refresh="onRefresh">
+    <div class="dashboard-page">
+      <!-- 顶部标题 -->
+      <div class="page-header">
+        <h1>首页</h1>
       </div>
 
+      <!-- 加载状态 -->
+      <div v-if="loading" class="loading-container">
+        <div class="loading-spinner"></div>
+      </div>
 
-      <!-- 本月概览 -->
-      <div class="card">
-        <div class="card-header">本月概览</div>
-        <div class="monthly-row">
-          <div class="monthly-item">
-            <div class="monthly-label">收入</div>
-            <div class="monthly-value" :class="monthlyData.income >= 0 ? 'income' : 'expense'">
-              {{ monthlyData.income >= 0 ? '+' : '-' }}¥{{ formatNumber(monthlyData.income) }}
+      <div v-else class="dashboard-content">
+        <!-- 总资产卡片 -->
+        <div class="card assets-card">
+          <!-- 净资产 - 主要信息 -->
+          <div class="net-worth-section">
+            <div class="net-worth-label">净资产</div>
+            <div class="net-worth-value" :class="{ negative: assetData.net_assets < 0 }">
+              {{ assetData.net_assets >= 0 ? '' : '-' }}¥{{ formatNumber(assetData.net_assets) }}
             </div>
           </div>
-          <div class="monthly-item">
-            <div class="monthly-label">支出</div>
-            <div class="monthly-value expense">-¥{{ formatNumber(monthlyData.expense) }}</div>
-          </div>
-          <div class="monthly-item">
-            <div class="monthly-label">结余</div>
-            <div class="monthly-value" :class="monthlyData.net >= 0 ? 'income' : 'expense'">
-              {{ monthlyData.net >= 0 ? '+' : '' }}¥{{ formatNumber(monthlyData.net) }}
+
+          <!-- 资产与负债 - 次要信息 -->
+          <div class="asset-liability-row">
+            <div class="al-item">
+              <span class="al-label">资产</span>
+              <span class="al-value assets">¥{{ formatNumber(assetData.total_assets) }}</span>
+            </div>
+            <div class="al-divider"></div>
+            <div class="al-item">
+              <span class="al-label">负债</span>
+              <span class="al-value liabilities">¥{{ formatNumber(assetData.total_liabilities) }}</span>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- 本月支出 Top 3 -->
-      <div class="card">
-        <div class="card-header">本月支出 Top 3</div>
-        <div class="top-list">
-          <div v-for="(item, index) in topCategories" :key="item.category" class="top-item">
-            <div class="top-rank">{{ index + 1 }}</div>
-            <div class="top-info">
-              <div class="top-name">{{ item.category }}</div>
-              <div class="top-meta">{{ item.percentage.toFixed(1) }}% · {{ item.count }}笔</div>
+
+        <!-- 本月概览 -->
+        <div class="card">
+          <div class="card-header">本月概览</div>
+          <div class="monthly-row">
+            <div class="monthly-item">
+              <div class="monthly-label">收入</div>
+              <div class="monthly-value" :class="monthlyData.income >= 0 ? 'income' : 'expense'">
+                {{ monthlyData.income >= 0 ? '+' : '-' }}¥{{ formatNumber(monthlyData.income) }}
+              </div>
             </div>
-            <div class="top-amount">¥{{ formatNumber(item.amount) }}</div>
-          </div>
-          <div v-if="topCategories.length === 0" class="empty-hint">
-            暂无支出记录
+            <div class="monthly-item">
+              <div class="monthly-label">支出</div>
+              <div class="monthly-value expense">-¥{{ formatNumber(monthlyData.expense) }}</div>
+            </div>
+            <div class="monthly-item">
+              <div class="monthly-label">结余</div>
+              <div class="monthly-value" :class="monthlyData.net >= 0 ? 'income' : 'expense'">
+                {{ monthlyData.net >= 0 ? '+' : '' }}¥{{ formatNumber(monthlyData.net) }}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- 近 6 个月趋势 -->
-      <div class="card">
-        <div class="card-header">收支趋势</div>
-        <div class="chart-container">
-          <apexchart v-if="trendData.length > 0" type="line" height="200" :options="chartOptions"
-            :series="chartSeries" />
-          <div v-else class="empty-hint">暂无数据</div>
+        <!-- 本月支出 Top 3 -->
+        <div class="card">
+          <div class="card-header">本月支出 Top 3</div>
+          <div class="top-list">
+            <div v-for="(item, index) in topCategories" :key="item.category" class="top-item">
+              <div class="top-rank">{{ index + 1 }}</div>
+              <div class="top-info">
+                <div class="top-name">{{ item.category }}</div>
+                <div class="top-meta">{{ item.percentage.toFixed(1) }}% · {{ item.count }}笔</div>
+              </div>
+              <div class="top-amount">¥{{ formatNumber(item.amount) }}</div>
+            </div>
+            <div v-if="topCategories.length === 0" class="empty-hint">
+              暂无支出记录
+            </div>
+          </div>
+        </div>
+
+        <!-- 近 6 个月趋势 -->
+        <div class="card">
+          <div class="card-header">收支趋势</div>
+          <div class="chart-container">
+            <apexchart v-if="trendData.length > 0" type="line" height="200" :options="chartOptions"
+              :series="chartSeries" />
+            <div v-else class="empty-hint">暂无数据</div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
+  </PullToRefresh>
 </template>
 
 <script setup lang="ts">
@@ -96,6 +98,7 @@ import VueApexCharts from 'vue3-apexcharts'
 import { useStatisticsStore } from '../../stores/statistics'
 import { useUIStore } from '../../stores/ui'
 import type { AssetOverview, CategoryStatistics, MonthlyTrend } from '../../api/statistics'
+import PullToRefresh from '../../components/PullToRefresh.vue'
 
 const apexchart = VueApexCharts
 const statisticsStore = useStatisticsStore()
@@ -217,6 +220,17 @@ async function loadDashboardData() {
     console.error('Failed to load dashboard data:', error)
   } finally {
     loading.value = false
+  }
+}
+
+// 下拉刷新处理
+async function onRefresh(done: () => void) {
+  try {
+    // 强制刷新数据（清除缓存）
+    statisticsStore.invalidateCache()
+    await loadDashboardData()
+  } finally {
+    done()
   }
 }
 

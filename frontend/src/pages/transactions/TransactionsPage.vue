@@ -1,102 +1,104 @@
 <template>
-  <div class="transactions-page">
-    <!-- 顶部标题 -->
-    <div class="page-header">
-      <h1>流水</h1>
-    </div>
-
-    <!-- 筛选器 -->
-    <div class="filter-section">
-      <!-- 搜索框 -->
-      <div class="search-box">
-        <f7-icon ios="f7:search" size="18" class="search-icon"></f7-icon>
-        <input type="text" v-model="searchKeyword" placeholder="搜索备注、付款方..." @input="onSearchInput"
-          @keyup.enter="applyFilters" class="search-input" />
-        <f7-button v-if="searchKeyword" fill small round color="gray" @click="clearSearch" class="clear-search-btn">
-          <f7-icon ios="f7:xmark" size="12"></f7-icon>
-        </f7-button>
+  <PullToRefresh @refresh="onRefresh">
+    <div class="transactions-page">
+      <!-- 顶部标题 -->
+      <div class="page-header">
+        <h1>流水</h1>
       </div>
 
-      <f7-segmented strong tag="div" class="type-filter">
-        <f7-button v-for="filter in typeFilters" :key="filter.value" :active="currentTypeFilter === filter.value"
-          @click="selectTypeFilter(filter.value)">
-          {{ filter.label }}
-        </f7-button>
-      </f7-segmented>
-
-      <div class="date-filter-row">
-        <f7-button fill small :color="hasDateFilter ? 'blue' : 'gray'" @click="openDateRangePicker"
-          class="date-range-btn">
-          <f7-icon ios="f7:calendar" size="16" style="margin-right: 4px;"></f7-icon>
-          {{ dateRangeText }}
-        </f7-button>
-        <f7-button v-if="hasDateFilter" fill small color="red" @click="clearDateFilter" class="clear-date-btn">
-          <f7-icon ios="f7:xmark" size="16"></f7-icon>
-        </f7-button>
-      </div>
-    </div>
-
-    <!-- 加载状态 -->
-    <div v-if="loading && transactions.length === 0" class="loading-container">
-      <f7-preloader></f7-preloader>
-    </div>
-
-    <!-- 空状态 -->
-    <div v-else-if="transactions.length === 0" class="empty-state">
-      <div class="empty-icon">📝</div>
-      <div class="empty-text">暂无交易记录</div>
-      <f7-button fill round @click="navigateToAdd" class="empty-action-btn">
-        开始记账
-      </f7-button>
-    </div>
-
-    <!-- 交易列表 -->
-    <div v-else class="transactions-content" ref="scrollContent">
-      <div v-for="group in groupedTransactions" :key="group.date" class="transaction-group">
-        <!-- 日期分组头 -->
-        <div class="date-group-header">
-          <span class="date-title">{{ formatGroupDate(group.date) }}</span>
-          <span class="day-summary" :class="getDaySummaryClass(group.total)">
-            {{ formatDayTotal(group.total) }}
-          </span>
+      <!-- 筛选器 -->
+      <div class="filter-section">
+        <!-- 搜索框 -->
+        <div class="search-box">
+          <f7-icon ios="f7:search" size="18" class="search-icon"></f7-icon>
+          <input type="text" v-model="searchKeyword" placeholder="搜索备注、付款方..." @input="onSearchInput"
+            @keyup.enter="applyFilters" class="search-input" />
+          <f7-button v-if="searchKeyword" fill small round color="gray" @click="clearSearch" class="clear-search-btn">
+            <f7-icon ios="f7:xmark" size="12"></f7-icon>
+          </f7-button>
         </div>
 
-        <!-- 该日期的交易列表 - 独立的圆角卡片 -->
-        <f7-list media-list dividers-ios strong inset class="transaction-list">
-          <f7-list-item v-for="transaction in group.items" :key="transaction.id" link="#"
-            @click="viewTransaction(transaction)" class="transaction-item" :class="getTransactionClass(transaction)">
-            <template #media>
-              <div class="transaction-icon" :class="getIconClass(transaction)">
-                <f7-icon :ios="getIcon(transaction)" size="20"></f7-icon>
-              </div>
-            </template>
-            <template #title>
-              <span class="transaction-title">{{ getCategory(transaction) }}</span>
-            </template>
-            <template #subtitle>
-              <span class="transaction-desc">{{ getDisplayDescription(transaction) }}</span>
-            </template>
-            <template #after>
-              <span class="transaction-amount" :class="getAmountClass(transaction)">
-                {{ formatAmount(transaction) }}
-              </span>
-            </template>
-          </f7-list-item>
-        </f7-list>
+        <f7-segmented strong tag="div" class="type-filter">
+          <f7-button v-for="filter in typeFilters" :key="filter.value" :active="currentTypeFilter === filter.value"
+            @click="selectTypeFilter(filter.value)">
+            {{ filter.label }}
+          </f7-button>
+        </f7-segmented>
+
+        <div class="date-filter-row">
+          <f7-button fill small :color="hasDateFilter ? 'blue' : 'gray'" @click="openDateRangePicker"
+            class="date-range-btn">
+            <f7-icon ios="f7:calendar" size="16" style="margin-right: 4px;"></f7-icon>
+            {{ dateRangeText }}
+          </f7-button>
+          <f7-button v-if="hasDateFilter" fill small color="red" @click="clearDateFilter" class="clear-date-btn">
+            <f7-icon ios="f7:xmark" size="16"></f7-icon>
+          </f7-button>
+        </div>
       </div>
 
-      <!-- 加载更多指示器 -->
-      <div v-if="hasMore" class="load-more-indicator" ref="loadMoreTrigger">
-        <f7-preloader v-if="loadingMore"></f7-preloader>
-        <span v-else class="load-more-text">上滑加载更多</span>
+      <!-- 加载状态 -->
+      <div v-if="loading && transactions.length === 0" class="loading-container">
+        <f7-preloader></f7-preloader>
       </div>
 
-      <!-- 没有更多数据 -->
-      <div v-else-if="transactions.length > 0" class="no-more-data">
-        <span>— 没有更多了 —</span>
+      <!-- 空状态 -->
+      <div v-else-if="transactions.length === 0" class="empty-state">
+        <div class="empty-icon">📝</div>
+        <div class="empty-text">暂无交易记录</div>
+        <f7-button fill round @click="navigateToAdd" class="empty-action-btn">
+          开始记账
+        </f7-button>
+      </div>
+
+      <!-- 交易列表 -->
+      <div v-else class="transactions-content" ref="scrollContent">
+        <div v-for="group in groupedTransactions" :key="group.date" class="transaction-group">
+          <!-- 日期分组头 -->
+          <div class="date-group-header">
+            <span class="date-title">{{ formatGroupDate(group.date) }}</span>
+            <span class="day-summary" :class="getDaySummaryClass(group.total)">
+              {{ formatDayTotal(group.total) }}
+            </span>
+          </div>
+
+          <!-- 该日期的交易列表 - 独立的圆角卡片 -->
+          <f7-list media-list dividers-ios strong inset class="transaction-list">
+            <f7-list-item v-for="transaction in group.items" :key="transaction.id" link="#"
+              @click="viewTransaction(transaction)" class="transaction-item" :class="getTransactionClass(transaction)">
+              <template #media>
+                <div class="transaction-icon" :class="getIconClass(transaction)">
+                  <f7-icon :ios="getIcon(transaction)" size="20"></f7-icon>
+                </div>
+              </template>
+              <template #title>
+                <span class="transaction-title">{{ getCategory(transaction) }}</span>
+              </template>
+              <template #subtitle>
+                <span class="transaction-desc">{{ getDisplayDescription(transaction) }}</span>
+              </template>
+              <template #after>
+                <span class="transaction-amount" :class="getAmountClass(transaction)">
+                  {{ formatAmount(transaction) }}
+                </span>
+              </template>
+            </f7-list-item>
+          </f7-list>
+        </div>
+
+        <!-- 加载更多指示器 -->
+        <div v-if="hasMore" class="load-more-indicator" ref="loadMoreTrigger">
+          <f7-preloader v-if="loadingMore"></f7-preloader>
+          <span v-else class="load-more-text">上滑加载更多</span>
+        </div>
+
+        <!-- 没有更多数据 -->
+        <div v-else-if="transactions.length > 0" class="no-more-data">
+          <span>— 没有更多了 —</span>
+        </div>
       </div>
     </div>
-  </div>
+  </PullToRefresh>
 </template>
 
 <script setup lang="ts">
@@ -106,6 +108,7 @@ import { f7 } from 'framework7-vue'
 import { useTransactionStore } from '../../stores/transaction'
 import { useUIStore } from '../../stores/ui'
 import { type Transaction, type TransactionsQuery, transactionsApi } from '../../api/transactions'
+import PullToRefresh from '../../components/PullToRefresh.vue'
 
 const router = useRouter()
 const transactionStore = useTransactionStore()
@@ -727,6 +730,16 @@ onMounted(async () => {
 defineExpose({
   restoreScrollPosition
 })
+
+// 下拉刷新处理
+async function onRefresh(done: () => void) {
+  try {
+    // 重置并重新加载交易数据
+    await loadTransactions(true)
+  } finally {
+    done()
+  }
+}
 
 onUnmounted(() => {
   if (observer) {
