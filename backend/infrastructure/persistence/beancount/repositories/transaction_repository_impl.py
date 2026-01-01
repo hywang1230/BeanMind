@@ -76,12 +76,12 @@ class TransactionRepositoryImpl(TransactionRepository):
             )
             postings.append(posting)
         
-        # 确定交易 ID
-        # 1. 优先使用元数据中存储的持久化 ID
+        # 优先使用元数据中的 ID（如果存在且不仅是占位）
+        # 这确保了即使内容修改（导致哈希变化），ID 也能保持不变
         if entry.meta and 'id' in entry.meta:
             transaction_id = entry.meta['id']
         else:
-            # 2. 如果没有持久化 ID，则生成基于内容的哈希 ID（兼容旧数据）
+            # 否则，基于交易完整内容生成稳定的哈希 ID
             transaction_id = self._generate_transaction_id(
                 entry.date, 
                 entry.narration, 
@@ -130,17 +130,33 @@ class TransactionRepositoryImpl(TransactionRepository):
         # 转换 Flag
         flag = transaction.flag.value if transaction.flag else "*"
         
-        # 准备元数据，确保包含 ID 以实现持久化
+        # 准备元数据
         meta = transaction.meta.copy() if transaction.meta else {}
-        if transaction.id:
-            meta['id'] = transaction.id
         
-        # 移除内部使用的位置信息，避免写回文件
-        if 'filename' in meta:
-            del meta['filename']
-        if 'lineno' in meta:
-            del meta['lineno']
-
+        # 智能 ID 持久化策略：
+        # 计算基于当前内容的哈希 ID
+        content_hash_id = self._generate_transaction_id(
+            transaction.date,
+            transaction.description,
+            transaction.payee,
+            transaction.postings
+        )
+        
+        # 如果当前 ID 与 内容哈希 ID 不一致，说明这是一个已有 ID 但内容被修改过的交易（或者ID通过其他方式生成）
+        # 此时必须将 ID 写入元数据，以保证 ID 不变性（First Principle）
+        if transaction.id and transaction.id != content_hash_id:
+            meta['id'] = transaction.id
+        else:
+            # 如果一致（新交易或未修改关键内容），则不需要在文件中冗余存储 ID
+            # 保持文件整洁
+            if 'id' in meta:
+                del meta['id']
+            
+        # 移除内部字段，确保不要写入文件
+        for internal_key in ['filename', 'lineno']:
+            if internal_key in meta:
+                del meta[internal_key]
+        
         return BeancountTransaction(
             meta=meta,
             date=transaction.date,
@@ -339,7 +355,12 @@ class TransactionRepositoryImpl(TransactionRepository):
         """
         # 生成 ID（如果没有）
         if not transaction.id:
-            transaction.id = self._generate_transaction_id(transaction.date, transaction.description)
+            transaction.id = self._generate_transaction_id(
+                transaction.date, 
+                transaction.description,
+                transaction.payee,
+                transaction.postings
+            )
         
         # 转换为 Beancount 格式
         beancount_txn = self._domain_to_beancount(transaction)
@@ -376,8 +397,8 @@ class TransactionRepositoryImpl(TransactionRepository):
         更新交易
         
         策略：
-        1. 根据元数据中的位置信息删除原有交易
-        2. 将更新后的交易写入（可能是新文件）
+        1. 根据元数据中的位置信息定位原有交易
+        2. 如果文件相同，进行原地更新；否则删除旧的创建新的
         3. 更新缓存和元数据
         """
         if not self.exists(transaction.id):
@@ -404,25 +425,113 @@ class TransactionRepositoryImpl(TransactionRepository):
             beancount_id=transaction.id
         ).first()
         user_id = metadata.user_id if metadata else None
-        
-        # 1. 从文件中删除原交易
-        if not self._remove_transaction_from_file(filename, lineno):
-             raise ValueError(f"无法从文件中删除原交易: {filename}:{lineno}")
-             
-        # 2. 删除旧的元数据
-        if metadata:
-            self.db_session.delete(metadata)
-            self.db_session.flush()
-            
-        # 3. 创建新交易（写入文件的同时生成新 ID，创建新元数据）
-        # 注意：不再清除 transaction.id，而是将其作为 persistent ID 写入新条目的元数据
-        try:
-            new_transaction = self.create(transaction, user_id)
-        except Exception as e:
-            raise RuntimeError(f"更新交易失败（旧数据已删除，新数据写入失败）: {e}")
-        
-        return new_transaction
 
+        # 检查是否需要移动文件（例如年份改变）
+        # 计算新交易应该所在的年份文件
+        year = transaction.date.year
+        target_year_file = self.beancount_service.get_year_file_path(year)
+        
+        # 统一路径格式进行比较
+        current_file_path = Path(filename).resolve()
+        target_file_path = Path(target_year_file).resolve()
+        
+        if current_file_path == target_file_path:
+            # 文件相同，进行原地更新
+            beancount_txn = self._domain_to_beancount(transaction)
+            new_content = printer.format_entry(beancount_txn)
+            
+            if not self._replace_transaction_in_file(filename, lineno, new_content):
+                 raise RuntimeError(f"无法在文件中原地更新交易: {filename}:{lineno}")
+            
+            # 重新加载
+            self.reload()
+            
+            # 直接使用原 ID 获取，因为我们的策略保证了 ID 不变（要么哈希一致，要么写入了 meta id）
+            return self._transactions_cache.get(transaction.id, transaction)
+            
+        else:
+            # 文件不同（跨年修改），走原有的“删除旧的 -> 创建新的”逻辑
+            
+            # 1. 从文件中删除原交易
+            if not self._remove_transaction_from_file(filename, lineno):
+                 raise ValueError(f"无法从文件中删除原交易: {filename}:{lineno}")
+                 
+            # 2. 删除旧的元数据
+            if metadata:
+                self.db_session.delete(metadata)
+                self.db_session.flush()
+                
+            # 3. 创建新交易
+            try:
+                return self.create(transaction, user_id)
+            except Exception as e:
+                raise RuntimeError(f"更新交易失败（旧数据已删除，新数据写入失败）: {e}")
+
+    def _replace_transaction_in_file(self, filename: str, lineno: int, new_content: str) -> bool:
+        """
+        在文件中原地替换交易内容
+        
+        Args:
+            filename: 文件路径
+            lineno: 原交易起始行号（1-based）
+            new_content: 新的交易内容字符串
+        """
+        path = Path(filename)
+        if not path.exists():
+            return False
+            
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+                
+            if lineno < 1 or lineno > len(lines):
+                return False
+                
+            # Beancount lineno 是 1-based
+            start_idx = lineno - 1
+            
+            # 确定旧交易块的结束位置
+            end_idx = start_idx + 1
+            while end_idx < len(lines):
+                line = lines[end_idx]
+                stripped = line.strip()
+                
+                # 空行视为 Entry 结束符
+                if not stripped:
+                    break
+                    
+                # 缩进的行属于当前 Entry
+                if line[0] == ' ' or line[0] == '\t':
+                    end_idx += 1
+                    continue
+                
+                # 非缩进且非空行，说明是下一个 Entry
+                break
+            
+            # 准备新内容，确保末尾有换行符（如果不在文件末尾）
+            if not new_content.endswith('\n'):
+                new_content += '\n'
+                
+            # 如果不是替换文件的最后一部分，且新内容没空行分隔，可能需要补一个空行（视情况而定）
+            # printer.format_entry 通常不带尾部空行，但为了美观我们可能希望保持
+            
+            # 替换内容
+            # 将新内容按行分割
+            new_lines_list = new_content.splitlines(keepends=True)
+            
+            # 执行替换 (lines[start_idx:end_idx] 是旧内容)
+            lines[start_idx:end_idx] = new_lines_list
+            
+            # 写回文件
+            with open(path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+                
+            return True
+            
+        except Exception as e:
+            # print(f"DEBUG: Replace failed: {e}")
+            return False
+    
     def _remove_transaction_from_file(self, filename: str, lineno: int) -> bool:
         """
         从文件中删除指定行号的交易块
@@ -463,6 +572,10 @@ class TransactionRepositoryImpl(TransactionRepository):
                 # 非缩进且非空行，说明是下一个 Entry
                 break
             
+            # 尝试把后面的空行也删掉一个，避免留下太多空行
+            if end_idx < len(lines) and lines[end_idx].strip() == "":
+                 end_idx += 1
+
             # 删除内容
             del lines[start_idx:end_idx]
             
