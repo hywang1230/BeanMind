@@ -503,12 +503,19 @@ async function submitTransaction() {
         transactionStore.clearTransactionDraft()
         // 清除 sessionStorage 中的编辑 ID
         sessionStorage.removeItem('editTransactionId')
-        
+
         // 标记交易列表需要刷新
         uiStore.markTransactionsNeedsRefresh()
-        // Go back to where? Ideally dash or transaction list.
-        // Use depth to go back to origin (skipping Add/Edit pages)
-        router.go(-currentDepth.value)
+
+        if (isEditMode.value) {
+          // 编辑模式：返回到详情页
+          router.go(-currentDepth.value)
+        } else {
+          // 新增模式：返回记账页面，方便继续记账
+          f7.toast.show({ text: '记账成功', position: 'center', closeTimeout: 1500 })
+          // 返回到记账页面（去掉所有分配页面的历史）
+          router.replace('/transactions/add')
+        }
     } catch (err: any) {
         console.error(err)
         f7.toast.show({ text: err.message || '保存失败', position: 'center', closeTimeout: 2000 })

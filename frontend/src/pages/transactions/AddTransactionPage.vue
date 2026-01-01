@@ -351,6 +351,19 @@ onBeforeUnmount(() => {
 // Submission Logic
 const showCurrencyPopover = ref(false)
 
+// 重置表单，保留日期和类型以便继续记账
+function resetForm() {
+  formData.value.amount = undefined
+  formData.value.category = []
+  formData.value.fromAccount = []
+  formData.value.toAccount = []
+  formData.value.payee = ''
+  formData.value.description = ''
+  formData.value.tagString = ''
+  // 保留 type、currency、date 以便继续记账
+  transactionStore.clearTransactionDraft()
+}
+
 function openCurrencyPopover() {
   if (availableCurrencies.value.length > 1) {
     showCurrencyPopover.value = true
@@ -459,7 +472,10 @@ async function handleSubmit() {
     await transactionStore.createTransaction(request)
     // 标记交易列表需要刷新
     uiStore.markTransactionsNeedsRefresh()
-    router.back()
+
+    // 新增记账成功后重置表单，方便继续记账
+    resetForm()
+    f7.toast.show({ text: '记账成功', position: 'center', closeTimeout: 1500 })
   } catch (err: any) {
     console.error(err)
     error.value = err.message || '保存失败'
