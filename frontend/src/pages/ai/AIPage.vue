@@ -4,10 +4,10 @@
     <div class="ai-header">
       <div class="header-title">
         <f7-icon f7="sparkles" class="header-icon" />
-        <span>AI 智能助手</span>
+        <span>AI 助手</span>
       </div>
       <f7-button v-if="aiStore.hasMessages" @click="handleNewChat" class="new-chat-btn">
-        <f7-icon f7="plus_bubble" size="20" />
+        <f7-icon ios="f7:plus" md="material:add" />
       </f7-button>
     </div>
 
@@ -15,18 +15,20 @@
     <div class="messages-container" ref="messagesContainer">
       <!-- 欢迎界面（无消息时显示） -->
       <div v-if="!aiStore.hasMessages" class="welcome-section">
-        <div class="welcome-icon">
-          <f7-icon f7="sparkles" size="48" />
-        </div>
-        <h2 class="welcome-title">您好，我是您的财务助手</h2>
-        <p class="welcome-subtitle">我可以帮您分析消费、查看账单、提供理财建议</p>
+        <div class="welcome-content">
+          <div class="welcome-icon">
+            <f7-icon f7="sparkles" size="32" />
+          </div>
+          <h2 class="welcome-title">财务助手</h2>
+          <p class="welcome-subtitle">分析消费、查看账单、提供理财建议</p>
 
-        <!-- 快捷问题 -->
-        <div class="quick-questions">
-          <div v-for="question in aiStore.quickQuestions" :key="question.id" class="quick-question-card"
-            @click="handleQuickQuestion(question.text)">
-            <f7-icon :f7="question.icon || 'lightbulb'" class="question-icon" />
-            <span class="question-text">{{ question.text }}</span>
+          <!-- 快捷问题 -->
+          <div class="quick-questions">
+            <div v-for="question in aiStore.quickQuestions" :key="question.id" class="quick-question-card"
+              @click="handleQuickQuestion(question.text)">
+              <f7-icon :f7="question.icon || 'lightbulb'" class="question-icon" />
+              <span class="question-text">{{ question.text }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -171,7 +173,7 @@ function formatTime(dateString: string): string {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--f7-page-bg-color);
+  background: var(--bg-primary);
 }
 
 /* 顶部标题栏 */
@@ -180,25 +182,27 @@ function formatTime(dateString: string): string {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: var(--f7-bars-bg-color);
-  border-bottom: 1px solid var(--f7-bars-border-color);
+  background: var(--bg-primary);
+  border-bottom: 0.5px solid var(--separator);
 }
 
 .header-title {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--f7-text-color);
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.4px;
 }
 
 .header-icon {
-  color: #8b5cf6;
+  color: var(--ios-blue);
+  font-size: 32px;
 }
 
 .new-chat-btn {
-  --f7-button-text-color: var(--f7-theme-color);
+  --f7-button-text-color: var(--ios-blue);
   min-width: auto;
   padding: 0 8px;
 }
@@ -214,106 +218,103 @@ function formatTime(dateString: string): string {
 /* 欢迎界面 */
 .welcome-section {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   min-height: 100%;
   padding: 20px;
+}
+
+.welcome-content {
   text-align: center;
+  max-width: 320px;
+  width: 100%;
 }
 
 .welcome-icon {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: rgba(0, 122, 255, 0.1);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 20px;
-  box-shadow: 0 8px 32px rgba(139, 92, 246, 0.3);
+  margin: 0 auto 20px;
 }
 
 .welcome-icon :deep(i) {
-  color: white;
+  color: var(--ios-blue);
 }
 
 .welcome-title {
-  font-size: 22px;
+  font-size: 28px;
   font-weight: 700;
-  color: var(--f7-text-color);
+  color: var(--text-primary);
   margin: 0 0 8px;
+  letter-spacing: -0.5px;
 }
 
 .welcome-subtitle {
   font-size: 15px;
-  color: var(--f7-text-color);
-  opacity: 0.6;
+  color: #8e8e93;
   margin: 0 0 32px;
-  max-width: 280px;
+  line-height: 1.4;
 }
 
 /* 快捷问题 */
 .quick-questions {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   width: 100%;
-  max-width: 400px;
 }
 
 .quick-question-card {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   padding: 14px 16px;
-  background: var(--f7-card-bg-color);
-  border-radius: 14px;
+  background: var(--bg-secondary);
+  border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  border: 1px solid transparent;
-}
-
-.quick-question-card:hover {
-  background: var(--f7-card-expandable-bg-color);
-  border-color: var(--f7-theme-color);
-  transform: translateY(-2px);
+  transition: background-color 0.2s ease;
 }
 
 .quick-question-card:active {
-  transform: scale(0.98);
+  background: var(--bg-secondary);
+  opacity: 0.7;
 }
 
 .question-icon {
-  color: #8b5cf6;
+  color: var(--ios-blue);
   font-size: 20px;
   flex-shrink: 0;
 }
 
 .question-text {
-  font-size: 14px;
-  color: var(--f7-text-color);
+  font-size: 15px;
+  color: var(--text-primary);
   text-align: left;
-  line-height: 1.3;
+  line-height: 1.4;
+  flex: 1;
 }
 
 /* 消息列表 */
 .messages-list {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .message-item {
   display: flex;
-  gap: 12px;
-  animation: fadeIn 0.3s ease;
+  gap: 8px;
+  animation: fadeIn 0.2s ease;
 }
 
 @keyframes fadeIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
 
   to {
@@ -327,8 +328,8 @@ function formatTime(dateString: string): string {
 }
 
 .message-avatar {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -337,19 +338,19 @@ function formatTime(dateString: string): string {
 }
 
 .user-avatar {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  background: #8e8e93;
   color: white;
 }
 
 .ai-avatar {
-  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
-  color: white;
+  background: rgba(0, 122, 255, 0.1);
+  color: var(--ios-blue);
 }
 
 .message-content {
   flex: 1;
   min-width: 0;
-  max-width: 95%;
+  max-width: 80%;
 }
 
 .message-user .message-content {
@@ -359,33 +360,32 @@ function formatTime(dateString: string): string {
 }
 
 .message-bubble {
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-radius: 18px;
-  line-height: 1.5;
+  line-height: 1.4;
   word-wrap: break-word;
 }
 
 .message-user .message-bubble {
-  background: var(--f7-theme-color);
+  background: var(--ios-blue);
   color: white;
-  border-bottom-right-radius: 6px;
+  border-bottom-right-radius: 4px;
 }
 
 .message-assistant .message-bubble {
-  background: var(--f7-card-bg-color);
-  color: var(--f7-text-color);
-  border-bottom-left-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-bottom-left-radius: 4px;
 }
 
 .message-text {
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 /* Markdown 样式 */
 .message-text :deep(p) {
-  margin: 0 0 12px 0;
+  margin: 0 0 8px 0;
 }
 
 .message-text :deep(p:last-child) {
@@ -398,7 +398,7 @@ function formatTime(dateString: string): string {
 .message-text :deep(h4),
 .message-text :deep(h5),
 .message-text :deep(h6) {
-  margin: 16px 0 8px 0;
+  margin: 12px 0 6px 0;
   font-weight: 600;
   line-height: 1.3;
 }
@@ -410,15 +410,15 @@ function formatTime(dateString: string): string {
 }
 
 .message-text :deep(h1) {
-  font-size: 1.5em;
+  font-size: 1.4em;
 }
 
 .message-text :deep(h2) {
-  font-size: 1.3em;
+  font-size: 1.25em;
 }
 
 .message-text :deep(h3) {
-  font-size: 1.15em;
+  font-size: 1.1em;
 }
 
 .message-text :deep(h4) {
@@ -429,20 +429,20 @@ function formatTime(dateString: string): string {
 .message-text :deep(table) {
   width: 100%;
   border-collapse: collapse;
-  margin: 12px 0;
+  margin: 10px 0;
   font-size: 14px;
   overflow-x: auto;
   display: block;
 }
 
 .message-text :deep(thead) {
-  background: rgba(0, 0, 0, 0.06);
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .message-text :deep(th),
 .message-text :deep(td) {
-  padding: 10px 12px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 8px 10px;
+  border: 1px solid var(--separator);
   text-align: left;
   white-space: nowrap;
 }
@@ -458,21 +458,21 @@ function formatTime(dateString: string): string {
 /* 列表样式 */
 .message-text :deep(ul),
 .message-text :deep(ol) {
-  margin: 8px 0;
-  padding-left: 24px;
+  margin: 6px 0;
+  padding-left: 20px;
 }
 
 .message-text :deep(li) {
-  margin: 4px 0;
+  margin: 3px 0;
 }
 
 /* 引用样式 */
 .message-text :deep(blockquote) {
-  margin: 12px 0;
-  padding: 8px 16px;
-  border-left: 4px solid #8b5cf6;
-  background: rgba(139, 92, 246, 0.08);
-  border-radius: 0 8px 8px 0;
+  margin: 10px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--ios-blue);
+  background: rgba(0, 122, 255, 0.08);
+  border-radius: 0 6px 6px 0;
 }
 
 .message-text :deep(blockquote p) {
@@ -482,25 +482,25 @@ function formatTime(dateString: string): string {
 /* 水平线 */
 .message-text :deep(hr) {
   border: none;
-  border-top: 1px solid rgba(0, 0, 0, 0.1);
-  margin: 16px 0;
+  border-top: 1px solid var(--separator);
+  margin: 12px 0;
 }
 
 /* 代码样式 */
 .message-text :deep(code) {
-  background: rgba(0, 0, 0, 0.08);
-  padding: 2px 6px;
-  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 2px 5px;
+  border-radius: 3px;
   font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
 }
 
 .message-text :deep(pre) {
-  background: rgba(0, 0, 0, 0.06);
-  padding: 12px 16px;
-  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  padding: 10px 12px;
+  border-radius: 6px;
   overflow-x: auto;
-  margin: 12px 0;
+  margin: 10px 0;
 }
 
 .message-text :deep(pre code) {
@@ -511,7 +511,7 @@ function formatTime(dateString: string): string {
 
 /* 链接样式 */
 .message-text :deep(a) {
-  color: #8b5cf6;
+  color: var(--ios-blue);
   text-decoration: none;
 }
 
@@ -530,8 +530,7 @@ function formatTime(dateString: string): string {
 
 .message-time {
   font-size: 11px;
-  color: var(--f7-text-color);
-  opacity: 0.4;
+  color: #8e8e93;
   margin-top: 4px;
   padding: 0 4px;
 }
@@ -539,23 +538,23 @@ function formatTime(dateString: string): string {
 /* 加载指示器 */
 .loading-indicator {
   display: flex;
-  gap: 12px;
-  animation: fadeIn 0.3s ease;
+  gap: 8px;
+  animation: fadeIn 0.2s ease;
 }
 
 .ai-loading-avatar {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+  background: rgba(0, 122, 255, 0.1);
 }
 
 .ai-loading-avatar :deep(i) {
-  color: white;
+  color: var(--ios-blue);
 }
 
 .loading-content {
@@ -566,26 +565,24 @@ function formatTime(dateString: string): string {
 .loading-dots {
   display: flex;
   gap: 4px;
-  padding: 12px 16px;
-  background: var(--f7-card-bg-color);
+  padding: 10px 14px;
+  background: var(--bg-secondary);
   border-radius: 18px;
-  border-bottom-left-radius: 6px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border-bottom-left-radius: 4px;
 }
 
 .loading-time {
   font-size: 11px;
-  color: var(--f7-text-color);
-  opacity: 0.4;
+  color: #8e8e93;
   margin-top: 4px;
   padding: 0 4px;
 }
 
 .loading-dots span {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: var(--f7-theme-color);
+  background: #8e8e93;
   animation: bounce 1.4s infinite ease-in-out both;
 }
 
@@ -616,18 +613,18 @@ function formatTime(dateString: string): string {
 .input-container {
   padding: 12px 16px;
   padding-bottom: calc(12px + env(safe-area-inset-bottom));
-  background: var(--f7-bars-bg-color);
-  border-top: 1px solid var(--f7-bars-border-color);
+  background: var(--bg-primary);
+  border-top: 0.5px solid var(--separator);
 }
 
 .input-wrapper {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  background: var(--f7-input-bg-color, var(--f7-card-bg-color));
-  border-radius: 24px;
-  padding: 8px 8px 8px 16px;
-  border: 1px solid var(--f7-input-border-color, rgba(0, 0, 0, 0.1));
+  background: var(--bg-secondary);
+  border-radius: 20px;
+  padding: 6px 6px 6px 14px;
+  border: 0.5px solid var(--separator);
 }
 
 .message-input {
@@ -638,13 +635,13 @@ function formatTime(dateString: string): string {
   line-height: 1.4;
   resize: none;
   max-height: 120px;
-  color: var(--f7-text-color);
+  color: var(--text-primary);
   outline: none;
   padding: 6px 0;
 }
 
 .message-input::placeholder {
-  color: var(--f7-input-placeholder-color);
+  color: #8e8e93;
 }
 
 .message-input:disabled {
@@ -652,14 +649,14 @@ function formatTime(dateString: string): string {
 }
 
 .send-btn {
-  --f7-button-text-color: #d1d5db;
+  --f7-button-text-color: #c7c7cc;
   min-width: auto;
   padding: 0;
   transition: all 0.2s ease;
 }
 
 .send-btn.active {
-  --f7-button-text-color: var(--f7-theme-color);
+  --f7-button-text-color: var(--ios-blue);
 }
 
 .send-btn:active {
@@ -689,15 +686,10 @@ function formatTime(dateString: string): string {
 }
 
 :global(.theme-dark) .message-text :deep(blockquote) {
-  background: rgba(139, 92, 246, 0.12);
+  background: rgba(0, 122, 255, 0.15);
 }
 
 :global(.theme-dark) .message-text :deep(hr) {
   border-top-color: rgba(255, 255, 255, 0.12);
-}
-
-:global(.theme-dark) .user-avatar,
-:global(.theme-dark) .ai-avatar {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 </style>
