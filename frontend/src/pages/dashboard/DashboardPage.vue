@@ -123,6 +123,9 @@ const topCategories = ref<CategoryStatistics[]>([])
 // 月度趋势数据
 const trendData = ref<MonthlyTrend[]>([])
 
+// 固定取最近 6 个月数据
+const last6MonthsTrend = computed(() => trendData.value.slice(-6))
+
 // 图表配置
 const chartOptions = computed(() => {
   const uiStore = useUIStore();
@@ -136,12 +139,15 @@ const chartOptions = computed(() => {
       toolbar: { show: false },
       background: 'transparent',
       fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
-      animations: { enabled: true, easing: 'easeinout', speed: 500 }
+      animations: { enabled: true, easing: 'easeinout', speed: 500 },
+      // 禁用缩放、选区、平移，只保留查看详情
+      zoom: { enabled: false },
+      selection: { enabled: false }
     },
     colors: [isDark ? '#30d158' : '#34c759', isDark ? '#ff453a' : '#ff3b30'], // iOS 绿/红
     stroke: { curve: 'smooth' as const, width: 2.5 },
     xaxis: {
-      categories: trendData.value.map(item => {
+      categories: last6MonthsTrend.value.map(item => {
         const [, month] = item.month.split('-')
         return `${parseInt(month || '0')}月`
       }),
@@ -178,8 +184,8 @@ const chartOptions = computed(() => {
 })
 
 const chartSeries = computed(() => [
-  { name: '收入', data: trendData.value.map(item => item.income) },
-  { name: '支出', data: trendData.value.map(item => Math.abs(item.expense)) }
+  { name: '收入', data: last6MonthsTrend.value.map(item => item.income) },
+  { name: '支出', data: last6MonthsTrend.value.map(item => Math.abs(item.expense)) }
 ])
 
 function formatNumber(num: number | undefined | null): string {
