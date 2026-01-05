@@ -16,6 +16,11 @@ export type Transaction = {
     transaction_type?: 'expense' | 'income' | 'transfer' | 'opening' | 'other'
     created_at?: string
     updated_at?: string
+    meta?: {
+        filename?: string
+        lineno?: number
+        [key: string]: any
+    }
 }
 
 export type CreateTransactionRequest = {

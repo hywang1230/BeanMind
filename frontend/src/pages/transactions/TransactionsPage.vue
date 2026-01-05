@@ -206,6 +206,15 @@ const groupedTransactions = computed<TransactionGroup[]>(() => {
     groups[date].total += amount
   }
 
+  // 对每个日期分组内的流水按 lineno 倒序排列（新的记账排在前面）
+  for (const group of Object.values(groups)) {
+    group.items.sort((a, b) => {
+      const linenoA = a.meta?.lineno ?? Infinity  // 如果没有 lineno，排在最前面
+      const linenoB = b.meta?.lineno ?? Infinity
+      return linenoB - linenoA  // 倒序：行号大的排前面
+    })
+  }
+
   // 按日期降序排列
   return Object.values(groups).sort((a, b) => b.date.localeCompare(a.date))
 })
