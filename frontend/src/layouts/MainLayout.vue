@@ -2,38 +2,12 @@
   <f7-page :page-content="false">
     <f7-toolbar tabbar icons bottom>
       <f7-toolbar-pane>
-        <f7-link
-          tab-link="#tab-1"
-          :tab-link-active="activeTabId === 'tab-1'"
-          text="首页"
-          icon-ios="f7:house_fill"
-          icon-md="material:home"
-          @click="onTabClick('tab-1')"
-        />
-        <f7-link
-          tab-link="#tab-2"
-          :tab-link-active="activeTabId === 'tab-2'"
-          text="AI"
-          icon-ios="f7:sparkles"
-          icon-md="material:auto_awesome"
-          @click="onTabClick('tab-2')"
-        />
-        <f7-link
-          tab-link="#tab-3"
-          :tab-link-active="activeTabId === 'tab-3'"
-          text="流水"
-          icon-ios="f7:list_bullet"
-          icon-md="material:view_list"
-          @click="onTabClick('tab-3')"
-        />
-        <f7-link
-          tab-link="#tab-4"
-          :tab-link-active="activeTabId === 'tab-4'"
-          text="更多"
-          icon-ios="f7:ellipsis_circle_fill"
-          icon-md="material:more_horiz"
-          @click="onTabClick('tab-4')"
-        />
+        <f7-link tab-link="#tab-1" :tab-link-active="activeTabId === 'tab-1'" text="首页" icon-ios="f7:house_fill"
+          icon-md="material:home" @click="onTabClick('tab-1')" />
+        <f7-link tab-link="#tab-2" :tab-link-active="activeTabId === 'tab-2'" text="流水" icon-ios="f7:list_bullet"
+          icon-md="material:view_list" @click="onTabClick('tab-2')" />
+        <f7-link tab-link="#tab-3" :tab-link-active="activeTabId === 'tab-3'" text="更多"
+          icon-ios="f7:ellipsis_circle_fill" icon-md="material:more_horiz" @click="onTabClick('tab-3')" />
       </f7-toolbar-pane>
     </f7-toolbar>
 
@@ -43,13 +17,10 @@
         <DashboardPage v-if="visitedTabs.has('tab-1')" />
       </f7-tab>
       <f7-tab id="tab-2" class="page-content" :tab-active="activeTabId === 'tab-2'">
-        <AIPage v-if="visitedTabs.has('tab-2')" />
+        <TransactionsPage v-if="visitedTabs.has('tab-2')" />
       </f7-tab>
       <f7-tab id="tab-3" class="page-content" :tab-active="activeTabId === 'tab-3'">
-        <TransactionsPage v-if="visitedTabs.has('tab-3')" />
-      </f7-tab>
-      <f7-tab id="tab-4" class="page-content" :tab-active="activeTabId === 'tab-4'">
-        <SettingsPage v-if="visitedTabs.has('tab-4')" />
+        <SettingsPage v-if="visitedTabs.has('tab-3')" />
       </f7-tab>
     </f7-tabs>
 
@@ -79,7 +50,6 @@ import {
 
 import DashboardPage from '../pages/dashboard/DashboardPage.vue';
 import TransactionsPage from '../pages/transactions/TransactionsPage.vue';
-import AIPage from '../pages/ai/AIPage.vue';
 import SettingsPage from '../pages/settings/SettingsPage.vue';
 import { useUIStore } from '../stores/ui';
 
@@ -121,4 +91,3 @@ function handleAddClick() {
 <style scoped>
 /* Removed old add-button-link styles as it's no longer used */
 </style>
-

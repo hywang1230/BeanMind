@@ -1,92 +1,104 @@
 <template>
-  <div class="ai-page">
-    <!-- 顶部标题栏 -->
-    <div class="ai-header">
-      <div class="header-title">
-        <f7-icon f7="sparkles" class="header-icon" />
-        <span>AI 助手</span>
-      </div>
-      <f7-button v-if="aiStore.hasMessages" @click="handleNewChat" class="new-chat-btn">
-        <f7-icon ios="f7:plus" md="material:add" />
-      </f7-button>
-    </div>
+  <f7-page>
+    <f7-navbar>
+      <f7-nav-left>
+        <f7-link icon-ios="f7:chevron_left" icon-md="material:arrow_back" @click="goBack" />
+      </f7-nav-left>
+      <f7-nav-title>AI 智能助手</f7-nav-title>
+      <f7-nav-right>
+        <f7-link v-if="aiStore.hasMessages" @click="handleNewChat" icon-ios="f7:plus" icon-md="material:add" />
+      </f7-nav-right>
+    </f7-navbar>
 
-    <!-- 消息区域 -->
-    <div class="messages-container" ref="messagesContainer">
-      <!-- 欢迎界面（无消息时显示） -->
-      <div v-if="!aiStore.hasMessages" class="welcome-section">
-        <div class="welcome-content">
-          <div class="welcome-icon">
-            <f7-icon f7="sparkles" size="32" />
+    <div class="ai-page-content">
+
+      <!-- 消息区域 -->
+      <div class="messages-container" ref="messagesContainer">
+        <!-- 欢迎界面（无消息时显示） -->
+        <div v-if="!aiStore.hasMessages" class="welcome-section">
+          <div class="welcome-content">
+            <div class="welcome-icon">
+              <f7-icon f7="sparkles" size="32" />
+            </div>
+            <h2 class="welcome-title">财务助手</h2>
+            <p class="welcome-subtitle">分析消费、查看账单、提供理财建议</p>
+
+            <!-- 快捷问题 -->
+            <div class="quick-questions">
+              <div v-for="question in aiStore.quickQuestions" :key="question.id" class="quick-question-card"
+                @click="handleQuickQuestion(question.text)">
+                <f7-icon :f7="question.icon || 'lightbulb'" class="question-icon" />
+                <span class="question-text">{{ question.text }}</span>
+              </div>
+            </div>
           </div>
-          <h2 class="welcome-title">财务助手</h2>
-          <p class="welcome-subtitle">分析消费、查看账单、提供理财建议</p>
+        </div>
 
-          <!-- 快捷问题 -->
-          <div class="quick-questions">
-            <div v-for="question in aiStore.quickQuestions" :key="question.id" class="quick-question-card"
-              @click="handleQuickQuestion(question.text)">
-              <f7-icon :f7="question.icon || 'lightbulb'" class="question-icon" />
-              <span class="question-text">{{ question.text }}</span>
+        <!-- 消息列表 -->
+        <div v-else class="messages-list">
+          <div v-for="message in aiStore.messages" :key="message.id" class="message-item"
+            :class="[`message-${message.role}`]">
+            <!-- 头像 -->
+            <div class="message-avatar">
+              <f7-icon :f7="message.role === 'user' ? 'person_fill' : 'sparkles'"
+                :class="message.role === 'user' ? 'user-avatar' : 'ai-avatar'" />
+            </div>
+
+            <!-- 消息内容 -->
+            <div class="message-content">
+              <div class="message-bubble">
+                <div class="message-text" v-html="formatMessage(message.content)"></div>
+              </div>
+              <div class="message-time">{{ formatTime(message.created_at) }}</div>
+            </div>
+          </div>
+
+          <!-- 加载指示器 -->
+          <div v-if="aiStore.isLoading" class="loading-indicator">
+            <div class="ai-loading-avatar">
+              <f7-icon f7="sparkles" class="ai-avatar" />
+            </div>
+            <div class="loading-content">
+              <div class="loading-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+              </div>
+              <div class="loading-time">{{ formatTime(new Date().toISOString()) }}</div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- 消息列表 -->
-      <div v-else class="messages-list">
-        <div v-for="message in aiStore.messages" :key="message.id" class="message-item"
-          :class="[`message-${message.role}`]">
-          <!-- 头像 -->
-          <div class="message-avatar">
-            <f7-icon :f7="message.role === 'user' ? 'person_fill' : 'sparkles'"
-              :class="message.role === 'user' ? 'user-avatar' : 'ai-avatar'" />
-          </div>
-
-          <!-- 消息内容 -->
-          <div class="message-content">
-            <div class="message-bubble">
-              <div class="message-text" v-html="formatMessage(message.content)"></div>
-            </div>
-            <div class="message-time">{{ formatTime(message.created_at) }}</div>
-          </div>
-        </div>
-
-        <!-- 加载指示器 -->
-        <div v-if="aiStore.isLoading" class="loading-indicator">
-          <div class="ai-loading-avatar">
-            <f7-icon f7="sparkles" class="ai-avatar" />
-          </div>
-          <div class="loading-content">
-            <div class="loading-dots">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-            <div class="loading-time">{{ formatTime(new Date().toISOString()) }}</div>
-          </div>
+      <!-- 输入区域 -->
+      <div class="input-container">
+        <!-- 输入框 -->
+        <div class="input-wrapper">
+          <textarea v-model="inputMessage" @keydown.enter.exact.prevent="handleSend" placeholder="输入您的问题..." rows="1"
+            class="message-input" ref="inputRef" :disabled="aiStore.isLoading"></textarea>
+          <f7-button @click="handleSend" :disabled="!inputMessage.trim() || aiStore.isLoading" class="send-btn"
+            :class="{ 'active': inputMessage.trim() && !aiStore.isLoading }">
+            <f7-icon f7="arrow_up_circle_fill" size="32" />
+          </f7-button>
         </div>
       </div>
     </div>
-
-    <!-- 输入区域 -->
-    <div class="input-container">
-      <!-- 输入框 -->
-      <div class="input-wrapper">
-        <textarea v-model="inputMessage" @keydown.enter.exact.prevent="handleSend" placeholder="输入您的问题..." rows="1"
-          class="message-input" ref="inputRef" :disabled="aiStore.isLoading"></textarea>
-        <f7-button @click="handleSend" :disabled="!inputMessage.trim() || aiStore.isLoading" class="send-btn"
-          :class="{ 'active': inputMessage.trim() && !aiStore.isLoading }">
-          <f7-icon f7="arrow_up_circle_fill" size="32" />
-        </f7-button>
-      </div>
-    </div>
-  </div>
+  </f7-page>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, nextTick, watch } from 'vue'
-import { f7Icon, f7Button } from 'framework7-vue'
+import { useRouter } from 'vue-router'
+import {
+  f7Page,
+  f7Navbar,
+  f7NavLeft,
+  f7NavTitle,
+  f7NavRight,
+  f7Link,
+  f7Icon,
+  f7Button
+} from 'framework7-vue'
 import { useAIStore } from '../../stores/ai'
 import { marked } from 'marked'
 
@@ -97,12 +109,20 @@ marked.setOptions({
 })
 
 const aiStore = useAIStore()
+const router = useRouter()
 const inputMessage = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
 
+// 返回上一页
+function goBack() {
+  // 直接导航回主页面，会自动恢复到之前的 tab
+  router.push('/')
+}
+
 // 初始化
 onMounted(async () => {
-  aiStore.initSession()
+  // 每次进入页面都开始新的对话
+  aiStore.newConversation()
   await aiStore.fetchQuickQuestions()
 })
 
@@ -169,42 +189,11 @@ function formatTime(dateString: string): string {
 </script>
 
 <style scoped>
-.ai-page {
+.ai-page-content {
   display: flex;
   flex-direction: column;
   height: 100%;
   background: var(--bg-primary);
-}
-
-/* 顶部标题栏 */
-.ai-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: var(--bg-primary);
-  border-bottom: 0.5px solid var(--separator);
-}
-
-.header-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 34px;
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.4px;
-}
-
-.header-icon {
-  color: var(--ios-blue);
-  font-size: 32px;
-}
-
-.new-chat-btn {
-  --f7-button-text-color: var(--ios-blue);
-  min-width: auto;
-  padding: 0 8px;
 }
 
 /* 消息容器 */

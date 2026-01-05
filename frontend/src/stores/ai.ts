@@ -121,7 +121,9 @@ export const useAIStore = defineStore('ai', () => {
 
     // 新建对话
     function newConversation() {
-        clearMessages()
+        // 直接清空本地状态，不调用服务端
+        messages.value = []
+        error.value = null
         sessionId.value = generateId()
     }
 
