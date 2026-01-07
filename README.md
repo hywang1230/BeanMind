@@ -137,20 +137,6 @@ JWT_EXPIRATION_HOURS=24
 DATA_DIR=./data
 ```
 
-## 设计文档
-
-详细的系统设计文档位于 `/design/` 目录：
-- [系统架构设计](design/system_architecture.md)
-- [数据库设计](design/database_design.md)
-- [功能模块设计](design/module_design.md)
-- [API 接口设计](design/api_design.md)
-- [前端页面设计](design/frontend_design.md)
-
-## 开发状态
-
-🚧 当前处于开发阶段，正在按照执行计划逐步实施。
-
-查看 [执行计划](design/execution_plan.md) 了解开发进度。
 
 ## License
 
