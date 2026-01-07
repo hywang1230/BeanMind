@@ -168,6 +168,63 @@ class AIApplicationService:
             logger.error(f"AI 对话失败: {e}")
             raise
     
+    async def chat_stream(
+        self,
+        message: str,
+        session_id: Optional[str] = None,
+        history: Optional[List[Dict]] = None
+    ):
+        """
+        流式对话
+        
+        Args:
+            message: 用户消息
+            session_id: 会话 ID
+            history: 外部传入的历史（可选）
+            
+        Yields:
+            SSE 格式的数据块
+        """
+        import json
+        
+        # 获取或创建会话
+        session = self.get_or_create_session(session_id)
+        
+        # 添加用户消息
+        user_message = ChatMessage.user_message(message, session.id)
+        session.add_message(user_message)
+        
+        # 获取聊天历史
+        chat_history = history or session.get_history_for_context()
+        
+        # 收集完整响应
+        full_response = ""
+        
+        try:
+            # 首先发送 session_id
+            yield f"data: {json.dumps({'type': 'session', 'session_id': session.id})}\n\n"
+            
+            # 流式输出 AI 回复
+            async for token in self.chat_service.chat_stream(
+                message=message,
+                session_id=session.id,
+                chat_history=chat_history
+            ):
+                full_response += token
+                yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+            
+            # 添加 AI 回复消息到会话
+            assistant_message = ChatMessage.assistant_message(full_response, session.id)
+            session.add_message(assistant_message)
+            
+            # 发送完成消息
+            yield f"data: {json.dumps({'type': 'done', 'message': assistant_message.to_dict()})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"AI 流式对话失败: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            raise
+    
     def get_session_history(self, session_id: str) -> Optional[Dict]:
         """
         获取会话历史

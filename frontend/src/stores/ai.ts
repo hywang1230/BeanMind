@@ -108,6 +108,95 @@ export const useAIStore = defineStore('ai', () => {
         }
     }
 
+    // 流式发送消息
+    async function sendMessageStream(content: string) {
+        if (!content.trim() || isLoading.value) return
+
+        initSession()
+        error.value = null
+        isLoading.value = true
+
+        // 添加用户消息
+        const userMessage: ChatMessage = {
+            id: generateId(),
+            role: 'user',
+            content: content.trim(),
+            created_at: new Date().toISOString(),
+        }
+        messages.value.push(userMessage)
+
+        // 延迟创建 AI 消息（在收到第一个 token 时创建）
+        let tempAiMessage: ChatMessage | null = null
+
+        // 构建历史（排除刚添加的用户消息）
+        const history = messages.value
+            .slice(0, -1)
+            .map(m => ({ role: m.role, content: m.content }))
+
+        try {
+            await aiApi.chatStream(
+                {
+                    message: content.trim(),
+                    session_id: sessionId.value,
+                    history,
+                },
+                // onToken: 实时更新消息内容
+                (token: string) => {
+                    // 如果是第一个 token，创建 AI 消息
+                    if (!tempAiMessage) {
+                        tempAiMessage = {
+                            id: generateId(),
+                            role: 'assistant',
+                            content: token,
+                            created_at: new Date().toISOString(),
+                        }
+                        messages.value.push(tempAiMessage)
+                    } else {
+                        // 追加 token 并触发响应式更新
+                        tempAiMessage.content += token
+                        const index = messages.value.findIndex(m => m.id === tempAiMessage!.id)
+                        if (index !== -1) {
+                            messages.value[index] = { ...tempAiMessage }
+                        }
+                    }
+                },
+                // onDone: 完成时更新为完整消息
+                (message: ChatMessage) => {
+                    if (tempAiMessage) {
+                        const index = messages.value.findIndex(m => m.id === tempAiMessage!.id)
+                        if (index !== -1) {
+                            messages.value[index] = message
+                        }
+                    }
+                },
+                // onError: 处理错误
+                (errorMsg: string) => {
+                    error.value = errorMsg
+                    // 如果还没创建消息，则创建一个错误消息
+                    if (!tempAiMessage) {
+                        tempAiMessage = {
+                            id: generateId(),
+                            role: 'assistant',
+                            content: `抱歉，处理您的请求时出现了问题：${errorMsg}`,
+                            created_at: new Date().toISOString(),
+                        }
+                        messages.value.push(tempAiMessage)
+                    } else {
+                        tempAiMessage.content = `抱歉，处理您的请求时出现了问题：${errorMsg}`
+                        const index = messages.value.findIndex(m => m.id === tempAiMessage!.id)
+                        if (index !== -1) {
+                            messages.value[index] = { ...tempAiMessage }
+                        }
+                    }
+                }
+            )
+        } catch {
+            // 错误已在 onError 回调中处理
+        } finally {
+            isLoading.value = false
+        }
+    }
+
     // 清空消息
     function clearMessages() {
         messages.value = []
@@ -158,6 +247,7 @@ export const useAIStore = defineStore('ai', () => {
         initSession,
         fetchQuickQuestions,
         sendMessage,
+        sendMessageStream,
         clearMessages,
         newConversation,
         loadSessionHistory,

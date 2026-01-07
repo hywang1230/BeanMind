@@ -53,8 +53,8 @@
             </div>
           </div>
 
-          <!-- 加载指示器 -->
-          <div v-if="aiStore.isLoading" class="loading-indicator">
+          <!-- 加载指示器（仅在等待 AI 开始回复时显示） -->
+          <div v-if="aiStore.isLoading && !isStreamingContent" class="loading-indicator">
             <div class="ai-loading-avatar">
               <f7-icon f7="sparkles" class="ai-avatar" />
             </div>
@@ -87,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   f7Page,
@@ -153,18 +153,27 @@ function scrollToBottom() {
   }
 }
 
-// 发送消息
+// 判断是否正在流式输出内容（用于控制加载指示器显示）
+const isStreamingContent = computed(() => {
+  const msgs = aiStore.messages
+  if (msgs.length === 0) return false
+  const lastMsg = msgs[msgs.length - 1]
+  // 如果最后一条消息是 AI 消息且有内容，说明正在流式输出
+  return lastMsg?.role === 'assistant' && !!lastMsg.content
+})
+
+// 发送消息（使用流式输出）
 async function handleSend() {
   const message = inputMessage.value.trim()
   if (!message || aiStore.isLoading) return
 
   inputMessage.value = ''
-  await aiStore.sendMessage(message)
+  await aiStore.sendMessageStream(message)
 }
 
-// 点击快捷问题
+// 点击快捷问题（使用流式输出）
 async function handleQuickQuestion(question: string) {
-  await aiStore.sendMessage(question)
+  await aiStore.sendMessageStream(question)
 }
 
 // 新建对话
@@ -172,12 +181,56 @@ function handleNewChat() {
   aiStore.newConversation()
 }
 
-// 格式化消息（使用 marked 支持完整 Markdown）
+// 格式化消息（使用 marked 支持完整 Markdown，带智能补全）
 function formatMessage(content: string): string {
   if (!content) return ''
 
+  let processedContent = content
+
+  // ===== 1. 预处理代码块格式 =====
+  // 确保代码块标记 ``` 前后都有换行符，这样 marked 才能正确解析
+  // 处理：```json{ -> ```json\n{
+  processedContent = processedContent.replace(/```(\w*)\s*([^\n])/g, '```$1\n$2')
+  // 处理：}```现在 -> }\n```\n现在
+  processedContent = processedContent.replace(/([^\n])```([^\n`])/g, '$1\n```\n$2')
+  // 处理：}``` -> }\n```
+  processedContent = processedContent.replace(/([^\n])```$/g, '$1\n```')
+
+  // ===== 2. 智能补全未闭合的代码块 =====
+  const codeBlockMatches = processedContent.match(/```/g)
+  if (codeBlockMatches && codeBlockMatches.length % 2 !== 0) {
+    processedContent += '\n```'
+  }
+
+  // ===== 3. 补全行内代码 =====
+  // 在代码块外检测未闭合的行内代码
+  // 先提取所有代码块内容，然后在非代码块部分检测
+  const codeBlockRegex = /```[\s\S]*?```/g
+  const textWithoutCodeBlocks = processedContent.replace(codeBlockRegex, '')
+  const inlineCodeMatches = textWithoutCodeBlocks.match(/(?<!`)`(?!`)/g)
+  if (inlineCodeMatches && inlineCodeMatches.length % 2 !== 0) {
+    processedContent += '`'
+  }
+
+  // ===== 4. 补全粗体 =====
+  // 同样需要排除代码块内的内容
+  const textForBold = processedContent.replace(codeBlockRegex, '')
+  // 简化逻辑：如果 ** 出现奇数次，补全一个
+  const totalBoldMarkers = (textForBold.match(/\*\*/g) || []).length
+  if (totalBoldMarkers % 2 !== 0) {
+    processedContent += '**'
+  }
+
+  // ===== 5. 补全斜体 =====
+  // 检测单独的 * （不是 ** 的一部分）
+  const textForItalic = processedContent.replace(codeBlockRegex, '').replace(/\*\*/g, '')
+  const italicMatches = textForItalic.match(/\*/g)
+  if (italicMatches && italicMatches.length % 2 !== 0) {
+    processedContent += '*'
+  }
+
   // 使用 marked 解析 Markdown
-  const html = marked.parse(content) as string
+  const html = marked.parse(processedContent) as string
   return html
 }
 

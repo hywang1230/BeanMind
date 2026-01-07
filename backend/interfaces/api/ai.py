@@ -4,6 +4,7 @@
 """
 import logging
 from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import StreamingResponse
 from typing import Optional
 
 from backend.application.services import AIApplicationService
@@ -102,6 +103,59 @@ def chat(request: ChatRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"AI 对话失败: {str(e)}"
         )
+
+
+@router.post(
+    "/chat/stream",
+    summary="AI 流式对话",
+    description="发送消息给 AI 并获取流式响应（Server-Sent Events）",
+    responses={
+        200: {"description": "流式对话成功", "content": {"text/event-stream": {}}},
+        400: {"description": "请求参数错误", "model": ErrorResponse},
+        500: {"description": "服务器错误", "model": ErrorResponse},
+    }
+)
+async def chat_stream(request: ChatRequest):
+    """
+    AI 流式对话
+    
+    使用 Server-Sent Events (SSE) 流式返回 AI 响应。
+    
+    事件格式:
+    - type: "session" - 包含 session_id
+    - type: "token" - 包含 content（token 片段）
+    - type: "done" - 包含完整的 message 对象
+    - type: "error" - 包含错误信息
+    """
+    ai_service = get_ai_service()
+    
+    # 转换历史格式
+    history = None
+    if request.history:
+        history = [{"role": h.role, "content": h.content} for h in request.history]
+    
+    async def event_generator():
+        try:
+            async for chunk in ai_service.chat_stream(
+                message=request.message,
+                session_id=request.session_id,
+                history=history
+            ):
+                yield chunk
+        except Exception as e:
+            import json
+            logger.error(f"AI 流式对话失败: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # 禁用 Nginx 缓冲
+        }
+    )
 
 
 @router.get(
