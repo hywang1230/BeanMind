@@ -1,70 +1,41 @@
 """AI 聊天领域服务
 
-负责与 Agent 交互，提供对话能力。
+负责与 LangChain Agent 交互，提供对话能力。
 """
 import logging
 import traceback
-from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 
-from agentuniverse.agent.agent import Agent
-from agentuniverse.agent.agent_manager import AgentManager
-from agentuniverse.base.agentuniverse import AgentUniverse
-from agentuniverse.agent.output_object import OutputObject
-
-from backend.domain.ai.entities import ChatMessage, ChatSession, MessageRole
+from backend.infrastructure.intelligence.agentic.agent.langchain_agent import create_analysis_agent
 
 logger = logging.getLogger(__name__)
-
-# 计算配置文件的绝对路径
-_DEFAULT_CONFIG_PATH = str(Path(__file__).parent.parent.parent.parent / 'config' / 'config.toml')
 
 
 class AIChatService:
     """
     AI 聊天领域服务
     
-    封装与 AgentUniverse 的交互，提供对话能力。
+    封装与 LangChain Agent 的交互，提供对话能力。
     """
     
+    _agent = None
     _initialized: bool = False
     
-    def __init__(self, config_path: str = _DEFAULT_CONFIG_PATH):
-        """
-        初始化 AI 聊天服务
-        
-        Args:
-            config_path: AgentUniverse 配置文件路径
-        """
-        self.config_path = config_path
+    def __init__(self):
+        """初始化 AI 聊天服务"""
         self._ensure_initialized()
     
     def _ensure_initialized(self):
-        """确保 AgentUniverse 已初始化（单例模式）"""
+        """确保 Agent 已初始化（单例模式）"""
         if not AIChatService._initialized:
             try:
-                AgentUniverse().start(config_path=self.config_path, core_mode=True)
+                AIChatService._agent = create_analysis_agent()
                 AIChatService._initialized = True
-                logger.info("AgentUniverse 初始化成功")
+                logger.info("LangChain Agent 初始化成功")
             except Exception as e:
-                logger.error(f"AgentUniverse 初始化失败: {type(e).__name__}: {e}")
+                logger.error(f"LangChain Agent 初始化失败: {type(e).__name__}: {e}")
                 logger.error(f"详细堆栈追踪:\n{traceback.format_exc()}")
                 raise
-    
-    def _get_agent(self, agent_name: str = 'analysis_agent') -> Agent:
-        """
-        获取 Agent 实例
-        
-        Args:
-            agent_name: Agent 名称
-            
-        Returns:
-            Agent 实例
-        """
-        agent = AgentManager().get_instance_obj(agent_name)
-        if not agent:
-            raise ValueError(f"Agent '{agent_name}' 不存在")
-        return agent
     
     def chat(
         self, 
@@ -84,48 +55,72 @@ class AIChatService:
             AI 回复内容
         """
         try:
-            agent = self._get_agent()
-            
-            # 构建输入
-            kwargs = {'input': message}
-            if session_id:
-                kwargs['session_id'] = session_id
-            if chat_history:
-                kwargs['chat_history'] = self._format_chat_history(chat_history)
+            # 构建消息列表
+            messages = self._build_messages(message, chat_history)
             
             # 执行 Agent
-            output_object: OutputObject = agent.run(**kwargs)
+            result = AIChatService._agent.invoke({"messages": messages})
             
-            # 提取输出
-            result = output_object.get_data('output', '')
-            return result
+            # 从结果中提取最后的 AI 消息
+            return self._extract_response(result)
             
         except Exception as e:
             logger.error(f"AI 对话失败: {type(e).__name__}: {e}")
             logger.error(f"详细堆栈追踪:\n{traceback.format_exc()}")
             raise
     
-    def _format_chat_history(self, history: list) -> str:
+    def _build_messages(self, message: str, chat_history: Optional[list] = None) -> List[Dict]:
         """
-        格式化聊天历史为字符串
+        构建消息列表
         
         Args:
-            history: 聊天历史列表
+            message: 当前用户消息
+            chat_history: 聊天历史
             
         Returns:
-            格式化后的字符串
+            消息列表
         """
-        if not history:
-            return ""
+        messages = []
         
-        lines = []
-        for msg in history:
-            role = msg.get('role', 'user')
-            content = msg.get('content', '')
-            if role == 'user':
-                lines.append(f"用户: {content}")
-            elif role == 'assistant':
-                lines.append(f"助手: {content}")
+        # 添加历史消息
+        if chat_history:
+            for msg in chat_history:
+                role = msg.get('role', 'user')
+                content = msg.get('content', '')
+                messages.append({"role": role, "content": content})
         
-        return "\n".join(lines)
-
+        # 添加当前用户消息
+        messages.append({"role": "user", "content": message})
+        
+        return messages
+    
+    def _extract_response(self, result: dict) -> str:
+        """
+        从 Agent 结果中提取响应
+        
+        Args:
+            result: Agent 执行结果
+            
+        Returns:
+            AI 回复内容
+        """
+        # LangChain create_agent 返回格式为 {"messages": [...]}
+        messages = result.get("messages", [])
+        
+        # 找到最后一条 AI 消息
+        for msg in reversed(messages):
+            # 兼容不同的消息格式
+            if hasattr(msg, 'content'):
+                # AIMessage 对象
+                if hasattr(msg, 'type') and msg.type == 'ai':
+                    return msg.content
+                # 也可能是其他 Message 类型
+                if msg.__class__.__name__ == 'AIMessage':
+                    return msg.content
+            elif isinstance(msg, dict):
+                if msg.get('role') == 'assistant':
+                    return msg.get('content', '')
+        
+        # 如果没找到 AI 消息，返回空字符串
+        logger.warning("未找到 AI 响应消息")
+        return ""

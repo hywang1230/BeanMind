@@ -30,7 +30,7 @@ def get_ai_service() -> AIApplicationService:
     """
     获取 AI 应用服务实例
     
-    使用单例模式避免重复初始化 AgentUniverse。
+    使用单例模式避免重复初始化 LangChain Agent。
     """
     global _ai_service
     if _ai_service is None:

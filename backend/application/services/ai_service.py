@@ -4,7 +4,6 @@
 """
 import logging
 import uuid
-from pathlib import Path
 from typing import Dict, Optional, List
 
 from backend.domain.ai.entities import ChatMessage, ChatSession, MessageRole
@@ -12,8 +11,7 @@ from backend.domain.ai.services import AIChatService
 
 logger = logging.getLogger(__name__)
 
-# 计算配置文件的绝对路径
-_DEFAULT_CONFIG_PATH = str(Path(__file__).parent.parent.parent / 'config' / 'config.toml')
+
 
 
 # 预定义的快捷问题
@@ -41,21 +39,15 @@ class AIApplicationService:
     # 会话存储（内存缓存，生产环境可改为 Redis）
     _sessions: Dict[str, ChatSession] = {}
     
-    def __init__(self, config_path: str = _DEFAULT_CONFIG_PATH):
-        """
-        初始化 AI 应用服务
-        
-        Args:
-            config_path: AgentUniverse 配置路径
-        """
-        self.config_path = config_path
+    def __init__(self):
+        """初始化 AI 应用服务"""
         self._chat_service: Optional[AIChatService] = None
     
     @property
     def chat_service(self) -> AIChatService:
         """懒加载 AI 聊天服务"""
         if self._chat_service is None:
-            self._chat_service = AIChatService(self.config_path)
+            self._chat_service = AIChatService()
         return self._chat_service
     
     def get_quick_questions(self) -> List[Dict]:
