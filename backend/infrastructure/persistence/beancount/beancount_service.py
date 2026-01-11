@@ -45,6 +45,22 @@ class BeancountService:
             for error in self.errors[:5]:  # 只显示前5个错误
                 print(f"  - {error}")
     
+    def get_operating_currency(self) -> str:
+        """
+        获取账本的主币种（operating_currency）
+        
+        从 Beancount 的 options 中读取 operating_currency 设置。
+        如果定义了多个主币种，返回第一个。
+        如果未定义，默认返回 CNY。
+        
+        Returns:
+            主币种代码（如 "CNY", "USD"）
+        """
+        operating_currencies = self.options.get("operating_currency", [])
+        if operating_currencies:
+            return operating_currencies[0]
+        return "CNY"
+    
     def get_accounts(self) -> List[Dict[str, any]]:
         """
         获取所有账户列表

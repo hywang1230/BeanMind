@@ -18,7 +18,7 @@
           <div class="net-worth-section">
             <div class="net-worth-label">净资产</div>
             <div class="net-worth-value" :class="{ negative: assetData.net_assets < 0 }">
-              {{ assetData.net_assets >= 0 ? '' : '-' }}¥{{ formatNumber(assetData.net_assets) }}
+              {{ assetData.net_assets >= 0 ? '' : '-' }}{{ currencySymbol }}{{ formatNumber(assetData.net_assets) }}
             </div>
           </div>
 
@@ -26,12 +26,13 @@
           <div class="asset-liability-row">
             <div class="al-item">
               <span class="al-label">资产</span>
-              <span class="al-value assets">¥{{ formatNumber(assetData.total_assets) }}</span>
+              <span class="al-value assets">{{ currencySymbol }}{{ formatNumber(assetData.total_assets) }}</span>
             </div>
             <div class="al-divider"></div>
             <div class="al-item">
               <span class="al-label">负债</span>
-              <span class="al-value liabilities">¥{{ formatNumber(assetData.total_liabilities) }}</span>
+              <span class="al-value liabilities">{{ currencySymbol }}{{ formatNumber(assetData.total_liabilities)
+                }}</span>
             </div>
           </div>
         </div>
@@ -44,17 +45,17 @@
             <div class="monthly-item">
               <div class="monthly-label">收入</div>
               <div class="monthly-value" :class="monthlyData.income >= 0 ? 'income' : 'expense'">
-                {{ monthlyData.income >= 0 ? '+' : '-' }}¥{{ formatNumber(monthlyData.income) }}
+                {{ monthlyData.income >= 0 ? '+' : '-' }}{{ currencySymbol }}{{ formatNumber(monthlyData.income) }}
               </div>
             </div>
             <div class="monthly-item">
               <div class="monthly-label">支出</div>
-              <div class="monthly-value expense">¥{{ formatNumber(monthlyData.expense) }}</div>
+              <div class="monthly-value expense">{{ currencySymbol }}{{ formatNumber(monthlyData.expense) }}</div>
             </div>
             <div class="monthly-item">
               <div class="monthly-label">结余</div>
               <div class="monthly-value" :class="monthlyData.net >= 0 ? 'income' : 'expense'">
-                {{ monthlyData.net >= 0 ? '+' : '-' }}¥{{ formatNumber(monthlyData.net) }}
+                {{ monthlyData.net >= 0 ? '+' : '-' }}{{ currencySymbol }}{{ formatNumber(monthlyData.net) }}
               </div>
             </div>
           </div>
@@ -70,7 +71,7 @@
                 <div class="top-name">{{ item.category }}</div>
                 <div class="top-meta">{{ item.percentage.toFixed(1) }}% · {{ item.count }}笔</div>
               </div>
-              <div class="top-amount">¥{{ formatNumber(item.amount) }}</div>
+              <div class="top-amount">{{ currencySymbol }}{{ formatNumber(item.amount) }}</div>
             </div>
             <div v-if="topCategories.length === 0" class="empty-hint">
               暂无支出记录
@@ -129,6 +130,33 @@ const trendData = ref<MonthlyTrend[]>([])
 // 固定取最近 6 个月数据
 const last6MonthsTrend = computed(() => trendData.value.slice(-6))
 
+// 货币符号映射
+const currencySymbolMap: Record<string, string> = {
+  CNY: '¥',
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  HKD: 'HK$',
+  TWD: 'NT$',
+  KRW: '₩',
+  AUD: 'A$',
+  CAD: 'C$',
+  SGD: 'S$',
+  CHF: 'CHF',
+  THB: '฿',
+  INR: '₹',
+  RUB: '₽'
+}
+
+// 获取货币符号
+function getCurrencySymbol(currency: string): string {
+  return currencySymbolMap[currency] || currency
+}
+
+// 当前主币种符号（计算属性，响应式）
+const currencySymbol = computed(() => getCurrencySymbol(assetData.value.currency))
+
 // 图表配置
 const chartOptions = computed(() => {
   const uiStore = useUIStore();
@@ -166,7 +194,7 @@ const chartOptions = computed(() => {
     },
     tooltip: {
       theme: isDark ? 'dark' : 'light',
-      y: { formatter: (v: number) => `${v >= 0 ? '' : '-'}¥${formatNumber(v)}` }
+      y: { formatter: (v: number) => `${v >= 0 ? '' : '-'}${getCurrencySymbol(assetData.value.currency)}${formatNumber(v)}` }
     },
     legend: {
       position: 'top' as const,

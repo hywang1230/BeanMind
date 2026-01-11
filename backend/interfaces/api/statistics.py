@@ -41,26 +41,30 @@ def get_transaction_service() -> TransactionApplicationService:
     return TransactionApplicationService(transaction_repo, account_repo)
 
 
-def get_exchange_rates(as_of_date: datetime = None) -> dict:
+def get_exchange_rates(as_of_date: datetime = None, target_currency: str = None) -> dict:
     """
-    获取所有货币到 CNY 的汇率
+    获取所有货币到目标货币的汇率
     
     Args:
         as_of_date: 截止日期，用于获取该日期或之前最近的汇率
+        target_currency: 目标货币，如果为 None 则使用账本的主币种
     
     Returns:
         汇率字典 {货币代码: 汇率}，例如 {"USD": 7.13, "CNY": 1}
     """
     beancount_service = get_beancount_service()
+    # 如果未指定目标货币，使用账本的主币种
+    if target_currency is None:
+        target_currency = beancount_service.get_operating_currency()
     # 转换为 date 类型
     date_obj = as_of_date.date() if as_of_date else None
-    rates = beancount_service.get_all_exchange_rates(to_currency="CNY", as_of_date=date_obj)
+    rates = beancount_service.get_all_exchange_rates(to_currency=target_currency, as_of_date=date_obj)
     return {k: float(v) for k, v in rates.items()}
 
 
-def convert_to_cny(amount: float, currency: str, exchange_rates: dict) -> float:
+def convert_to_operating_currency(amount: float, currency: str, exchange_rates: dict) -> float:
     """
-    将金额转换为 CNY
+    将金额转换为主币种（使用提供的汇率字典）
     
     Args:
         amount: 原始金额
@@ -68,7 +72,7 @@ def convert_to_cny(amount: float, currency: str, exchange_rates: dict) -> float:
         exchange_rates: 汇率字典
     
     Returns:
-        转换后的 CNY 金额
+        转换后的金额
     """
     rate = exchange_rates.get(currency, 1.0)
     return amount * rate
@@ -79,20 +83,23 @@ async def get_asset_overview() -> AssetOverviewResponse:
     """
     获取资产概览
     
-    返回净资产、总资产、总负债数据（统一转换为 CNY）
+    返回净资产、总资产、总负债数据（统一转换为账本主币种）
     
     Beancount 会计恒等式：Assets + Liabilities + Equity = 0
     - 资产（Assets）：正数表示拥有的价值
     - 负债（Liabilities）：负数表示欠款
     - 净资产 = 资产 + 负债（因为负债是负数，所以等价于 资产 - |负债|）
     
-    多币种处理：使用 beancount 账本中的 price 指令获取汇率，将所有货币转换为 CNY
+    多币种处理：使用 beancount 账本中的 price 指令获取汇率，将所有货币转换为主币种
     """
     # 获取共享的 Beancount 服务
     beancount_service = get_beancount_service()
     
-    # 获取所有货币到 CNY 的汇率
-    exchange_rates = beancount_service.get_all_exchange_rates(to_currency="CNY")
+    # 获取账本的主币种
+    operating_currency = beancount_service.get_operating_currency()
+    
+    # 获取所有货币到主币种的汇率
+    exchange_rates = beancount_service.get_all_exchange_rates(to_currency=operating_currency)
     
     # 一次性批量获取所有账户余额（性能优化：避免逐账户查询）
     all_balances = beancount_service.get_account_balances()
@@ -104,18 +111,18 @@ async def get_asset_overview() -> AssetOverviewResponse:
     for account_name, balances in all_balances.items():
         # 累加余额
         for currency, amount in balances.items():
-            # 获取汇率，如果没有则默认为 1（假设是 CNY）
+            # 获取汇率，如果没有则默认为 1（假设是主币种）
             rate = exchange_rates.get(currency, Decimal("1"))
             
-            # 转换为 CNY
-            amount_in_cny = amount * rate
+            # 转换为主币种
+            amount_in_currency = amount * rate
             
             # 资产类账户：正数表示拥有的价值
             if account_name.startswith("Assets:"):
-                total_assets += amount_in_cny
+                total_assets += amount_in_currency
             # 负债类账户：负数表示欠款，直接累加原始值
             elif account_name.startswith("Liabilities:"):
-                total_liabilities += amount_in_cny
+                total_liabilities += amount_in_currency
     
     # 净资产 = 资产 + 负债（负债为负数）
     net_assets = total_assets + total_liabilities
@@ -125,7 +132,7 @@ async def get_asset_overview() -> AssetOverviewResponse:
         net_assets=float(net_assets),
         total_assets=float(total_assets),
         total_liabilities=float(abs(total_liabilities)),  # 展示为正数
-        currency="CNY"
+        currency=operating_currency
     )
 
 
@@ -191,12 +198,12 @@ async def get_category_statistics(
             else:
                 category = "其他"
             
-            # 获取金额和货币，转换为 CNY
+            # 获取金额和货币，转换为主币种
             raw_amount = float(posting.get("amount", 0))
             currency = posting.get("currency", "CNY")
-            amount_in_cny = abs(convert_to_cny(raw_amount, currency, exchange_rates))
+            amount_converted = abs(convert_to_operating_currency(raw_amount, currency, exchange_rates))
             
-            total_amount += amount_in_cny
+            total_amount += amount_converted
             
             if category not in category_stats:
                 category_stats[category] = {
@@ -204,7 +211,7 @@ async def get_category_statistics(
                     "count": 0
                 }
             
-            category_stats[category]["amount"] += amount_in_cny
+            category_stats[category]["amount"] += amount_converted
             category_stats[category]["count"] += 1
     
     # 转换为列表并排序
@@ -267,19 +274,19 @@ async def get_monthly_trend(
         stats = transaction_service.get_statistics(start_date, end_date)
         
         # income_total 和 expense_total 是按货币的字典
-        # 将所有货币转换为 CNY 后累加
+        # 将所有货币转换为主币种后累加
         income_dict = stats.get("income_total", {})
         expense_dict = stats.get("expense_total", {})
         
         # 转换并累加所有货币的收入
         income = 0.0
         for currency, amount in income_dict.items():
-            income += convert_to_cny(float(amount), currency, exchange_rates)
+            income += convert_to_operating_currency(float(amount), currency, exchange_rates)
         
         # 转换并累加所有货币的支出
         expense = 0.0
         for currency, amount in expense_dict.items():
-            expense += convert_to_cny(float(amount), currency, exchange_rates)
+            expense += convert_to_operating_currency(float(amount), currency, exchange_rates)
         
         net = income - abs(expense)
         
