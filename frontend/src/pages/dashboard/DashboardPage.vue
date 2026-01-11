@@ -49,12 +49,12 @@
             </div>
             <div class="monthly-item">
               <div class="monthly-label">支出</div>
-              <div class="monthly-value expense">-¥{{ formatNumber(monthlyData.expense) }}</div>
+              <div class="monthly-value expense">¥{{ formatNumber(monthlyData.expense) }}</div>
             </div>
             <div class="monthly-item">
               <div class="monthly-label">结余</div>
               <div class="monthly-value" :class="monthlyData.net >= 0 ? 'income' : 'expense'">
-                {{ monthlyData.net >= 0 ? '+' : '' }}¥{{ formatNumber(monthlyData.net) }}
+                {{ monthlyData.net >= 0 ? '+' : '-' }}¥{{ formatNumber(monthlyData.net) }}
               </div>
             </div>
           </div>
@@ -208,10 +208,13 @@ async function loadDashboardData() {
 
     // 从 trend 数据获取本月概览（最后一个月即为当前月）
     const currentMonthTrend = trend && trend.length > 0 ? trend[trend.length - 1] : null
+    // 收入直接使用，支出取绝对值，结余 = 收入 - 支出
+    const income = currentMonthTrend?.income || 0
+    const expense = Math.abs(currentMonthTrend?.expense || 0)
     monthlyData.value = {
-      income: currentMonthTrend?.income || 0,
-      expense: Math.abs(currentMonthTrend?.expense || 0),
-      net: currentMonthTrend?.net || 0
+      income,
+      expense,
+      net: income - expense
     }
 
     topCategories.value = categories || []
