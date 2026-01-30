@@ -294,6 +294,39 @@ def calculate_category_total(
     return total_cny, dict(totals_by_currency)
 
 
+def convert_accounts_to_absolute(accounts: List[AccountBalanceItem]) -> List[AccountBalanceItem]:
+    """
+    递归地将账户余额转换为绝对值（用于负债和权益显示）
+    
+    Args:
+        accounts: 账户列表
+        
+    Returns:
+        转换后的账户列表（余额均为正数）
+    """
+    result = []
+    for account in accounts:
+        # 转换余额为绝对值
+        abs_balances = {currency: abs(amount) for currency, amount in account.balances.items()}
+        abs_total_cny = abs(account.total_cny)
+        
+        # 递归处理子账户
+        abs_children = convert_accounts_to_absolute(account.children) if account.children else []
+        
+        # 创建新的账户项
+        abs_account = AccountBalanceItem(
+            account=account.account,
+            display_name=account.display_name,
+            balances=abs_balances,
+            total_cny=abs_total_cny,
+            depth=account.depth,
+            children=abs_children
+        )
+        result.append(abs_account)
+    
+    return result
+
+
 def calculate_income_expense_total(
     items: List[IncomeExpenseItem]
 ) -> tuple[float, Dict[str, float]]:
@@ -372,10 +405,14 @@ async def get_balance_sheet(
     # 构建负债类账户树
     liabilities_accounts = build_account_tree(all_balances, "Liabilities", exchange_rates)
     liabilities_total_cny, liabilities_totals_by_currency = calculate_category_total(liabilities_accounts)
+    # 将负债账户余额转换为绝对值（便于用户理解）
+    liabilities_accounts_abs = convert_accounts_to_absolute(liabilities_accounts)
     
     # 构建权益类账户树
     equity_accounts = build_account_tree(all_balances, "Equity", exchange_rates)
     equity_total_cny, equity_totals_by_currency = calculate_category_total(equity_accounts)
+    # 将权益账户余额转换为绝对值（便于用户理解）
+    equity_accounts_abs = convert_accounts_to_absolute(equity_accounts)
     
     # 计算净资产 (资产 + 负债，因为负债在 beancount 中是负数)
     net_worth_cny = assets_total_cny + liabilities_total_cny
@@ -392,14 +429,14 @@ async def get_balance_sheet(
         liabilities=BalanceSheetCategory(
             name="负债",
             type="Liabilities",
-            accounts=liabilities_accounts,
+            accounts=liabilities_accounts_abs,  # 使用转换后的绝对值账户
             total_cny=abs(liabilities_total_cny),  # 展示为正数
             totals_by_currency={k: abs(v) for k, v in liabilities_totals_by_currency.items()}
         ),
         equity=BalanceSheetCategory(
             name="权益",
             type="Equity",
-            accounts=equity_accounts,
+            accounts=equity_accounts_abs,  # 使用转换后的绝对值账户
             total_cny=abs(equity_total_cny),
             totals_by_currency={k: abs(v) for k, v in equity_totals_by_currency.items()}
         ),
