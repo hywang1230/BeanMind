@@ -196,12 +196,22 @@ def build_income_expense_tree(
         total_cny = Decimal(0)
         amounts_dict = {}
         for currency, amount in amounts.items():
-            # 对于收入账户，金额为负数（beancount 会计恒等式），取绝对值
-            # 对于支出账户，金额为正数
-            display_amount = abs(float(amount))
+            # Beancount 会计规则：
+            # - Income 账户：收入时为负数（贷方），需要取负才能显示正确的业务金额
+            # - Expenses 账户：支出时为正数（借方），直接使用即可
+            if account_type == "Income":
+                display_amount = float(-amount)  # 取负：负数变正数，正数变负数
+            else:
+                display_amount = float(amount)   # Expenses 保持原值
+            
             amounts_dict[currency] = display_amount
             rate = exchange_rates.get(currency, Decimal(1))
-            total_cny += abs(amount) * rate
+            
+            # 计算 CNY 总额时也使用相同的逻辑
+            if account_type == "Income":
+                total_cny += (-amount) * rate
+            else:
+                total_cny += amount * rate
         
         item = IncomeExpenseItem(
             account=account_path,
