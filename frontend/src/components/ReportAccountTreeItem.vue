@@ -131,7 +131,14 @@ function formatCurrency(amount: number): string {
 }
 
 function formatAmount(amount: number): string {
-  return amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  // 对于负债和权益，后端已经转换为正数，但为了防止旧数据显示问题
+  // 如果类型是 liability 或 equity，确保显示为正数
+  const displayAmount = (props.type === 'liability' || props.type === 'equity') 
+    ? Math.abs(amount) 
+    : amount
+  
+  const prefix = displayAmount < 0 ? '-' : (displayAmount > 0 ? '+' : '')
+  return `${prefix}${Math.abs(displayAmount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function toggleExpand() {
