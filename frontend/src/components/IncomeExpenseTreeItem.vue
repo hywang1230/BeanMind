@@ -23,13 +23,13 @@
 
       <!-- 金额 -->
       <div class="item-amount">
-        <span class="amount-cny" :class="type">
-          {{ type === 'income' ? '+' : '-' }}{{ formatCurrency(item.total_cny) }}
+        <span class="amount-cny" :class="getAmountClass(item.total_cny)">
+          {{ formatAmountWithSign(item.total_cny) }}
         </span>
         <!-- 如果有非 CNY 货币，显示原币种金额 -->
         <div v-if="hasNonCnyAmount" class="amount-original">
           <span v-for="(amount, currency) in nonCnyAmounts" :key="currency" class="original-item">
-            {{ currency }} {{ formatAmount(amount) }}
+            {{ currency }} {{ formatAmountWithOriginalSign(amount) }}
           </span>
         </div>
       </div>
@@ -111,12 +111,37 @@ const nonCnyAmounts = computed(() => {
   return result
 })
 
-function formatCurrency(amount: number): string {
-  return `¥${Math.abs(amount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+// 根据金额实际正负显示符号和格式化金额
+function formatAmountWithSign(amount: number): string {
+  const absAmount = Math.abs(amount)
+  const formatted = `¥${absAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  
+  if (amount > 0) {
+    return `+${formatted}`
+  } else if (amount < 0) {
+    return `-${formatted}`
+  } else {
+    return formatted
+  }
 }
 
-function formatAmount(amount: number): string {
-  return amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// 根据金额实际正负返回样式类名
+function getAmountClass(amount: number): string {
+  return amount >= 0 ? 'income' : 'expense'
+}
+
+// 格式化原币种金额（保留符号）
+function formatAmountWithOriginalSign(amount: number): string {
+  const absAmount = Math.abs(amount)
+  const formatted = absAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  
+  if (amount > 0) {
+    return `+${formatted}`
+  } else if (amount < 0) {
+    return `-${formatted}`
+  } else {
+    return formatted
+  }
 }
 
 function toggleExpand() {
