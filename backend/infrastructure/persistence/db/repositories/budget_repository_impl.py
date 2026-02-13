@@ -1,8 +1,8 @@
 """预算仓储 SQLAlchemy 实现"""
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import date
 from decimal import Decimal
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, delete
 from sqlalchemy.orm import Session, selectinload
 
 from backend.domain.budget.entities.budget import Budget, PeriodType, CycleType
@@ -287,6 +287,24 @@ class BudgetRepositoryImpl(BudgetRepository):
 
         return [self._cycle_to_entity(model) for model in models]
 
+    async def get_cycles_by_budget_ids(self, budget_ids: List[str]) -> Dict[str, List[BudgetCycle]]:
+        """批量获取多个预算的周期"""
+        if not budget_ids:
+            return {}
+
+        stmt = select(BudgetCycleModel).where(
+            BudgetCycleModel.budget_id.in_(budget_ids)
+        ).order_by(BudgetCycleModel.budget_id, BudgetCycleModel.period_number)
+
+        result = self.session.execute(stmt)
+        models = result.scalars().all()
+
+        cycles_map: Dict[str, List[BudgetCycle]] = {budget_id: [] for budget_id in budget_ids}
+        for model in models:
+            cycles_map.setdefault(model.budget_id, []).append(self._cycle_to_entity(model))
+
+        return cycles_map
+
     async def get_cycle_by_id(self, cycle_id: str) -> Optional[BudgetCycle]:
         """根据ID获取周期"""
         stmt = select(BudgetCycleModel).where(BudgetCycleModel.id == cycle_id)
@@ -334,6 +352,18 @@ class BudgetRepositoryImpl(BudgetRepository):
 
         return True
 
+    async def replace_cycles(self, budget_id: str, cycles: List[BudgetCycle]) -> None:
+        """原子替换预算的全部周期"""
+        self.session.execute(
+            delete(BudgetCycleModel).where(BudgetCycleModel.budget_id == budget_id)
+        )
+
+        for cycle in cycles:
+            self.session.add(self._cycle_to_model(cycle))
+
+        self.session.flush()
+        self.session.commit()
+
     async def get_current_cycle(self, budget_id: str, target_date: date) -> Optional[BudgetCycle]:
         """获取当前周期"""
         stmt = select(BudgetCycleModel).where(
@@ -351,4 +381,3 @@ class BudgetRepositoryImpl(BudgetRepository):
             return None
 
         return self._cycle_to_entity(model)
-

@@ -1,6 +1,6 @@
 """预算仓储接口"""
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import date
 from backend.domain.budget.entities.budget import Budget
 from backend.domain.budget.entities.budget_cycle import BudgetCycle
@@ -136,6 +136,18 @@ class BudgetRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_cycles_by_budget_ids(self, budget_ids: List[str]) -> Dict[str, List[BudgetCycle]]:
+        """批量获取多个预算的周期
+
+        Args:
+            budget_ids: 预算ID列表
+
+        Returns:
+            budget_id -> 周期列表
+        """
+        pass
+
+    @abstractmethod
     async def get_cycle_by_id(self, cycle_id: str) -> Optional[BudgetCycle]:
         """根据ID获取周期
 
@@ -168,6 +180,16 @@ class BudgetRepository(ABC):
 
         Returns:
             删除成功返回True
+        """
+        pass
+
+    @abstractmethod
+    async def replace_cycles(self, budget_id: str, cycles: List[BudgetCycle]) -> None:
+        """原子替换预算的全部周期
+
+        Args:
+            budget_id: 预算ID
+            cycles: 新周期列表
         """
         pass
 

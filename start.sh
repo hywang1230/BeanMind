@@ -46,6 +46,11 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# 比较版本号（返回 0 表示 $1 >= $2）
+version_gte() {
+    [ "$(printf '%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]
+}
+
 # 停止所有服务
 cleanup() {
     log_info "正在停止所有服务..."
@@ -81,12 +86,28 @@ log_success "Python 版本: $PYTHON_VERSION"
 
 # 检查 Node.js
 if ! command_exists node; then
-    log_error "Node.js 未安装！请先安装 Node.js 18+"
+    log_error "Node.js 未安装！请先安装 Node.js 20.19.0+ 或 22.12.0+"
     exit 1
 fi
 
 NODE_VERSION=$(node --version)
 log_success "Node.js 版本: $NODE_VERSION"
+
+# Vite 7 要求 Node.js >= 20.19.0 或 >= 22.12.0
+NODE_VERSION_CLEAN="${NODE_VERSION#v}"
+NODE_SUPPORTED=0
+if version_gte "$NODE_VERSION_CLEAN" "20.19.0" && ! version_gte "$NODE_VERSION_CLEAN" "21.0.0"; then
+    NODE_SUPPORTED=1
+elif version_gte "$NODE_VERSION_CLEAN" "22.12.0"; then
+    NODE_SUPPORTED=1
+fi
+
+if [ "$NODE_SUPPORTED" -ne 1 ]; then
+    log_error "当前 Node.js 版本不受支持（$NODE_VERSION_CLEAN）"
+    log_error "支持区间：>=20.19.0 且 <21.0.0，或 >=22.12.0"
+    log_error "可执行：nvm install 22.12.0 && nvm use 22.12.0"
+    exit 1
+fi
 
 # 检查 npm
 if ! command_exists npm; then

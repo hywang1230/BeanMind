@@ -358,7 +358,7 @@ async function loadBudget() {
     try {
         const budget = await budgetsApi.getBudget(budgetId)
         form.value.name = budget.name
-        form.value.amount = budget.total_budget
+        form.value.amount = budget.amount ?? budget.total_budget
         form.value.period_type = budget.period_type
         form.value.start_date = budget.start_date
         form.value.end_date = budget.end_date || ''
@@ -389,17 +389,13 @@ async function handleSubmit() {
             period_type: form.value.period_type,
             start_date: form.value.start_date,
             end_date: form.value.end_date || undefined,
+            cycle_type: form.value.cycle_type,
+            carry_over_enabled: form.value.carry_over_enabled,
             items: form.value.selected_accounts.map(pattern => ({
                 account_pattern: pattern,
                 amount: 0, // 后端已改为忽略此值
                 currency: 'CNY'
             }))
-        }
-
-        // 添加循环预算相关字段
-        if (form.value.cycle_type !== 'NONE') {
-            data.cycle_type = form.value.cycle_type
-            data.carry_over_enabled = form.value.carry_over_enabled
         }
 
         if (isEdit.value) {

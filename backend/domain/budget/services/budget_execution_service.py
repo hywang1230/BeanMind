@@ -226,6 +226,6 @@ class BudgetExecutionService:
             "status_count": {
                 "normal": normal_count,
                 "warning": warning_count,
-                "over": over_count
+                "exceeded": over_count
             }
         }

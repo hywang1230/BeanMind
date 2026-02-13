@@ -50,6 +50,7 @@ class BudgetResponse(BaseModel):
     """
     id: str = Field(..., description="预算ID")
     name: str = Field(..., description="预算名称")
+    amount: float = Field(..., description="单周期预算金额")
     period_type: str = Field(..., description="周期类型")
     start_date: str = Field(..., description="开始日期")
     end_date: Optional[str] = Field(None, description="结束日期")
@@ -60,6 +61,11 @@ class BudgetResponse(BaseModel):
     total_remaining: float = Field(..., description="剩余总额")
     overall_usage_rate: float = Field(..., description="整体使用率")
     status: BudgetStatusEnum = Field(..., description="整体状态")
+    monthly_budget: float = Field(default=0, description="本月预算")
+    monthly_spent: float = Field(default=0, description="本月已花费")
+    monthly_remaining: float = Field(default=0, description="本月剩余")
+    monthly_usage_rate: float = Field(default=0, description="本月使用率")
+    monthly_status: BudgetStatusEnum = Field(default=BudgetStatusEnum.NORMAL, description="本月状态")
     created_at: Optional[str] = Field(None, description="创建时间")
     updated_at: Optional[str] = Field(None, description="更新时间")
     # 循环预算相关字段
@@ -71,6 +77,7 @@ class BudgetResponse(BaseModel):
             "example": {
                 "id": "budget-456",
                 "name": "2025年月度预算",
+                "amount": 5000.00,
                 "period_type": "MONTHLY",
                 "start_date": "2025-01-01",
                 "end_date": "2025-12-31",
@@ -81,6 +88,11 @@ class BudgetResponse(BaseModel):
                 "total_remaining": 2500.00,
                 "overall_usage_rate": 50.0,
                 "status": "normal",
+                "monthly_budget": 5000.00,
+                "monthly_spent": 2500.00,
+                "monthly_remaining": 2500.00,
+                "monthly_usage_rate": 50.0,
+                "monthly_status": "normal",
                 "cycle_type": "MONTHLY",
                 "carry_over_enabled": True,
                 "created_at": "2025-01-01T00:00:00",

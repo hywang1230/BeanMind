@@ -73,6 +73,7 @@ export type BudgetCycleSummary = {
 export type Budget = {
     id: string
     name: string
+    amount: number
     period_type: PeriodType
     start_date: string
     end_date: string | null
@@ -83,6 +84,11 @@ export type Budget = {
     total_remaining: number
     overall_usage_rate: number
     status: BudgetStatus
+    monthly_budget: number
+    monthly_spent: number
+    monthly_remaining: number
+    monthly_usage_rate: number
+    monthly_status: BudgetStatus
     created_at?: string
     updated_at?: string
     // 循环预算相关字段

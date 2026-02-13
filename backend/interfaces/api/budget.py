@@ -230,7 +230,9 @@ async def update_budget(
             start_date=request.start_date,
             end_date=request.end_date,
             is_active=request.is_active,
-            items=items
+            items=items,
+            cycle_type=request.cycle_type.value if request.cycle_type else None,
+            carry_over_enabled=request.carry_over_enabled
         )
         
         if not budget:

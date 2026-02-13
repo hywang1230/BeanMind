@@ -113,8 +113,8 @@ const loading = ref(false)
 const budgets = ref<Budget[]>([])
 
 // 计算属性
-const totalBudget = computed(() => budgets.value.reduce((sum, b) => sum + b.total_budget, 0))
-const totalSpent = computed(() => budgets.value.reduce((sum, b) => sum + b.total_spent, 0))
+const totalBudget = computed(() => budgets.value.reduce((sum, b) => sum + (b.monthly_budget ?? b.total_budget), 0))
+const totalSpent = computed(() => budgets.value.reduce((sum, b) => sum + (b.monthly_spent ?? b.total_spent), 0))
 const totalRemaining = computed(() => totalBudget.value - totalSpent.value)
 const overallRate = computed(() => {
   if (totalBudget.value === 0) return 0

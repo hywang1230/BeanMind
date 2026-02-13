@@ -7,6 +7,7 @@ from typing import List, Dict, Optional
 from decimal import Decimal
 from datetime import date, datetime
 import uuid
+from calendar import monthrange
 
 from backend.domain.budget.entities.budget import Budget, PeriodType, CycleType
 from backend.domain.budget.entities.budget_item import BudgetItem
@@ -125,7 +126,7 @@ class BudgetApplicationService:
         if created_budget.cycle_type != CycleType.NONE:
             await self._initialize_cycles(created_budget)
 
-        return self._budget_to_dto(created_budget)
+        return await self._build_budget_dto(created_budget)
     
     async def get_budget(self, budget_id: str) -> Optional[Dict]:
         """
@@ -144,7 +145,7 @@ class BudgetApplicationService:
         # 计算执行情况
         self._calculate_budget_execution(budget)
         
-        return self._budget_to_dto(budget)
+        return await self._build_budget_dto(budget)
     
     async def get_budgets_by_user(
         self,
@@ -167,7 +168,16 @@ class BudgetApplicationService:
         for budget in budgets:
             self._calculate_budget_execution(budget)
         
-        return [self._budget_to_dto(b) for b in budgets]
+        cycles_map = await self._prepare_cycles_map_for_budgets(budgets)
+        result = []
+        for budget in budgets:
+            result.append(
+                await self._build_budget_dto(
+                    budget,
+                    preloaded_cycles=cycles_map.get(budget.id)
+                )
+            )
+        return result
     
     async def get_active_budgets_for_date(
         self,
@@ -195,7 +205,16 @@ class BudgetApplicationService:
         for budget in budgets:
             self._calculate_budget_execution(budget)
         
-        return [self._budget_to_dto(b) for b in budgets]
+        cycles_map = await self._prepare_cycles_map_for_budgets(budgets)
+        result = []
+        for budget in budgets:
+            result.append(
+                await self._build_budget_dto(
+                    budget,
+                    preloaded_cycles=cycles_map.get(budget.id)
+                )
+            )
+        return result
     
     async def update_budget(
         self,
@@ -206,7 +225,9 @@ class BudgetApplicationService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         is_active: Optional[bool] = None,
-        items: Optional[List[Dict]] = None
+        items: Optional[List[Dict]] = None,
+        cycle_type: Optional[str] = None,
+        carry_over_enabled: Optional[bool] = None
     ) -> Optional[Dict]:
         """
         更新预算
@@ -227,6 +248,11 @@ class BudgetApplicationService:
         if not budget:
             return None
         
+        original_cycle_type = budget.cycle_type
+        original_start_date = budget.start_date
+        original_end_date = budget.end_date
+        original_amount = budget.amount
+
         # 更新基本字段
         if name is not None:
             budget.name = name
@@ -238,11 +264,25 @@ class BudgetApplicationService:
             budget.start_date = datetime.strptime(start_date, "%Y-%m-%d").date()
         if end_date is not None:
             budget.end_date = datetime.strptime(end_date, "%Y-%m-%d").date()
+        if cycle_type is not None:
+            budget.cycle_type = CycleType(cycle_type)
+        if carry_over_enabled is not None:
+            budget.carry_over_enabled = carry_over_enabled
         if is_active is not None:
             if is_active:
                 budget.activate()
             else:
                 budget.deactivate()
+
+        if budget.cycle_type != CycleType.NONE and not budget.end_date:
+            raise ValueError("循环预算必须设置结束日期")
+        if (
+            budget.cycle_type != CycleType.NONE
+            and budget.start_date
+            and budget.end_date
+            and budget.start_date > budget.end_date
+        ):
+            raise ValueError("开始日期不能晚于结束日期")
         
         # 更新预算项目（完整替换）
         if items is not None:
@@ -263,11 +303,24 @@ class BudgetApplicationService:
         
         # 保存更新
         updated_budget = await self.budget_repository.update(budget)
+
+        # 循环预算配置发生变化时，重新生成周期
+        cycle_config_changed = any([
+            updated_budget.cycle_type != original_cycle_type,
+            updated_budget.start_date != original_start_date,
+            updated_budget.end_date != original_end_date,
+            updated_budget.amount != original_amount
+        ])
+        if cycle_config_changed:
+            new_cycles: List[BudgetCycle] = []
+            if updated_budget.cycle_type != CycleType.NONE:
+                new_cycles = self.cyclic_budget_service.generate_cycles_for_budget(updated_budget)
+            await self.budget_repository.replace_cycles(updated_budget.id, new_cycles)
         
         # 计算执行情况
         self._calculate_budget_execution(updated_budget)
         
-        return self._budget_to_dto(updated_budget)
+        return await self._build_budget_dto(updated_budget)
     
     async def delete_budget(self, budget_id: str) -> bool:
         """
@@ -320,7 +373,7 @@ class BudgetApplicationService:
         updated_budget = await self.budget_repository.update(budget)
         self._calculate_budget_execution(updated_budget)
         
-        return self._budget_to_dto(updated_budget)
+        return await self._build_budget_dto(updated_budget)
     
     async def remove_budget_item(
         self,
@@ -347,7 +400,7 @@ class BudgetApplicationService:
         updated_budget = await self.budget_repository.update(budget)
         self._calculate_budget_execution(updated_budget)
         
-        return self._budget_to_dto(updated_budget)
+        return await self._build_budget_dto(updated_budget)
     
     async def get_budget_summary(self, user_id: str) -> Dict:
         """
@@ -469,6 +522,7 @@ class BudgetApplicationService:
         return {
             "id": budget.id,
             "name": budget.name,
+            "amount": float(budget.amount),
             "period_type": budget.period_type.value,  # 保持原始值
             "start_date": budget.start_date.isoformat() if budget.start_date else None,
             "end_date": budget.end_date.isoformat() if budget.end_date else None,
@@ -484,6 +538,154 @@ class BudgetApplicationService:
             "cycle_type": budget.cycle_type.value,
             "carry_over_enabled": budget.carry_over_enabled
         }
+
+    async def _prepare_cycles_map_for_budgets(
+        self,
+        budgets: List[Budget]
+    ) -> Dict[str, List[BudgetCycle]]:
+        """为预算列表预加载周期数据，减少查询次数。"""
+        cyclic_budgets = [b for b in budgets if b.cycle_type != CycleType.NONE]
+        if not cyclic_budgets:
+            return {}
+
+        budget_ids = [b.id for b in cyclic_budgets]
+        cycles_map = await self.budget_repository.get_cycles_by_budget_ids(budget_ids)
+
+        for budget in cyclic_budgets:
+            if cycles_map.get(budget.id):
+                continue
+            await self._initialize_cycles(budget)
+            cycles_map[budget.id] = await self.budget_repository.get_cycles_by_budget_id(budget.id)
+
+        return cycles_map
+
+    async def _build_budget_dto(
+        self,
+        budget: Budget,
+        preloaded_cycles: Optional[List[BudgetCycle]] = None
+    ) -> Dict:
+        """构建预算 DTO，并补充循环预算聚合字段。"""
+        dto = self._budget_to_dto(budget)
+        cycles: List[BudgetCycle] = []
+
+        if budget.cycle_type == CycleType.NONE:
+            dto.update(self._calculate_current_month_metrics(budget, cycles))
+            return dto
+
+        cycles = preloaded_cycles if preloaded_cycles is not None else await self.budget_repository.get_cycles_by_budget_id(budget.id)
+        if not cycles:
+            await self._initialize_cycles(budget)
+            cycles = await self.budget_repository.get_cycles_by_budget_id(budget.id)
+
+        if not cycles:
+            dto.update(self._calculate_current_month_metrics(budget, []))
+            return dto
+
+        cycles = self.cyclic_budget_service.calculate_all_cycles_execution(budget, cycles)
+
+        total_budget = float(sum((c.base_amount for c in cycles), Decimal("0")))
+        total_spent = float(sum((c.spent_amount for c in cycles), Decimal("0")))
+        total_remaining = total_budget - total_spent
+        overall_rate = (total_spent / total_budget * 100) if total_budget > 0 else 0.0
+
+        dto["total_budget"] = total_budget
+        dto["total_spent"] = total_spent
+        dto["total_remaining"] = total_remaining
+        dto["overall_usage_rate"] = overall_rate
+        dto["status"] = self._get_status_from_rate(overall_rate)
+        dto.update(self._calculate_current_month_metrics(budget, cycles))
+
+        return dto
+
+    def _calculate_current_month_metrics(
+        self,
+        budget: Budget,
+        cycles: Optional[List[BudgetCycle]] = None
+    ) -> Dict[str, float]:
+        """计算预算在本月口径下的金额与执行率。"""
+        today = date.today()
+        month_start = date(today.year, today.month, 1)
+        month_end = date(today.year, today.month, monthrange(today.year, today.month)[1])
+
+        monthly_budget = Decimal("0")
+        monthly_spent = Decimal("0")
+
+        if budget.cycle_type != CycleType.NONE and cycles:
+            for cycle in cycles:
+                overlap = self._get_overlap_range(
+                    cycle.period_start,
+                    cycle.period_end,
+                    month_start,
+                    month_end
+                )
+                if not overlap:
+                    continue
+
+                overlap_start, overlap_end = overlap
+                overlap_days = (overlap_end - overlap_start).days + 1
+                cycle_days = (cycle.period_end - cycle.period_start).days + 1
+                if cycle_days <= 0:
+                    continue
+
+                monthly_budget += cycle.total_amount * Decimal(overlap_days) / Decimal(cycle_days)
+                monthly_spent += self._calculate_spent_for_range(budget, overlap_start, overlap_end)
+        else:
+            budget_end = budget.end_date or month_end
+            overlap = self._get_overlap_range(
+                budget.start_date,
+                budget_end,
+                month_start,
+                month_end
+            )
+            if overlap:
+                overlap_start, overlap_end = overlap
+                overlap_days = (overlap_end - overlap_start).days + 1
+                period_days = (budget_end - budget.start_date).days + 1
+
+                if period_days > 0:
+                    monthly_budget = budget.amount * Decimal(overlap_days) / Decimal(period_days)
+                monthly_spent = self._calculate_spent_for_range(budget, overlap_start, overlap_end)
+
+        monthly_remaining = monthly_budget - monthly_spent
+        monthly_rate = float((monthly_spent / monthly_budget) * 100) if monthly_budget > 0 else 0.0
+
+        return {
+            "monthly_budget": float(monthly_budget),
+            "monthly_spent": float(monthly_spent),
+            "monthly_remaining": float(monthly_remaining),
+            "monthly_usage_rate": monthly_rate,
+            "monthly_status": self._get_status_from_rate(monthly_rate)
+        }
+
+    def _calculate_spent_for_range(
+        self,
+        budget: Budget,
+        start_date: date,
+        end_date: date
+    ) -> Decimal:
+        """计算预算在指定日期范围内的总支出。"""
+        total_spent = Decimal("0")
+        for item in budget.items:
+            total_spent += self.budget_execution_service.calculate_spent_for_item(
+                budget_item=item,
+                start_date=start_date,
+                end_date=end_date
+            )
+        return total_spent
+
+    def _get_overlap_range(
+        self,
+        start1: date,
+        end1: date,
+        start2: date,
+        end2: date
+    ) -> Optional[tuple[date, date]]:
+        """获取两个日期区间的交集。"""
+        overlap_start = max(start1, start2)
+        overlap_end = min(end1, end2)
+        if overlap_start > overlap_end:
+            return None
+        return overlap_start, overlap_end
 
     async def get_budget_item_transactions(
         self,
@@ -658,12 +860,9 @@ class BudgetApplicationService:
         Args:
             budget: 预算实体
         """
-        # 生成所有周期
+        # 生成所有周期并原子替换，避免中间态
         cycles = self.cyclic_budget_service.generate_cycles_for_budget(budget)
-
-        # 保存到数据库
-        for cycle in cycles:
-            await self.budget_repository.create_cycle(cycle)
+        await self.budget_repository.replace_cycles(budget.id, cycles)
 
     def _cycle_to_dto(self, cycle: BudgetCycle) -> Dict:
         """将周期实体转换为 DTO
