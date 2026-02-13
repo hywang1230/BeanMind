@@ -276,6 +276,13 @@ class BudgetApplicationService:
 
         if budget.cycle_type != CycleType.NONE and not budget.end_date:
             raise ValueError("循环预算必须设置结束日期")
+        if (
+            budget.cycle_type != CycleType.NONE
+            and budget.start_date
+            and budget.end_date
+            and budget.start_date > budget.end_date
+        ):
+            raise ValueError("开始日期不能晚于结束日期")
         
         # 更新预算项目（完整替换）
         if items is not None:

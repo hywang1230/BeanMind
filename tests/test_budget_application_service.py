@@ -149,6 +149,44 @@ async def test_update_budget_should_apply_cycle_fields_and_regenerate_cycles():
 
 
 @pytest.mark.asyncio
+async def test_update_budget_should_reject_invalid_cycle_date_range_without_replacing_cycles():
+    """循环预算结束日期早于开始日期时，应拒绝更新且不覆盖已有周期。"""
+    budget = Budget(
+        id="budget-1",
+        user_id="user-1",
+        name="预算",
+        amount=Decimal("1000"),
+        period_type=PeriodType.CUSTOM,
+        start_date=date(2025, 1, 1),
+        end_date=date(2025, 3, 31),
+        cycle_type=CycleType.MONTHLY
+    )
+
+    budget_repo = SimpleNamespace(
+        get_by_id=AsyncMock(return_value=budget),
+        update=AsyncMock(side_effect=lambda b: b),
+        get_cycles_by_budget_id=AsyncMock(return_value=[]),
+        replace_cycles=AsyncMock()
+    )
+    execution_service = SimpleNamespace(
+        transaction_repository=SimpleNamespace(find_by_date_range=lambda **_: []),
+        calculate_budget_execution=lambda *_: None
+    )
+
+    service = BudgetApplicationService(budget_repo, execution_service)
+
+    with pytest.raises(ValueError, match="开始日期不能晚于结束日期"):
+        await service.update_budget(
+            budget_id="budget-1",
+            start_date="2025-04-01",
+            end_date="2025-03-31"
+        )
+
+    budget_repo.update.assert_not_awaited()
+    budget_repo.replace_cycles.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_get_budget_monthly_metrics_for_custom_budget_should_be_prorated():
     """跨月自定义预算应按当月重叠天数分摊预算金额。"""
     today = date.today()
