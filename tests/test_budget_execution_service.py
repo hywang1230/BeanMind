@@ -296,4 +296,4 @@ class TestBudgetExecutionService:
         assert summary["overall_rate"] == pytest.approx(16.67, rel=0.1)
         assert summary["status_count"]["normal"] == 1
         assert summary["status_count"]["warning"] == 0
-        assert summary["status_count"]["over"] == 0
+        assert summary["status_count"]["exceeded"] == 0

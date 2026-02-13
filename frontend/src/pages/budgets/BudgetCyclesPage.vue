@@ -59,7 +59,7 @@
                                 </div>
                                 <div class="display-flex justify-content-space-between margin-bottom-half">
                                     <span class="footer-label">已用:</span>
-                                    <span class="footer-value text-color-pink">¥{{ formatMoney(cycle.spent_amount)
+                                    <span class="footer-value text-color-pink">¥{{ formatMoney(cycle.spent_amount, true)
                                     }}</span>
                                 </div>
                                 <div class="display-flex justify-content-space-between margin-bottom-half">
@@ -69,7 +69,7 @@
                                         ¥{{ formatMoney(cycle.remaining_amount) }}
                                     </span>
                                 </div>
-                                <f7-progressbar :progress="cycle.usage_rate"
+                                <f7-progressbar :progress="Math.min(Math.max(cycle.usage_rate, 0), 100)"
                                     :color="getProgressColor(cycle.usage_rate)" />
                             </div>
                         </f7-list-item>
@@ -178,9 +178,10 @@ function getProgressColor(usageRate: number): string {
     return 'green'
 }
 
-function formatMoney(amount: number | undefined): string {
+function formatMoney(amount: number | undefined, absolute = false): string {
     if (amount === undefined) return '0.00'
-    return Math.abs(amount).toLocaleString('zh-CN', {
+    const value = absolute ? Math.abs(amount) : amount
+    return value.toLocaleString('zh-CN', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2
     })

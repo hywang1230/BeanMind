@@ -13,6 +13,10 @@ BeanMind 的前端应用，使用 Vue 3 + TypeScript + Vite 构建。
 
 ## 开发
 
+### Node.js 版本要求
+
+- `>=20.19.0`（推荐 `22.12.0`，见 `.nvmrc`）
+
 ### 安装依赖
 
 ```bash

@@ -8,6 +8,7 @@ venv/
 env/
 ENV/
 .venv
+frontend/.nvmrc
 .pytest_cache/
 
 # IDEs
@@ -19,6 +20,7 @@ ENV/
 .agent
 .cursor/
 CLAUDE.md
+
 
 # Data
 data/*.db
