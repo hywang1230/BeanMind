@@ -495,6 +495,8 @@ async function loadMore() {
   }
 }
 
+const TRANSACTIONS_TAB_ID = 'tab-2'
+
 function navigateToAdd() {
   uiStore.markForTabRestore()
   router.push('/transactions/add')
@@ -506,7 +508,7 @@ function viewTransaction(transaction: Transaction) {
   // 保存筛选条件
   saveFilters()
   // 标记当前在流水 Tab，需要在返回时恢复
-  uiStore.setActiveTab('tab-3')
+  uiStore.setActiveTab(TRANSACTIONS_TAB_ID)
   uiStore.markForTabRestore()
   router.push(`/transactions/${transaction.id}`)
 }
@@ -517,7 +519,7 @@ function viewTransaction(transaction: Transaction) {
 function getScrollContainer(): HTMLElement | null {
   // F7 Tab 结构: f7-tab.page-content > transactions-page > transactions-content
   // 滚动发生在 f7-tab.page-content 上
-  const tabContent = document.querySelector('#tab-3.page-content') as HTMLElement
+  const tabContent = document.querySelector(`#${TRANSACTIONS_TAB_ID}.page-content`) as HTMLElement
   return tabContent
 }
 
