@@ -56,7 +56,11 @@ class ModelRegistry:
         return profiles
 
     def get(self, profile_id: str) -> ModelProfile:
-        return self._profiles.get(profile_id, self._profiles["default"])
+        profile = self._profiles.get(profile_id)
+        if profile is None:
+            logger.warning("未知的 model profile '%s'，回退到 default", profile_id)
+            return self._profiles["default"]
+        return profile
 
     def list_profiles(self) -> list[ModelProfile]:
         return list(self._profiles.values())

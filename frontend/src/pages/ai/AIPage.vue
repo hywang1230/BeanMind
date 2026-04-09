@@ -198,13 +198,13 @@ import {
   f7ListItem,
 } from 'framework7-vue'
 import { useAIStore } from '../../stores/ai'
+import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 
-// 配置 marked
-marked.setOptions({
+const MARKED_OPTIONS = {
   breaks: true, // 支持换行
   gfm: true, // 支持 GitHub 风格 Markdown
-})
+}
 
 const aiStore = useAIStore()
 const router = useRouter()
@@ -446,8 +446,8 @@ function formatMessage(content: string): string {
   }
 
   // 使用 marked 解析 Markdown
-  const html = marked.parse(processedContent) as string
-  return html
+  const html = marked.parse(processedContent, MARKED_OPTIONS) as string
+  return DOMPurify.sanitize(html)
 }
 
 // 格式化时间

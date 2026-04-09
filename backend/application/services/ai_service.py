@@ -5,6 +5,7 @@
 import logging
 import json
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from time import perf_counter
 from typing import Any, Dict, Optional, List
@@ -51,6 +52,8 @@ from backend.interfaces.dto.request.budget import CreateBudgetRequest
 
 logger = logging.getLogger(__name__)
 
+AI_USER_FACING_ERROR = "AI 服务暂时不可用，请稍后重试"
+
 
 
 
@@ -76,11 +79,10 @@ class AIApplicationService:
     - 管理对话历史
     """
     
-    # 会话存储（内存缓存，生产环境可改为 Redis）
-    _sessions: Dict[str, ChatSession] = {}
-    
     def __init__(self):
         """初始化 AI 应用服务"""
+        # 会话存储（实例级内存缓存，生产环境可改为 Redis）
+        self._sessions: Dict[str, ChatSession] = {}
         self._graph_runtime = LangGraphRuntime()
         Base.metadata.create_all(
             bind=engine,
@@ -263,6 +265,7 @@ class AIApplicationService:
                 "message": assistant_message.to_dict()
             }
         
+        plan = None
         plan_started = perf_counter()
         try:
             plan = self._graph_runtime.plan(
@@ -336,11 +339,11 @@ class AIApplicationService:
             
         except Exception as e:
             try:
-                if "plan" in locals():
+                if plan is not None:
                     self._record_plan_invocations(session.id, plan, error=str(e))
             except Exception:
                 logger.warning("记录 AI plan 审计失败", exc_info=True)
-            logger.error(f"AI 对话失败: {e}")
+            logger.error("AI 对话失败: %s", e, exc_info=True)
             raise
     
     async def chat_stream(
@@ -393,6 +396,7 @@ class AIApplicationService:
         # 收集完整响应
         full_response = ""
         
+        plan = None
         plan_started = perf_counter()
         try:
             # 首先发送 session_id
@@ -472,13 +476,13 @@ class AIApplicationService:
             
         except Exception as e:
             try:
-                if "plan" in locals():
+                if plan is not None:
                     self._record_plan_invocations(session.id, plan, error=str(e))
             except Exception:
                 logger.warning("记录 AI stream plan 审计失败", exc_info=True)
-            logger.error(f"AI 流式对话失败: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-            raise
+            logger.error("AI 流式对话失败: %s", e, exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'error': AI_USER_FACING_ERROR}, ensure_ascii=False)}\n\n"
+            return
     
     def get_session_history(self, session_id: str) -> Optional[Dict]:
         """
@@ -594,7 +598,7 @@ class AIApplicationService:
                 "description": final_payload.get("description"),
                 "payee": final_payload.get("payee"),
             },
-            "missing_fields": [] if transaction_id else ["transaction_id"],
+            "missing_fields": [],
             "confidence": 0.92,
             "assumptions": {
                 "source": "last_confirmed_transaction_in_session",
@@ -776,6 +780,14 @@ class AIApplicationService:
         beancount_service = get_beancount_service()
         account_repo = AccountRepositoryImpl(beancount_service)
         return AccountApplicationService(account_repo)
+
+    def _run_async_safely(self, coroutine):
+        """在独立线程中执行协程，避免当前线程事件循环状态影响同步调用链。"""
+        import asyncio
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, coroutine)
+            return future.result()
 
     def _load_session(self, session_id: str) -> Optional[ChatSession]:
         db = get_db_session()
@@ -1313,9 +1325,7 @@ class AIApplicationService:
             self._validate_budget_draft(draft)
             service, db = self._build_budget_service()
             try:
-                import asyncio
-
-                committed = asyncio.run(
+                committed = self._run_async_safely(
                     service.create_budget(
                         user_id="default",
                         name=draft["name"],

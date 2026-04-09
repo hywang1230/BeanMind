@@ -3,6 +3,7 @@
 提供 AI 对话相关的 HTTP 接口。
 """
 import logging
+import threading
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from typing import Optional
@@ -27,6 +28,7 @@ router = APIRouter(prefix="/api/ai", tags=["AI 对话"])
 
 # AI 应用服务实例（懒加载）
 _ai_service: Optional[AIApplicationService] = None
+_ai_service_lock = threading.Lock()
 
 
 def get_ai_service() -> AIApplicationService:
@@ -37,7 +39,9 @@ def get_ai_service() -> AIApplicationService:
     """
     global _ai_service
     if _ai_service is None:
-        _ai_service = AIApplicationService()
+        with _ai_service_lock:
+            if _ai_service is None:
+                _ai_service = AIApplicationService()
     return _ai_service
 
 
@@ -121,10 +125,10 @@ def chat(request: ChatRequest):
         )
         
     except Exception as e:
-        logger.error(f"AI 对话失败: {e}")
+        logger.error("AI 对话失败: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"AI 对话失败: {str(e)}"
+            detail="AI 服务暂时不可用，请稍后重试"
         )
 
 
@@ -169,8 +173,8 @@ async def chat_stream(request: ChatRequest):
                 yield chunk
         except Exception as e:
             import json
-            logger.error(f"AI 流式对话失败: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            logger.error("AI 流式对话失败: %s", e, exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'error': 'AI 服务暂时不可用，请稍后重试'}, ensure_ascii=False)}\n\n"
     
     return StreamingResponse(
         event_generator(),

@@ -268,20 +268,11 @@ class LangGraphRuntime:
         plan: GraphPlanningResult,
         context: Optional[Dict[str, Any]] = None,
     ) -> List[ToolExecutionResult]:
+        registered_skill_ids = {skill.id for skill in self.skill_registry.list_skills()}
         readonly_skills = [
             skill_id
             for skill_id in plan.selected_skills
-            if skill_id in {
-                "transaction.record",
-                "transaction.query",
-                "analysis.spending",
-                "budget.inspect",
-                "budget.plan",
-                "report.explain",
-                "recurring.manage",
-                "account.classify",
-                "account.manage",
-            }
+            if skill_id in registered_skill_ids
         ]
         logger.info(
             "AI runtime execute_readonly_skills: session=%s skills=%s",
