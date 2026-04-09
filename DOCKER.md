@@ -142,6 +142,11 @@ docker compose build
 docker compose up -d --build
 ```
 
+说明：
+
+- Docker 镜像中的 Python 依赖已改为使用 `uv` 基于 `pyproject.toml` 和 `uv.lock` 安装。
+- 本地如果要运行后端，也应优先使用 `uv sync` 和 `uv run`，不要再使用 `pip install -r requirements.txt`。
+
 ## 常用命令
 
 ```bash

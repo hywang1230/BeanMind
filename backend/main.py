@@ -34,41 +34,63 @@ async def lifespan(app: FastAPI):
     
     # 1. 周期记账调度器
     if settings.SCHEDULER_ENABLED:
-        from backend.infrastructure.scheduler import recurring_scheduler
-        
-        recurring_scheduler.start()
-        recurring_scheduler.add_recurring_job(
-            hour=settings.SCHEDULER_HOUR,
-            minute=settings.SCHEDULER_MINUTE,
-            timezone=settings.SCHEDULER_TIMEZONE,
-        )
-        logger.info(
-            f"周期记账调度器已启动: 每天 {settings.SCHEDULER_HOUR:02d}:{settings.SCHEDULER_MINUTE:02d} "
-            f"({settings.SCHEDULER_TIMEZONE}) 执行"
-        )
+        try:
+            from backend.infrastructure.scheduler.recurring_scheduler import recurring_scheduler
+        except ModuleNotFoundError as exc:
+            if exc.name == "apscheduler":
+                logger.warning("未安装 apscheduler，跳过周期记账调度器启动")
+            else:
+                raise
+        else:
+            recurring_scheduler.start()
+            recurring_scheduler.add_recurring_job(
+                hour=settings.SCHEDULER_HOUR,
+                minute=settings.SCHEDULER_MINUTE,
+                timezone=settings.SCHEDULER_TIMEZONE,
+            )
+            logger.info(
+                f"周期记账调度器已启动: 每天 {settings.SCHEDULER_HOUR:02d}:{settings.SCHEDULER_MINUTE:02d} "
+                f"({settings.SCHEDULER_TIMEZONE}) 执行"
+            )
     
     # 2. GitHub 自动同步调度器
     if settings.GITHUB_SYNC_AUTO_ENABLED:
-        from backend.infrastructure.scheduler import sync_scheduler
-        
-        sync_scheduler.start()
-        sync_scheduler.add_sync_job(interval_seconds=settings.GITHUB_SYNC_AUTO_INTERVAL)
-        logger.info(
-            f"GitHub 自动同步调度器已启动: 每 {settings.GITHUB_SYNC_AUTO_INTERVAL} 秒执行"
-        )
+        try:
+            from backend.infrastructure.scheduler.sync_scheduler import sync_scheduler
+        except ModuleNotFoundError as exc:
+            if exc.name == "apscheduler":
+                logger.warning("未安装 apscheduler，跳过 GitHub 自动同步调度器启动")
+            else:
+                raise
+        else:
+            sync_scheduler.start()
+            sync_scheduler.add_sync_job(interval_seconds=settings.GITHUB_SYNC_AUTO_INTERVAL)
+            logger.info(
+                f"GitHub 自动同步调度器已启动: 每 {settings.GITHUB_SYNC_AUTO_INTERVAL} 秒执行"
+            )
     
     yield
     
     # 关闭时
     if settings.SCHEDULER_ENABLED:
-        from backend.infrastructure.scheduler import recurring_scheduler
-        recurring_scheduler.shutdown()
-        logger.info("周期记账调度器已关闭")
+        try:
+            from backend.infrastructure.scheduler.recurring_scheduler import recurring_scheduler
+        except ModuleNotFoundError as exc:
+            if exc.name != "apscheduler":
+                raise
+        else:
+            recurring_scheduler.shutdown()
+            logger.info("周期记账调度器已关闭")
     
     if settings.GITHUB_SYNC_AUTO_ENABLED:
-        from backend.infrastructure.scheduler import sync_scheduler
-        sync_scheduler.shutdown()
-        logger.info("GitHub 自动同步调度器已关闭")
+        try:
+            from backend.infrastructure.scheduler.sync_scheduler import sync_scheduler
+        except ModuleNotFoundError as exc:
+            if exc.name != "apscheduler":
+                raise
+        else:
+            sync_scheduler.shutdown()
+            logger.info("GitHub 自动同步调度器已关闭")
 
 
 app = FastAPI(
@@ -299,4 +321,3 @@ if __name__ == "__main__":
         port=settings.API_PORT,
         reload=settings.DEBUG,
     )
-

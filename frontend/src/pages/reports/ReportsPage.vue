@@ -6,6 +6,11 @@
           <f7-icon f7="chevron_left"></f7-icon>
         </f7-link>
       </template>
+      <template #right>
+        <f7-link @click="openAIContext">
+          <f7-icon f7="sparkles"></f7-icon>
+        </f7-link>
+      </template>
     </f7-navbar>
 
     <div class="reports-content">
@@ -85,6 +90,16 @@ function goToBalanceSheet() {
 
 function goToIncomeStatement() {
   router.push('/reports/income-statement')
+}
+
+function openAIContext() {
+  router.push({
+    path: '/ai',
+    query: {
+      prompt: '结合当前报表入口，说明我应该先看哪张报表以及它们分别适合回答什么问题',
+      source_page: '/reports',
+    }
+  })
 }
 </script>
 

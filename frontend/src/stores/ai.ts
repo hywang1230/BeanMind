@@ -1,6 +1,16 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { aiApi, type ChatMessage, type QuickQuestion } from '../api/ai'
+import {
+    aiApi,
+    type AISkill,
+    type ChatMessage,
+    type ChatContext,
+    type ChatSessionSummary,
+    type QuickQuestion,
+    type StreamEvent,
+} from '../api/ai'
+
+type PendingInterrupt = Extract<StreamEvent, { type: 'interrupt' }>
 
 // 生成 UUID（使用浏览器内置 API，带 fallback）
 function generateId(): string {
@@ -23,6 +33,10 @@ export const useAIStore = defineStore('ai', () => {
     const sessionId = ref<string>('')
     const isLoading = ref(false)
     const quickQuestions = ref<QuickQuestion[]>([])
+    const skills = ref<AISkill[]>([])
+    const sessions = ref<ChatSessionSummary[]>([])
+    const pendingInterrupt = ref<PendingInterrupt | null>(null)
+    const statusText = ref('')
     const error = ref<string | null>(null)
 
     // 计算属性
@@ -53,12 +67,34 @@ export const useAIStore = defineStore('ai', () => {
         }
     }
 
+    async function fetchSkills() {
+        try {
+            const response = await aiApi.getSkills()
+            skills.value = response.skills
+        } catch (e) {
+            console.error('获取技能列表失败:', e)
+            skills.value = []
+        }
+    }
+
+    // 获取会话列表
+    async function fetchSessions() {
+        try {
+            const response = await aiApi.listSessions()
+            sessions.value = response.sessions
+        } catch (e) {
+            console.error('获取会话列表失败:', e)
+        }
+    }
+
     // 发送消息
-    async function sendMessage(content: string) {
+    async function sendMessage(content: string, context?: ChatContext) {
         if (!content.trim() || isLoading.value) return
 
         initSession()
         error.value = null
+        pendingInterrupt.value = null
+        statusText.value = ''
         isLoading.value = true
 
         // 添加用户消息
@@ -81,6 +117,9 @@ export const useAIStore = defineStore('ai', () => {
                 message: content.trim(),
                 session_id: sessionId.value,
                 history,
+                context: context || {
+                    source_page: '/ai',
+                },
             })
 
             // 更新 session_id
@@ -90,6 +129,7 @@ export const useAIStore = defineStore('ai', () => {
 
             // 添加 AI 回复消息
             messages.value.push(response.message)
+            await fetchSessions()
 
         } catch (e) {
             const errorMsg = e instanceof Error ? e.message : '请求失败'
@@ -109,11 +149,13 @@ export const useAIStore = defineStore('ai', () => {
     }
 
     // 流式发送消息
-    async function sendMessageStream(content: string) {
+    async function sendMessageStream(content: string, context?: ChatContext) {
         if (!content.trim() || isLoading.value) return
 
         initSession()
         error.value = null
+        pendingInterrupt.value = null
+        statusText.value = ''
         isLoading.value = true
 
         // 添加用户消息
@@ -139,6 +181,9 @@ export const useAIStore = defineStore('ai', () => {
                     message: content.trim(),
                     session_id: sessionId.value,
                     history,
+                    context: context || {
+                        source_page: '/ai',
+                    },
                 },
                 // onToken: 实时更新消息内容
                 (token: string) => {
@@ -188,7 +233,41 @@ export const useAIStore = defineStore('ai', () => {
                             messages.value[index] = { ...tempAiMessage }
                         }
                     }
-                }
+                },
+                (event: StreamEvent) => {
+                    switch (event.type) {
+                        case 'session':
+                            sessionId.value = event.session_id
+                            break
+                        case 'interrupt':
+                            pendingInterrupt.value = event
+                            statusText.value = event.missing_fields?.length
+                                ? `待补充字段：${event.missing_fields.join('、')}`
+                                : '待确认草稿'
+                            fetchSessions().catch(console.error)
+                            break
+                        case 'progress':
+                            statusText.value = event.content || event.step || '处理中'
+                            break
+                        case 'skill':
+                            statusText.value = `已选择能力：${event.skill_id}`
+                            break
+                        case 'agent':
+                            statusText.value = `当前代理：${event.agent_id}`
+                            break
+                        case 'done':
+                            if (!pendingInterrupt.value) {
+                                statusText.value = ''
+                            }
+                            fetchSessions().catch(console.error)
+                            break
+                        case 'error':
+                            statusText.value = ''
+                            break
+                        default:
+                            break
+                    }
+                },
             )
         } catch {
             // 错误已在 onError 回调中处理
@@ -201,6 +280,8 @@ export const useAIStore = defineStore('ai', () => {
     function clearMessages() {
         messages.value = []
         error.value = null
+        pendingInterrupt.value = null
+        statusText.value = ''
 
         // 如果有会话，清空服务端会话
         if (sessionId.value) {
@@ -213,6 +294,8 @@ export const useAIStore = defineStore('ai', () => {
         // 直接清空本地状态，不调用服务端
         messages.value = []
         error.value = null
+        pendingInterrupt.value = null
+        statusText.value = ''
         sessionId.value = generateId()
     }
 
@@ -223,11 +306,70 @@ export const useAIStore = defineStore('ai', () => {
             const session = await aiApi.getSessionHistory(sid)
             sessionId.value = session.id
             messages.value = session.messages
+            pendingInterrupt.value = session.pending_action
+                ? {
+                    type: 'interrupt',
+                    session_id: session.id,
+                    action_type: session.pending_action.action_type,
+                    draft: session.pending_action.draft,
+                    missing_fields: session.pending_action.missing_fields,
+                    confidence: session.pending_action.confidence,
+                    assumptions: session.pending_action.assumptions,
+                }
+                : null
+            statusText.value = pendingInterrupt.value
+                ? (pendingInterrupt.value.missing_fields?.length
+                    ? `待补充字段：${pendingInterrupt.value.missing_fields.join('、')}`
+                    : '待确认草稿')
+                : ''
         } catch (e) {
             console.error('加载会话历史失败:', e)
             throw e
         } finally {
             isLoading.value = false
+        }
+    }
+
+    async function resumePendingAction(
+        action: 'confirm' | 'cancel' | 'edit',
+        draft?: Record<string, unknown>
+    ) {
+        if (!sessionId.value || !pendingInterrupt.value) return
+
+        isLoading.value = true
+        error.value = null
+        try {
+            const response = await aiApi.resumeSession(sessionId.value, { action, draft })
+            messages.value.push(response.message)
+            if (action === 'edit' && draft) {
+                pendingInterrupt.value = {
+                    ...pendingInterrupt.value,
+                    draft,
+                }
+                statusText.value = '草稿已更新，等待确认'
+            } else {
+                await loadSessionHistory(sessionId.value)
+            }
+            await fetchSessions()
+        } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : '处理草稿失败'
+            error.value = errorMsg
+            throw e
+        } finally {
+            isLoading.value = false
+        }
+    }
+
+    async function deleteSession(sid: string) {
+        await aiApi.deleteSession(sid)
+        sessions.value = sessions.value.filter(session => session.id !== sid)
+
+        if (sessionId.value === sid) {
+            messages.value = []
+            sessionId.value = generateId()
+            pendingInterrupt.value = null
+            statusText.value = ''
+            error.value = null
         }
     }
 
@@ -237,6 +379,10 @@ export const useAIStore = defineStore('ai', () => {
         sessionId,
         isLoading,
         quickQuestions,
+        skills,
+        sessions,
+        pendingInterrupt,
+        statusText,
         error,
 
         // 计算属性
@@ -246,8 +392,12 @@ export const useAIStore = defineStore('ai', () => {
         // 方法
         initSession,
         fetchQuickQuestions,
+        fetchSkills,
+        fetchSessions,
         sendMessage,
         sendMessageStream,
+        resumePendingAction,
+        deleteSession,
         clearMessages,
         newConversation,
         loadSessionHistory,

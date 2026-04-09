@@ -17,6 +17,22 @@ export type ChatSession = {
     created_at: string
     updated_at: string
     message_count: number
+    pending_action?: {
+        action_type: string
+        draft: Record<string, unknown>
+        missing_fields?: string[]
+        confidence?: number
+        assumptions?: Record<string, unknown>
+    } | null
+}
+
+export type ChatSessionSummary = {
+    id: string
+    title?: string
+    created_at: string
+    updated_at: string
+    message_count: number
+    last_message_preview?: string
 }
 
 export type QuickQuestion = {
@@ -25,16 +41,55 @@ export type QuickQuestion = {
     icon?: string
 }
 
+export type AISkill = {
+    id: string
+    name: string
+    description: string
+    agent_id: string
+    write_policy: string
+}
+
+export type ChatContext = {
+    source_page?: string
+    selected_entity_id?: string
+    date_range?: Record<string, unknown>
+}
+
 export type ChatRequest = {
     message: string
     session_id?: string
     history?: Array<{ role: string; content: string }>
+    context?: ChatContext
 }
 
 export type ChatResponse = {
     session_id: string
     message: ChatMessage
 }
+
+export type ResumeSessionRequest = {
+    action: 'confirm' | 'cancel' | 'edit'
+    draft?: Record<string, unknown>
+}
+
+export type StreamEvent =
+    | { type: 'session'; session_id: string }
+    | { type: 'token'; content: string }
+    | { type: 'done'; message: ChatMessage }
+    | { type: 'error'; error: string }
+    | { type: 'progress'; content?: string; step?: string }
+    | { type: 'tool'; tool_name: string; skill_id?: string; payload?: unknown }
+    | { type: 'skill'; skill_id: string }
+    | { type: 'agent'; agent_id: string }
+    | {
+        type: 'interrupt'
+        session_id: string
+        action_type: string
+        draft: Record<string, unknown>
+        missing_fields?: string[]
+        confidence?: number
+        assumptions?: Record<string, unknown>
+    }
 
 /**
  * AI API 客户端
@@ -45,6 +100,13 @@ export const aiApi = {
      */
     getQuickQuestions(): Promise<{ questions: QuickQuestion[] }> {
         return apiClient.get('/api/ai/questions')
+    },
+
+    /**
+     * 获取 Skill 列表
+     */
+    getSkills(): Promise<{ skills: AISkill[] }> {
+        return apiClient.get('/api/ai/skills')
     },
 
     /**
@@ -71,7 +133,8 @@ export const aiApi = {
         request: ChatRequest,
         onToken: (token: string) => void,
         onDone: (message: ChatMessage) => void,
-        onError: (error: string) => void
+        onError: (error: string) => void,
+        onEvent?: (event: StreamEvent) => void
     ): Promise<string> {
         // 获取 baseURL
         const baseURL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -122,15 +185,25 @@ export const aiApi = {
                             switch (data.type) {
                                 case 'session':
                                     sessionId = data.session_id
+                                    onEvent?.(data as StreamEvent)
                                     break
                                 case 'token':
                                     onToken(data.content)
                                     break
                                 case 'done':
                                     onDone(data.message)
+                                    onEvent?.(data as StreamEvent)
                                     break
                                 case 'error':
                                     onError(data.error)
+                                    onEvent?.(data as StreamEvent)
+                                    break
+                                case 'progress':
+                                case 'tool':
+                                case 'skill':
+                                case 'agent':
+                                case 'interrupt':
+                                    onEvent?.(data as StreamEvent)
                                     break
                             }
                         } catch {
@@ -157,6 +230,20 @@ export const aiApi = {
     },
 
     /**
+     * 创建空会话
+     */
+    createSession(): Promise<ChatSession> {
+        return apiClient.post('/api/ai/sessions')
+    },
+
+    /**
+     * 获取会话列表
+     */
+    listSessions(): Promise<{ sessions: ChatSessionSummary[]; total: number }> {
+        return apiClient.get('/api/ai/sessions')
+    },
+
+    /**
      * 删除会话
      */
     deleteSession(sessionId: string): Promise<{ message: string }> {
@@ -168,6 +255,15 @@ export const aiApi = {
      */
     clearSession(sessionId: string): Promise<{ message: string }> {
         return apiClient.post(`/api/ai/sessions/${sessionId}/clear`)
+    },
+
+    /**
+     * 恢复待确认草稿
+     */
+    resumeSession(sessionId: string, request: ResumeSessionRequest): Promise<ChatResponse> {
+        return apiClient.post(`/api/ai/sessions/${sessionId}/resume`, request, {
+            timeout: 120000
+        })
     },
 }
 

@@ -6,6 +6,12 @@
       </f7-nav-left>
       <f7-nav-title>AI 智能助手</f7-nav-title>
       <f7-nav-right>
+        <f7-link
+          v-if="aiStore.sessions.length"
+          icon-ios="f7:list_bullet"
+          icon-md="material:list"
+          @click="showSessionsPopup = true"
+        />
         <f7-link v-if="aiStore.hasMessages" @click="handleNewChat" icon-ios="f7:plus" icon-md="material:add" />
       </f7-nav-right>
     </f7-navbar>
@@ -14,6 +20,8 @@
 
       <!-- 消息区域 -->
       <div class="messages-container" ref="messagesContainer">
+        <div v-if="aiStore.statusText" class="status-banner">{{ aiStore.statusText }}</div>
+
         <!-- 欢迎界面（无消息时显示） -->
         <div v-if="!aiStore.hasMessages" class="welcome-section">
           <div class="welcome-content">
@@ -22,6 +30,17 @@
             </div>
             <h2 class="welcome-title">财务助手</h2>
             <p class="welcome-subtitle">分析消费、查看账单、提供理财建议</p>
+
+            <div v-if="aiStore.skills.length" class="skill-tags">
+              <div
+                v-for="skill in aiStore.skills"
+                :key="skill.id"
+                class="skill-tag"
+                :title="skill.description"
+              >
+                {{ skill.name }}
+              </div>
+            </div>
 
             <!-- 快捷问题 -->
             <div class="quick-questions">
@@ -67,6 +86,49 @@
               <div class="loading-time">{{ formatTime(new Date().toISOString()) }}</div>
             </div>
           </div>
+
+          <div v-if="aiStore.pendingInterrupt" class="pending-card">
+            <div class="pending-title">{{ formatInterruptTitle(aiStore.pendingInterrupt.action_type) }}</div>
+            <div v-if="aiStore.pendingInterrupt.missing_fields?.length" class="pending-missing">
+              缺少字段：{{ aiStore.pendingInterrupt.missing_fields.join('、') }}
+            </div>
+            <div
+              v-if="typeof aiStore.pendingInterrupt.assumptions?.risk_message === 'string'"
+              class="pending-risk"
+            >
+              {{ aiStore.pendingInterrupt.assumptions?.risk_message }}
+            </div>
+            <pre class="pending-draft">{{ formatDraftPreview(aiStore.pendingInterrupt.draft) }}</pre>
+            <div class="pending-actions">
+              <f7-button
+                small
+                fill
+                outline
+                :disabled="aiStore.isLoading"
+                @click="handleEditDraft"
+              >
+                编辑 JSON
+              </f7-button>
+              <f7-button
+                small
+                fill
+                color="red"
+                outline
+                :disabled="aiStore.isLoading"
+                @click="handlePendingAction('cancel')"
+              >
+                取消
+              </f7-button>
+              <f7-button
+                small
+                fill
+                :disabled="aiStore.isLoading || !!aiStore.pendingInterrupt.missing_fields?.length"
+                @click="handlePendingAction('confirm')"
+              >
+                确认执行
+              </f7-button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -83,13 +145,46 @@
         </div>
       </div>
     </div>
+
+    <f7-popup :opened="showSessionsPopup" @popup:closed="showSessionsPopup = false">
+      <f7-page>
+        <f7-navbar title="最近会话">
+          <f7-nav-right>
+            <f7-link popup-close>关闭</f7-link>
+          </f7-nav-right>
+        </f7-navbar>
+        <f7-list inset dividers-ios strong-ios>
+          <f7-list-item
+            v-for="session in aiStore.sessions"
+            :key="session.id"
+            :title="session.title || '未命名对话'"
+            :footer="session.last_message_preview || `${session.message_count} 条消息`"
+            link="#"
+            @click="handleLoadSession(session.id)"
+          >
+            <template #after>
+              <div class="session-after">
+                <span class="session-time">{{ formatTime(session.updated_at) }}</span>
+                <f7-link
+                  color="red"
+                  @click.stop="handleDeleteSession(session.id)"
+                >
+                  删除
+                </f7-link>
+              </div>
+            </template>
+          </f7-list-item>
+        </f7-list>
+      </f7-page>
+    </f7-popup>
   </f7-page>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import {
+  f7,
   f7Page,
   f7Navbar,
   f7NavLeft,
@@ -97,7 +192,10 @@ import {
   f7NavRight,
   f7Link,
   f7Icon,
-  f7Button
+  f7Button,
+  f7Popup,
+  f7List,
+  f7ListItem,
 } from 'framework7-vue'
 import { useAIStore } from '../../stores/ai'
 import { marked } from 'marked'
@@ -110,8 +208,10 @@ marked.setOptions({
 
 const aiStore = useAIStore()
 const router = useRouter()
+const route = useRoute()
 const inputMessage = ref('')
 const messagesContainer = ref<HTMLElement | null>(null)
+const showSessionsPopup = ref(false)
 
 // 返回上一页
 function goBack() {
@@ -123,7 +223,17 @@ function goBack() {
 onMounted(async () => {
   // 每次进入页面都开始新的对话
   aiStore.newConversation()
-  await aiStore.fetchQuickQuestions()
+  await Promise.all([
+    aiStore.fetchQuickQuestions(),
+    aiStore.fetchSkills(),
+    aiStore.fetchSessions(),
+  ])
+
+  const initialPrompt = typeof route.query.prompt === 'string' ? route.query.prompt : ''
+  if (initialPrompt) {
+    await aiStore.sendMessageStream(initialPrompt, buildPageContextFromQuery())
+    router.replace({ path: '/ai' })
+  }
 })
 
 // 监听消息变化，自动滚动到底部
@@ -168,17 +278,123 @@ async function handleSend() {
   if (!message || aiStore.isLoading) return
 
   inputMessage.value = ''
-  await aiStore.sendMessageStream(message)
+  await aiStore.sendMessageStream(message, buildPageContextFromQuery())
 }
 
 // 点击快捷问题（使用流式输出）
 async function handleQuickQuestion(question: string) {
-  await aiStore.sendMessageStream(question)
+  await aiStore.sendMessageStream(question, buildPageContextFromQuery())
 }
 
 // 新建对话
 function handleNewChat() {
   aiStore.newConversation()
+}
+
+async function handleLoadSession(sid: string) {
+  showSessionsPopup.value = false
+  await aiStore.loadSessionHistory(sid)
+}
+
+function handleDeleteSession(sid: string) {
+  f7.dialog.create({
+    title: '删除会话',
+    text: '确定要删除这段 AI 会话吗？',
+    buttons: [
+      { text: '取消', color: 'gray' },
+      {
+        text: '删除',
+        color: 'red',
+        onClick: async () => {
+          try {
+            await aiStore.deleteSession(sid)
+            f7.toast.show({
+              text: '会话已删除',
+              position: 'center',
+              closeTimeout: 1500,
+            })
+          } catch (e: any) {
+            f7.toast.show({
+              text: e?.message || '删除会话失败',
+              position: 'center',
+              closeTimeout: 2000,
+            })
+          }
+        }
+      }
+    ]
+  }).open()
+}
+
+async function handlePendingAction(action: 'confirm' | 'cancel') {
+  try {
+    await aiStore.resumePendingAction(action)
+  } catch (e) {
+    console.error('处理草稿失败:', e)
+  }
+}
+
+async function handleEditDraft() {
+  if (!aiStore.pendingInterrupt) return
+
+  const nextValue = window.prompt(
+    '请编辑草稿 JSON',
+    JSON.stringify(aiStore.pendingInterrupt.draft, null, 2),
+  )
+
+  if (nextValue === null) return
+
+  try {
+    const parsedDraft = JSON.parse(nextValue) as Record<string, unknown>
+    await aiStore.resumePendingAction('edit', parsedDraft)
+  } catch (e: any) {
+    f7.toast.show({
+      text: e?.message || '草稿 JSON 无法解析或保存失败',
+      position: 'center',
+      closeTimeout: 2000,
+    })
+  }
+}
+
+function formatInterruptTitle(actionType: string): string {
+  switch (actionType) {
+    case 'transaction.record':
+      return '待确认记账草稿'
+    case 'budget.plan':
+      return '待确认预算草稿'
+    case 'recurring.manage':
+      return '待确认周期规则草稿'
+    case 'account.manage':
+      return '待确认账户操作草稿'
+    default:
+      return '待确认草稿'
+  }
+}
+
+function formatDraftPreview(draft: Record<string, unknown>): string {
+  return JSON.stringify(draft, null, 2)
+}
+
+function buildPageContextFromQuery() {
+  const sourcePage = typeof route.query.source_page === 'string' ? route.query.source_page : '/ai'
+  const selectedEntityId = typeof route.query.selected_entity_id === 'string'
+    ? route.query.selected_entity_id
+    : undefined
+  const startDate = typeof route.query.start_date === 'string' ? route.query.start_date : undefined
+  const endDate = typeof route.query.end_date === 'string' ? route.query.end_date : undefined
+
+  const dateRange = startDate || endDate
+    ? {
+      start_date: startDate,
+      end_date: endDate,
+    }
+    : undefined
+
+  return {
+    source_page: sourcePage,
+    selected_entity_id: selectedEntityId,
+    date_range: dateRange,
+  }
 }
 
 // 格式化消息（使用 marked 支持完整 Markdown，带智能补全）
@@ -257,6 +473,15 @@ function formatTime(dateString: string): string {
   scroll-behavior: smooth;
 }
 
+.status-banner {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 122, 255, 0.08);
+  color: var(--f7-theme-color);
+  font-size: 13px;
+}
+
 /* 欢迎界面 */
 .welcome-section {
   display: flex;
@@ -270,6 +495,79 @@ function formatTime(dateString: string): string {
   text-align: center;
   max-width: 320px;
   width: 100%;
+}
+
+.skill-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 16px 0 20px;
+}
+
+.skill-tag {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(0, 122, 255, 0.08);
+  color: var(--f7-theme-color);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.pending-card {
+  margin-top: 16px;
+  padding: 14px;
+  border-radius: 8px;
+  background: var(--bg-card, #fff);
+  border: 1px solid var(--border-primary, rgba(0, 0, 0, 0.08));
+}
+
+.pending-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.pending-missing {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #d9485f;
+}
+
+.pending-risk {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #d97706;
+}
+
+.pending-draft {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pending-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.session-after {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-time {
+  font-size: 12px;
+  color: var(--f7-text-color-secondary);
 }
 
 .welcome-icon {

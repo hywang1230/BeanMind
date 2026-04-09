@@ -328,8 +328,19 @@ def get_recurring_executions(
 @router.get("/scheduler/status")
 def get_scheduler_status():
     """获取调度器状态"""
-    from backend.infrastructure.scheduler import recurring_scheduler
-    
+    try:
+        from backend.infrastructure.scheduler.recurring_scheduler import recurring_scheduler
+    except ModuleNotFoundError as exc:
+        if exc.name != "apscheduler":
+            raise
+        return {
+            "enabled": False,
+            "running": False,
+            "job_id": None,
+            "job_name": None,
+            "next_run_time": None,
+        }
+
     job_info = recurring_scheduler.get_job_info()
     
     return {

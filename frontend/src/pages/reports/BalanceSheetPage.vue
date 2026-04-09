@@ -7,6 +7,11 @@
           <span></span>
         </f7-link>
       </template>
+      <template #right>
+        <f7-link @click="openAIContext">
+          <f7-icon f7="sparkles"></f7-icon>
+        </f7-link>
+      </template>
     </f7-navbar>
 
     <div class="balance-sheet-content">
@@ -145,6 +150,18 @@ function goBack() {
   // 返回时清除缓存
   sessionStorage.removeItem(STATE_CACHE_KEY)
   router.back()
+}
+
+function openAIContext() {
+  router.push({
+    path: '/ai',
+    query: {
+      prompt: '解释一下当前资产负债表，重点说明净资产、资产和负债结构',
+      source_page: '/reports/balance-sheet',
+      start_date: selectedDate.value,
+      end_date: selectedDate.value,
+    }
+  })
 }
 
 // 保存页面状态

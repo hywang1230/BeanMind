@@ -8,11 +8,13 @@ from fastapi.responses import StreamingResponse
 from typing import Optional
 
 from backend.application.services import AIApplicationService
-from backend.interfaces.dto.request.ai import ChatRequest, ClearSessionRequest
+from backend.interfaces.dto.request.ai import ChatRequest, ClearSessionRequest, ResumeSessionRequest
 from backend.interfaces.dto.response.ai import (
     ChatResponse,
     ChatMessageResponse,
     ChatSessionResponse,
+    ChatSessionListResponse,
+    ChatSessionSummaryResponse,
     QuickQuestionsListResponse,
     QuickQuestionResponse,
 )
@@ -62,6 +64,25 @@ def get_quick_questions():
 
 
 @router.post(
+    "/sessions",
+    response_model=ChatSessionResponse,
+    summary="创建会话",
+    description="创建一个空的 AI 会话并返回基础信息",
+)
+def create_session():
+    session = get_ai_service().create_session()
+    return ChatSessionResponse(
+        id=session["id"],
+        title=session.get("title"),
+        messages=[],
+        created_at=session["created_at"],
+        updated_at=session["updated_at"],
+        message_count=session.get("message_count", 0),
+        pending_action=None,
+    )
+
+
+@router.post(
     "/chat",
     response_model=ChatResponse,
     summary="AI 对话",
@@ -84,12 +105,14 @@ def chat(request: ChatRequest):
     history = None
     if request.history:
         history = [{"role": h.role, "content": h.content} for h in request.history]
+    context = request.context.model_dump() if request.context else None
     
     try:
         result = ai_service.chat(
             message=request.message,
             session_id=request.session_id,
-            history=history
+            history=history,
+            context=context,
         )
         
         return ChatResponse(
@@ -133,13 +156,15 @@ async def chat_stream(request: ChatRequest):
     history = None
     if request.history:
         history = [{"role": h.role, "content": h.content} for h in request.history]
+    context = request.context.model_dump() if request.context else None
     
     async def event_generator():
         try:
             async for chunk in ai_service.chat_stream(
                 message=request.message,
                 session_id=request.session_id,
-                history=history
+                history=history,
+                context=context,
             ):
                 yield chunk
         except Exception as e:
@@ -155,6 +180,25 @@ async def chat_stream(request: ChatRequest):
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # 禁用 Nginx 缓冲
         }
+    )
+
+
+@router.get(
+    "/sessions",
+    response_model=ChatSessionListResponse,
+    summary="获取会话列表",
+    description="获取最近的 AI 会话摘要列表",
+    responses={
+        200: {"description": "获取成功", "model": ChatSessionListResponse},
+    }
+)
+def list_sessions():
+    """获取会话摘要列表。"""
+    ai_service = get_ai_service()
+    sessions = ai_service.list_sessions()
+    return ChatSessionListResponse(
+        sessions=[ChatSessionSummaryResponse(**session) for session in sessions],
+        total=len(sessions),
     )
 
 
@@ -190,6 +234,7 @@ def get_session_history(session_id: str):
         created_at=session["created_at"],
         updated_at=session["updated_at"],
         message_count=session.get("message_count", 0),
+        pending_action=session.get("pending_action"),
     )
 
 
@@ -248,3 +293,75 @@ def clear_session(session_id: str):
     
     return MessageResponse(message=f"会话 '{session_id}' 已清空")
 
+
+@router.post(
+    "/sessions/{session_id}/resume",
+    response_model=ChatResponse,
+    summary="恢复中断会话",
+    description="对待确认草稿执行 confirm/cancel/edit",
+    responses={
+        200: {"description": "处理成功", "model": ChatResponse},
+        400: {"description": "请求参数错误", "model": ErrorResponse},
+        404: {"description": "会话或草稿不存在", "model": ErrorResponse},
+    }
+)
+def resume_session(session_id: str, request: ResumeSessionRequest):
+    """恢复待确认的 AI 草稿。"""
+    try:
+        result = get_ai_service().resume_session_action(
+            session_id=session_id,
+            action=request.action,
+            draft=request.draft,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"会话 '{session_id}' 没有待处理草稿"
+        )
+
+    return ChatResponse(
+        session_id=result["session_id"],
+        message=ChatMessageResponse(**result["message"])
+    )
+
+
+@router.get(
+    "/capabilities",
+    summary="获取 AI 能力摘要",
+)
+def get_capabilities():
+    """返回当前启用的 graph、skill、agent 和模型摘要。"""
+    return get_ai_service().get_capabilities()
+
+
+@router.get(
+    "/skills",
+    summary="获取 Skill 列表",
+)
+def get_skills():
+    """获取当前启用 Skill 列表。"""
+    return {"skills": get_ai_service().list_skills()}
+
+
+@router.get(
+    "/agents",
+    summary="获取 SubAgent 列表",
+)
+def get_agents():
+    """获取当前启用 SubAgent 列表。"""
+    return {"agents": get_ai_service().list_agents()}
+
+
+@router.get(
+    "/models",
+    summary="获取模型 Profile 列表",
+)
+def get_models():
+    """获取当前模型 Profile 摘要。"""
+    return {"models": get_ai_service().list_models()}

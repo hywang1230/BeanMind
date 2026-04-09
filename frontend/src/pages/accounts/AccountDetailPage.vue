@@ -7,6 +7,11 @@
         </f7-link>
       </f7-nav-left>
       <f7-nav-title>账户详情</f7-nav-title>
+      <f7-nav-right>
+        <f7-link @click="openAIContext">
+          <f7-icon ios="f7:sparkles" md="material:auto_awesome" />
+        </f7-link>
+      </f7-nav-right>
     </f7-navbar>
 
     <!-- 加载状态 -->
@@ -357,6 +362,19 @@ function navigateToChild(childName: string) {
 
 function goBack() {
   router.back()
+}
+
+function openAIContext() {
+  router.push({
+    path: '/ai',
+    query: {
+      prompt: account.value
+        ? `解释一下账户「${account.value.name}」的用途、当前状态和余额情况`
+        : '解释一下当前账户情况',
+      source_page: route.path,
+      selected_entity_id: account.value?.name,
+    }
+  })
 }
 
 async function handleReopenAccount() {

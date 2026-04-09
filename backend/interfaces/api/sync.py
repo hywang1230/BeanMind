@@ -3,7 +3,7 @@
 提供 GitHub 同步相关的 HTTP 接口
 配置从环境变量读取，日志保存到数据库
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
 from sqlalchemy.orm import Session
@@ -211,7 +211,19 @@ class SchedulerStatusResponse(BaseModel):
 )
 async def get_scheduler_status():
     """获取调度器状态"""
-    from backend.infrastructure.scheduler import sync_scheduler
+    try:
+        from backend.infrastructure.scheduler.sync_scheduler import sync_scheduler
+    except ModuleNotFoundError as exc:
+        if exc.name != "apscheduler":
+            raise
+        return {
+            "job_id": None,
+            "name": None,
+            "running": False,
+            "next_run_time": None,
+            "interval_seconds": None,
+        }
+
     return sync_scheduler.get_job_info()
 
 
@@ -222,6 +234,11 @@ async def get_scheduler_status():
 )
 async def trigger_scheduler():
     """手动触发同步"""
-    from backend.infrastructure.scheduler import sync_scheduler
-    return sync_scheduler.trigger_now()
+    try:
+        from backend.infrastructure.scheduler.sync_scheduler import sync_scheduler
+    except ModuleNotFoundError as exc:
+        if exc.name != "apscheduler":
+            raise
+        raise HTTPException(status_code=503, detail="未安装 apscheduler，自动同步调度器不可用")
 
+    return sync_scheduler.trigger_now()

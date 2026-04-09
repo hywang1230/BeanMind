@@ -57,6 +57,7 @@ class ChatSessionResponse(BaseModel):
     created_at: str = Field(..., description="创建时间")
     updated_at: str = Field(..., description="更新时间")
     message_count: int = Field(0, description="消息数量")
+    pending_action: Optional[dict] = Field(None, description="待确认草稿")
     
     class Config:
         json_schema_extra = {
@@ -69,6 +70,24 @@ class ChatSessionResponse(BaseModel):
                 "message_count": 4
             }
         }
+
+
+class ChatSessionSummaryResponse(BaseModel):
+    """聊天会话摘要响应。"""
+
+    id: str = Field(..., description="会话 ID")
+    title: Optional[str] = Field(None, description="会话标题")
+    created_at: str = Field(..., description="创建时间")
+    updated_at: str = Field(..., description="更新时间")
+    message_count: int = Field(0, description="消息数量")
+    last_message_preview: Optional[str] = Field(None, description="最后一条消息摘要")
+
+
+class ChatSessionListResponse(BaseModel):
+    """聊天会话列表响应。"""
+
+    sessions: List[ChatSessionSummaryResponse] = Field(..., description="会话摘要列表")
+    total: int = Field(..., description="总数量")
 
 
 class QuickQuestionResponse(BaseModel):

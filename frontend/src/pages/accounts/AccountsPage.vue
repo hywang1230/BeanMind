@@ -8,6 +8,9 @@
       </f7-nav-left>
       <f7-nav-title>账户管理</f7-nav-title>
       <f7-nav-right>
+        <f7-link @click="openAIContext">
+          <f7-icon ios="f7:sparkles" md="material:auto_awesome" />
+        </f7-link>
         <f7-link @click="showCreateModal = true">
           <f7-icon ios="f7:plus" md="material:add" />
         </f7-link>
@@ -325,6 +328,16 @@ async function handleCreateAccount() {
 
 function goBack() {
   router.back()
+}
+
+function openAIContext() {
+  router.push({
+    path: '/ai',
+    query: {
+      prompt: '解释一下当前账户结构，并给出账户分类或整理建议',
+      source_page: '/accounts',
+    }
+  })
 }
 
 // 账户树项组件

@@ -8,6 +8,9 @@
       </f7-nav-left>
       <f7-nav-title>交易详情</f7-nav-title>
       <f7-nav-right>
+        <f7-link @click="openAIContext">
+          <f7-icon ios="f7:sparkles" md="material:auto_awesome" />
+        </f7-link>
         <f7-link @click="editTransaction">
           <f7-icon ios="f7:pencil" md="material:edit" />
         </f7-link>
@@ -154,6 +157,21 @@ function editTransaction() {
   if (transaction.value) {
     router.push(`/transactions/${transaction.value.id}/edit`)
   }
+}
+
+function openAIContext() {
+  router.push({
+    path: '/ai',
+    query: {
+      prompt: transaction.value
+        ? `解释一下这笔交易的类型、用途和分录结构：${transaction.value.description || transaction.value.payee || transaction.value.id}`
+        : '解释一下当前交易的分录结构',
+      source_page: route.path,
+      selected_entity_id: transaction.value?.id,
+      start_date: transaction.value?.date,
+      end_date: transaction.value?.date,
+    }
+  })
 }
 
 async function loadTransaction() {
