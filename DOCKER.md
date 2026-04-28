@@ -127,7 +127,6 @@ docker-compose up -d
 | `SINGLE_USER_PASSWORD` | `changeme` | 单用户模式密码 |
 | `JWT_SECRET_KEY` | - | JWT 密钥（**必须修改**） |
 | `JWT_EXPIRATION_HOURS` | `24` | JWT 过期时间（小时） |
-| `AI_ENABLED` | `false` | 是否启用 AI 功能 |
 | `DEBUG` | `false` | 调试模式 |
 
 ## 本地构建

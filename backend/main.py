@@ -13,7 +13,7 @@ load_dotenv()
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from backend.config import settings
 
 # ==================== 配置日志系统（最早执行） ====================
@@ -117,7 +117,6 @@ from backend.interfaces.api import account as account_api
 from backend.interfaces.api import transaction as transaction_api
 from backend.interfaces.api import statistics as statistics_api
 from backend.interfaces.api import recurring as recurring_api
-from backend.interfaces.api import ai as ai_api
 from backend.interfaces.api import reports as reports_api
 from backend.interfaces.api import exchange_rate as exchange_rate_api
 from backend.interfaces.api import budget as budget_api
@@ -128,7 +127,6 @@ app.include_router(account_api.router)
 app.include_router(transaction_api.router)
 app.include_router(statistics_api.router)
 app.include_router(recurring_api.router)
-app.include_router(ai_api.router)
 app.include_router(reports_api.router)
 app.include_router(exchange_rate_api.router)
 app.include_router(budget_api.router)
@@ -157,7 +155,6 @@ def get_config():
     """获取公开配置信息（不包含敏感信息）"""
     return {
         "auth_mode": settings.AUTH_MODE,
-        "ai_enabled": settings.AI_ENABLED,
         "github_sync_enabled": bool(settings.GITHUB_TOKEN and settings.GITHUB_REPO),
     }
 
@@ -296,7 +293,7 @@ if FRONTEND_DIST_DIR.exists():
         """服务前端 SPA 应用"""
         # 如果路径以 /api 开头，说明是 API 请求但未匹配，返回 404
         if path.startswith("api/"):
-            return {"detail": "Not Found"}
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
         
         # 尝试返回请求的静态文件
         file_path = FRONTEND_DIST_DIR / path
@@ -308,7 +305,7 @@ if FRONTEND_DIST_DIR.exists():
         if index_path.exists():
             return FileResponse(index_path)
         
-        return {"detail": "Frontend not built"}
+        return JSONResponse(status_code=404, content={"detail": "Frontend not built"})
 else:
     logger.info("前端静态文件目录不存在，跳过静态文件服务配置（开发模式）")
 

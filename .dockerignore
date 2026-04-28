@@ -30,7 +30,7 @@ build/
 *~
 .cursor/
 
-# AI Agent
+# Agent
 .agent/
 CLAUDE.md
 

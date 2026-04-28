@@ -36,21 +36,6 @@ class Settings(BaseSettings):
     GITHUB_SYNC_AUTO_ENABLED: bool = False
     GITHUB_SYNC_AUTO_INTERVAL: int = 300  # 秒
     
-    # ==================== AI 配置 ====================
-    AI_ENABLED: bool = False
-    AI_CHECKPOINT_DB: Path = Path("./data/ai_checkpoints.db")
-    AI_MODEL_PROVIDER: str = "openai_compatible"
-    AI_MODEL_DEFAULT: str = "qwen3-max"
-    AI_MODEL_FAST: str = "qwen3-max"
-    AI_MODEL_REASONING: str = "qwen3-max"
-    AI_MODEL_STRUCTURED: str = "qwen3-max"
-    AI_MODEL_LONG_CONTEXT: str = "qwen3-max"
-    AI_MODEL_GUARDRAIL: str = "qwen3-max"
-    AI_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    AI_API_KEY: str = ""
-    AI_TEMPERATURE: float = 0.1
-    AI_AGENT_MODEL_OVERRIDES: str = ""
-    
     # ==================== 周期记账调度配置 ====================
     SCHEDULER_ENABLED: bool = True
     SCHEDULER_HOUR: int = 12  # 执行时间（小时，24小时制）
@@ -87,8 +72,6 @@ class Settings(BaseSettings):
             object.__setattr__(self, 'LEDGER_FILE', (PROJECT_ROOT / self.LEDGER_FILE).resolve())
         if not self.DATABASE_FILE.is_absolute():
             object.__setattr__(self, 'DATABASE_FILE', (PROJECT_ROOT / self.DATABASE_FILE).resolve())
-        if not self.AI_CHECKPOINT_DB.is_absolute():
-            object.__setattr__(self, 'AI_CHECKPOINT_DB', (PROJECT_ROOT / self.AI_CHECKPOINT_DB).resolve())
         if not self.LOG_DIR.is_absolute():
             object.__setattr__(self, 'LOG_DIR', (PROJECT_ROOT / self.LOG_DIR).resolve())
         return self
@@ -108,7 +91,6 @@ class Settings(BaseSettings):
         """确保所有必要的目录存在"""
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.LEDGER_FILE.parent.mkdir(parents=True, exist_ok=True)
-        self.AI_CHECKPOINT_DB.parent.mkdir(parents=True, exist_ok=True)
         self.LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 

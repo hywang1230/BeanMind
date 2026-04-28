@@ -4,9 +4,6 @@
       <!-- 顶部标题 -->
       <div class="page-header">
         <h1>流水</h1>
-        <f7-button small outline @click="openAIContext" class="header-ai-btn">
-          AI
-        </f7-button>
       </div>
 
       <!-- 筛选器 -->
@@ -505,18 +502,6 @@ function navigateToAdd() {
   router.push('/transactions/add')
 }
 
-function openAIContext() {
-  router.push({
-    path: '/ai',
-    query: {
-      prompt: '分析一下当前流水筛选结果，重点说明收支趋势和异常项目',
-      source_page: '/transactions',
-      start_date: dateRange.value.start,
-      end_date: dateRange.value.end,
-    }
-  })
-}
-
 function viewTransaction(transaction: Transaction) {
   // 保存当前滚动位置
   saveScrollPosition()
@@ -805,10 +790,6 @@ onUnmounted(() => {
   color: var(--text-primary);
   margin: 0;
   letter-spacing: -0.4px;
-}
-
-.header-ai-btn {
-  flex-shrink: 0;
 }
 
 /* 筛选区域 */

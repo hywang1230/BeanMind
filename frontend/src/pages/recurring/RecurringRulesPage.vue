@@ -8,9 +8,6 @@
       </f7-nav-left>
       <f7-nav-title>周期记账</f7-nav-title>
       <f7-nav-right>
-        <f7-link @click="openAIContext">
-          <f7-icon ios="f7:sparkles" md="material:auto_awesome" />
-        </f7-link>
         <f7-link @click="goToAddRule">
           <f7-icon ios="f7:plus" md="material:add" />
         </f7-link>
@@ -189,19 +186,6 @@ const weekdays = [
   { value: 6, label: '周六' },
   { value: 7, label: '周日' }
 ]
-
-function openAIContext() {
-  router.push({
-    path: '/ai',
-    query: {
-      prompt: selectedRule.value
-        ? `解释一下周期规则「${selectedRule.value.name}」并检查是否需要调整`
-        : '解释一下当前周期规则设置，并给出优化建议',
-      source_page: '/recurring',
-      selected_entity_id: selectedRule.value?.id,
-    }
-  })
-}
 
 function formatFrequency(rule: RecurringRule): string {
   const frequencies: Record<string, string> = {

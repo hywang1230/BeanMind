@@ -7,11 +7,6 @@
           <span></span>
         </f7-link>
       </template>
-      <template #right>
-        <f7-link @click="openAIContext">
-          <f7-icon f7="sparkles"></f7-icon>
-        </f7-link>
-      </template>
     </f7-navbar>
 
     <div class="income-statement-content">
@@ -163,18 +158,6 @@ function goBack() {
   // 返回时清除缓存
   sessionStorage.removeItem(STATE_CACHE_KEY)
   router.back()
-}
-
-function openAIContext() {
-  router.push({
-    path: '/ai',
-    query: {
-      prompt: '解释一下当前利润表，重点说明收入、支出和净利润变化',
-      source_page: '/reports/income-statement',
-      start_date: startDate.value,
-      end_date: endDate.value,
-    }
-  })
 }
 
 // 保存页面状态

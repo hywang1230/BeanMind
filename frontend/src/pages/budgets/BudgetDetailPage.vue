@@ -8,9 +8,6 @@
             </f7-nav-left>
             <f7-nav-title>{{ budget?.name || '预算详情' }}</f7-nav-title>
             <f7-nav-right>
-                <f7-link @click="openAIContext">
-                    <f7-icon ios="f7:sparkles" md="material:auto_awesome" />
-                </f7-link>
                 <f7-link @click="navigateToEdit">
                     <f7-icon ios="f7:pencil" md="material:edit" />
                 </f7-link>
@@ -294,21 +291,6 @@ function navigateToEdit() {
     if (budget.value) {
         router.push(`/budgets/${budget.value.id}/edit`)
     }
-}
-
-function openAIContext() {
-    router.push({
-        path: '/ai',
-        query: {
-            prompt: budget.value
-                ? `解释一下预算「${budget.value.name}」的执行情况，并给出后续建议`
-                : '解释一下当前预算执行情况',
-            source_page: route.path,
-            selected_entity_id: budget.value?.id,
-            start_date: budget.value?.start_date,
-            end_date: budget.value?.end_date || '',
-        }
-    })
 }
 
 function navigateToCycles() {

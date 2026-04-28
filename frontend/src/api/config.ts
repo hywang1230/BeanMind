@@ -2,7 +2,6 @@ import apiClient from './client'
 
 export interface AppConfig {
     auth_mode: 'none' | 'single_user' | 'multi_user'
-    ai_enabled: boolean
     backup_provider: string
 }
 

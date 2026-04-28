@@ -8,9 +8,6 @@
       </f7-nav-left>
       <f7-nav-title>预算管理</f7-nav-title>
       <f7-nav-right>
-        <f7-link @click="openAIContext">
-          <f7-icon ios="f7:sparkles" md="material:auto_awesome" />
-        </f7-link>
         <f7-link @click="navigateToCreate">
           <f7-icon ios="f7:plus" md="material:add" />
         </f7-link>
@@ -203,16 +200,6 @@ function navigateToCreate() {
 
 function goBack() {
   router.back()
-}
-
-function openAIContext() {
-  router.push({
-    path: '/ai',
-    query: {
-      prompt: '总结一下当前预算执行情况，并给出预算调整建议',
-      source_page: '/budgets',
-    }
-  })
 }
 
 onMounted(() => {

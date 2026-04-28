@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .account_service import AccountApplicationService
-    from .ai_service import AIApplicationService
     from .auth_service import AuthApplicationService
     from .budget_service import BudgetApplicationService
     from .transaction_service import TransactionApplicationService
@@ -15,7 +14,6 @@ __all__ = [
     "AccountApplicationService",
     "AuthApplicationService",
     "TransactionApplicationService",
-    "AIApplicationService",
     "BudgetApplicationService",
 ]
 
@@ -33,10 +31,6 @@ def __getattr__(name: str):
         from .transaction_service import TransactionApplicationService
 
         return TransactionApplicationService
-    if name == "AIApplicationService":
-        from .ai_service import AIApplicationService
-
-        return AIApplicationService
     if name == "BudgetApplicationService":
         from .budget_service import BudgetApplicationService
 

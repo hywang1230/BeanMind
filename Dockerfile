@@ -35,9 +35,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/home/app/project/.venv/bin:/root/.local/bin:$PATH" \
     TZ=Asia/Shanghai
 
-# 使用更深的目录结构以满足 AgentUniverse 对 parents[1] 的要求
-# AgentUniverse 使用 current_work_directory.parents[1] 获取项目根路径
-# /home/app/project 的 parents: [0]=/home/app, [1]=/home, [2]=/
 WORKDIR /home/app/project
 
 # 安装系统依赖

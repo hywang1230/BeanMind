@@ -21,6 +21,11 @@ frontend/.nvmrc
 .cursor/
 CLAUDE.md
 .claude
+.agents/
+.specify/
+AGENTS.md
+specs/
+beanmind.egg-info/
 
 
 # Data
