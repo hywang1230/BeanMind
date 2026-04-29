@@ -10,7 +10,6 @@ BeanMind 是一个功能完整的个人记账软件，提供：
 - 💰 智能预算管理
 - 🔄 周期任务自动化
 - 📊 数据分析与可视化
-- 🤖 AI 财务助手
 - 💾 可插拔的数据备份
 
 ## 技术栈
@@ -54,6 +53,9 @@ BeanMind/
 ### 方式一：一键启动（推荐）
 
 ```bash
+# 首次使用前，先安装 uv
+# https://docs.astral.sh/uv/
+
 # 首次运行会自动：
 # - 检查并创建虚拟环境
 # - 安装后端依赖
@@ -73,17 +75,14 @@ BeanMind/
 如果你有现有的 Beancount 账本文件，可以使用同步脚本将其导入数据库：
 
 ```bash
-# 激活虚拟环境
-source venv/bin/activate
-
 # 查看同步摘要
-python scripts/sync_beancount.py --summary-only
+uv run python scripts/sync_beancount.py --summary-only
 
 # 执行同步（首次或清除后重新同步）
-python scripts/sync_beancount.py --clear
+uv run python scripts/sync_beancount.py --clear
 
 # 增量同步（不清除现有数据）
-python scripts/sync_beancount.py
+uv run python scripts/sync_beancount.py
 ```
 
 同步脚本会读取 `data/ledger/main.beancount` 中的账本数据，并将交易元数据写入 SQLite 数据库。
@@ -99,17 +98,17 @@ python scripts/sync_beancount.py
 **后端**：
 
 ```bash
-# 创建并激活虚拟环境
-python3 -m venv venv
-source venv/bin/activate
-
-# 安装依赖
-pip install -r requirements.txt
+# 安装 uv 后同步依赖
+uv sync --dev
 
 # 启动服务
-cd backend
-uvicorn main:app --reload
+uv run uvicorn backend.main:app --reload
 ```
+
+说明：
+
+- Python 依赖以 `pyproject.toml` 和 `uv.lock` 为准。
+- 不再使用 `requirements.txt`。
 
 **前端**：
 

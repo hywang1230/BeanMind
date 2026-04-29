@@ -35,8 +35,6 @@ services:
       - GITHUB_BRANCH=${GITHUB_BRANCH:-main}
       - GITHUB_SYNC_AUTO_ENABLED=${GITHUB_SYNC_AUTO_ENABLED:-false}
       - GITHUB_SYNC_AUTO_INTERVAL=${GITHUB_SYNC_AUTO_INTERVAL:-300}
-      # AI 配置
-      - AI_ENABLED=${AI_ENABLED:-false}
       # 周期记账调度配置
       - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-true}
       - SCHEDULER_HOUR=${SCHEDULER_HOUR:-12}
@@ -61,4 +59,3 @@ services:
 # volumes:
 #   beanmind-data:
 #   beanmind-logs:
-

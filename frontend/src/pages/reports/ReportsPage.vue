@@ -47,6 +47,24 @@
             </svg>
           </div>
         </div>
+
+        <div class="report-card" @click="goToMonthlyReport">
+          <div class="report-icon monthly-report-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
+              <path
+                d="M7 2v2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2H7zm12 8H5v8h14v-8zm-9 2h2v4h-2v-4zm4-1h2v5h-2v-5z" />
+            </svg>
+          </div>
+          <div class="report-info">
+            <h3 class="report-title">AI 月报</h3>
+            <p class="report-desc">按月份生成总结、指标、异常和建议</p>
+          </div>
+          <div class="report-arrow">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
+            </svg>
+          </div>
+        </div>
       </div>
 
       <!-- 报表说明 -->
@@ -59,6 +77,10 @@
         <div class="help-item">
           <span class="help-label">利润表</span>
           <span class="help-text">反映某一会计期间收入和支出情况的动态报表，用于分析盈利能力。净利润 = 收入 - 支出</span>
+        </div>
+        <div class="help-item">
+          <span class="help-label">AI 月报</span>
+          <span class="help-text">基于账本数据生成月度总结、结构分析、异常提醒和下月建议，支持重新生成</span>
         </div>
         <div class="help-item">
           <span class="help-label">多币种支持</span>
@@ -86,6 +108,11 @@ function goToBalanceSheet() {
 function goToIncomeStatement() {
   router.push('/reports/income-statement')
 }
+
+function goToMonthlyReport() {
+  router.push('/reports/monthly-report')
+}
+
 </script>
 
 <style scoped>
@@ -137,6 +164,11 @@ function goToIncomeStatement() {
 
 .income-statement-icon {
   background: linear-gradient(135deg, #007aff 0%, #0066d6 100%);
+  color: #fff;
+}
+
+.monthly-report-icon {
+  background: linear-gradient(135deg, #ff9500 0%, #ff7a00 100%);
   color: #fff;
 }
 

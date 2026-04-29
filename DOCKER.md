@@ -127,7 +127,6 @@ docker-compose up -d
 | `SINGLE_USER_PASSWORD` | `changeme` | 单用户模式密码 |
 | `JWT_SECRET_KEY` | - | JWT 密钥（**必须修改**） |
 | `JWT_EXPIRATION_HOURS` | `24` | JWT 过期时间（小时） |
-| `AI_ENABLED` | `false` | 是否启用 AI 功能 |
 | `DEBUG` | `false` | 调试模式 |
 
 ## 本地构建
@@ -141,6 +140,11 @@ docker compose build
 # 或直接构建后运行
 docker compose up -d --build
 ```
+
+说明：
+
+- Docker 镜像中的 Python 依赖已改为使用 `uv` 基于 `pyproject.toml` 和 `uv.lock` 安装。
+- 本地如果要运行后端，也应优先使用 `uv sync` 和 `uv run`，不要再使用 `pip install -r requirements.txt`。
 
 ## 常用命令
 

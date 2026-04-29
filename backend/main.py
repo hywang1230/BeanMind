@@ -13,7 +13,7 @@ load_dotenv()
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from backend.config import settings
 
 # ==================== 配置日志系统（最早执行） ====================
@@ -31,44 +31,108 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
+    from backend.infrastructure.persistence.init_db import init_database
+
+    init_database(str(settings.DATABASE_FILE))
     
     # 1. 周期记账调度器
     if settings.SCHEDULER_ENABLED:
-        from backend.infrastructure.scheduler import recurring_scheduler
-        
-        recurring_scheduler.start()
-        recurring_scheduler.add_recurring_job(
-            hour=settings.SCHEDULER_HOUR,
-            minute=settings.SCHEDULER_MINUTE,
-            timezone=settings.SCHEDULER_TIMEZONE,
-        )
-        logger.info(
-            f"周期记账调度器已启动: 每天 {settings.SCHEDULER_HOUR:02d}:{settings.SCHEDULER_MINUTE:02d} "
-            f"({settings.SCHEDULER_TIMEZONE}) 执行"
-        )
+        try:
+            from backend.infrastructure.scheduler.recurring_scheduler import recurring_scheduler
+        except ModuleNotFoundError as exc:
+            if exc.name == "apscheduler":
+                logger.warning("未安装 apscheduler，跳过周期记账调度器启动")
+            else:
+                raise
+        else:
+            recurring_scheduler.start()
+            recurring_scheduler.add_recurring_job(
+                hour=settings.SCHEDULER_HOUR,
+                minute=settings.SCHEDULER_MINUTE,
+                timezone=settings.SCHEDULER_TIMEZONE,
+            )
+            logger.info(
+                f"周期记账调度器已启动: 每天 {settings.SCHEDULER_HOUR:02d}:{settings.SCHEDULER_MINUTE:02d} "
+                f"({settings.SCHEDULER_TIMEZONE}) 执行"
+            )
     
     # 2. GitHub 自动同步调度器
     if settings.GITHUB_SYNC_AUTO_ENABLED:
-        from backend.infrastructure.scheduler import sync_scheduler
-        
-        sync_scheduler.start()
-        sync_scheduler.add_sync_job(interval_seconds=settings.GITHUB_SYNC_AUTO_INTERVAL)
-        logger.info(
-            f"GitHub 自动同步调度器已启动: 每 {settings.GITHUB_SYNC_AUTO_INTERVAL} 秒执行"
-        )
+        try:
+            from backend.infrastructure.scheduler.sync_scheduler import sync_scheduler
+        except ModuleNotFoundError as exc:
+            if exc.name == "apscheduler":
+                logger.warning("未安装 apscheduler，跳过 GitHub 自动同步调度器启动")
+            else:
+                raise
+        else:
+            sync_scheduler.start()
+            sync_scheduler.add_sync_job(interval_seconds=settings.GITHUB_SYNC_AUTO_INTERVAL)
+            logger.info(
+                f"GitHub 自动同步调度器已启动: 每 {settings.GITHUB_SYNC_AUTO_INTERVAL} 秒执行"
+            )
+
+    # 3. 月报调度器
+    if settings.MONTHLY_REPORT_AUTO_ENABLED:
+        try:
+            from backend.infrastructure.scheduler.monthly_report_scheduler import (
+                monthly_report_scheduler,
+            )
+        except ModuleNotFoundError as exc:
+            if exc.name in {"apscheduler", "langgraph"}:
+                logger.warning("未安装月报调度所需依赖，跳过月报调度器启动")
+            else:
+                raise
+        else:
+            monthly_report_scheduler.start()
+            monthly_report_scheduler.add_monthly_job(
+                day=settings.MONTHLY_REPORT_SCHEDULER_DAY,
+                hour=settings.MONTHLY_REPORT_SCHEDULER_HOUR,
+                minute=settings.MONTHLY_REPORT_SCHEDULER_MINUTE,
+                timezone=settings.SCHEDULER_TIMEZONE,
+            )
+            logger.info(
+                "月报调度器已启动: 每月 %s 日 %02d:%02d (%s) 执行",
+                settings.MONTHLY_REPORT_SCHEDULER_DAY,
+                settings.MONTHLY_REPORT_SCHEDULER_HOUR,
+                settings.MONTHLY_REPORT_SCHEDULER_MINUTE,
+                settings.SCHEDULER_TIMEZONE,
+            )
     
     yield
     
     # 关闭时
     if settings.SCHEDULER_ENABLED:
-        from backend.infrastructure.scheduler import recurring_scheduler
-        recurring_scheduler.shutdown()
-        logger.info("周期记账调度器已关闭")
+        try:
+            from backend.infrastructure.scheduler.recurring_scheduler import recurring_scheduler
+        except ModuleNotFoundError as exc:
+            if exc.name != "apscheduler":
+                raise
+        else:
+            recurring_scheduler.shutdown()
+            logger.info("周期记账调度器已关闭")
     
     if settings.GITHUB_SYNC_AUTO_ENABLED:
-        from backend.infrastructure.scheduler import sync_scheduler
-        sync_scheduler.shutdown()
-        logger.info("GitHub 自动同步调度器已关闭")
+        try:
+            from backend.infrastructure.scheduler.sync_scheduler import sync_scheduler
+        except ModuleNotFoundError as exc:
+            if exc.name != "apscheduler":
+                raise
+        else:
+            sync_scheduler.shutdown()
+            logger.info("GitHub 自动同步调度器已关闭")
+
+    if settings.MONTHLY_REPORT_AUTO_ENABLED:
+        try:
+            from backend.infrastructure.scheduler.monthly_report_scheduler import (
+                monthly_report_scheduler,
+            )
+        except ModuleNotFoundError as exc:
+            if exc.name not in {"apscheduler", "langgraph"}:
+                raise
+        else:
+            monthly_report_scheduler.shutdown()
+            logger.info("月报调度器已关闭")
 
 
 app = FastAPI(
@@ -95,22 +159,22 @@ from backend.interfaces.api import account as account_api
 from backend.interfaces.api import transaction as transaction_api
 from backend.interfaces.api import statistics as statistics_api
 from backend.interfaces.api import recurring as recurring_api
-from backend.interfaces.api import ai as ai_api
 from backend.interfaces.api import reports as reports_api
 from backend.interfaces.api import exchange_rate as exchange_rate_api
 from backend.interfaces.api import budget as budget_api
 from backend.interfaces.api import sync as sync_api
+from backend.interfaces.api import monthly_report as monthly_report_api
 
 app.include_router(auth_api.router)
 app.include_router(account_api.router)
 app.include_router(transaction_api.router)
 app.include_router(statistics_api.router)
 app.include_router(recurring_api.router)
-app.include_router(ai_api.router)
 app.include_router(reports_api.router)
 app.include_router(exchange_rate_api.router)
 app.include_router(budget_api.router)
 app.include_router(sync_api.router)
+app.include_router(monthly_report_api.router)
 
 
 @app.get("/api")
@@ -135,7 +199,6 @@ def get_config():
     """获取公开配置信息（不包含敏感信息）"""
     return {
         "auth_mode": settings.AUTH_MODE,
-        "ai_enabled": settings.AI_ENABLED,
         "github_sync_enabled": bool(settings.GITHUB_TOKEN and settings.GITHUB_REPO),
     }
 
@@ -274,7 +337,7 @@ if FRONTEND_DIST_DIR.exists():
         """服务前端 SPA 应用"""
         # 如果路径以 /api 开头，说明是 API 请求但未匹配，返回 404
         if path.startswith("api/"):
-            return {"detail": "Not Found"}
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
         
         # 尝试返回请求的静态文件
         file_path = FRONTEND_DIST_DIR / path
@@ -286,7 +349,7 @@ if FRONTEND_DIST_DIR.exists():
         if index_path.exists():
             return FileResponse(index_path)
         
-        return {"detail": "Frontend not built"}
+        return JSONResponse(status_code=404, content={"detail": "Frontend not built"})
 else:
     logger.info("前端静态文件目录不存在，跳过静态文件服务配置（开发模式）")
 
@@ -299,4 +362,3 @@ if __name__ == "__main__":
         port=settings.API_PORT,
         reload=settings.DEBUG,
     )
-

@@ -32,11 +32,9 @@ FROM python:3.11-slim AS production
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/home/app/project \
+    PATH="/home/app/project/.venv/bin:/root/.local/bin:$PATH" \
     TZ=Asia/Shanghai
 
-# 使用更深的目录结构以满足 AgentUniverse 对 parents[1] 的要求
-# AgentUniverse 使用 current_work_directory.parents[1] 获取项目根路径
-# /home/app/project 的 parents: [0]=/home/app, [1]=/home, [2]=/
 WORKDIR /home/app/project
 
 # 安装系统依赖
@@ -46,15 +44,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# 复制 Python 依赖文件
-COPY requirements.txt ./
+# 安装 uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt
+# 复制 Python 项目文件
+COPY pyproject.toml ./
+COPY uv.lock ./
+
+# 使用 uv 安装 Python 依赖
+RUN uv sync --frozen --no-dev --no-install-project
 
 # 复制后端代码
 COPY backend/ ./backend/
-COPY pyproject.toml ./
 
 # 从前端构建阶段复制构建产物
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist

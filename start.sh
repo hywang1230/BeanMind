@@ -121,26 +121,27 @@ log_success "npm 版本: $NPM_VERSION"
 # ==================== 2. Python 虚拟环境 ====================
 log_info "步骤 2/6: 检查 Python 虚拟环境..."
 
-if [ ! -d "venv" ]; then
+UV_BIN="${HOME}/.local/bin/uv"
+if command_exists uv; then
+    UV_BIN="uv"
+elif [ ! -x "$UV_BIN" ]; then
+    log_error "uv 未安装！请先安装 uv: https://docs.astral.sh/uv/"
+    exit 1
+fi
+
+UV_VERSION=$($UV_BIN --version | awk '{print $2}')
+log_success "uv 版本: $UV_VERSION"
+
+if [ ! -d ".venv" ]; then
     log_warning "虚拟环境不存在，正在创建..."
-    python3 -m venv venv
+    $UV_BIN venv .venv
     log_success "虚拟环境创建完成"
 fi
 
-# 激活虚拟环境
-source venv/bin/activate
-log_success "虚拟环境已激活"
-
-# 检查并安装 Python 依赖
-if [ ! -f "venv/.dependencies_installed" ]; then
-    log_info "正在安装 Python 依赖..."
-    pip install --upgrade pip
-    pip install -r requirements.txt
-    touch venv/.dependencies_installed
-    log_success "Python 依赖安装完成"
-else
-    log_success "Python 依赖已安装"
-fi
+# 同步 Python 依赖
+log_info "正在同步 Python 依赖..."
+$UV_BIN sync --dev
+log_success "Python 依赖同步完成"
 
 # ==================== 3. 前端依赖 ====================
 log_info "步骤 3/6: 检查前端依赖..."
@@ -212,7 +213,7 @@ log_info "步骤 5/6: 启动后端服务..."
 
 # 使用 uvicorn 启动后端（在项目根目录运行）
 log_info "后端服务正在启动，监听端口: 8000"
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload > logs/backend.log 2>&1 &
+$UV_BIN run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload > logs/backend.log 2>&1 &
 BACKEND_PID=$!
 
 # 等待后端启动

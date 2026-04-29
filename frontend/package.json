@@ -17,6 +17,7 @@
   "dependencies": {
     "apexcharts": "^5.3.6",
     "axios": "^1.13.2",
+    "dompurify": "^3.3.3",
     "framework7": "^9.0.2",
     "framework7-icons": "^5.0.5",
     "framework7-vue": "^9.0.2",

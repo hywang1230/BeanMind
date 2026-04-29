@@ -77,6 +77,9 @@ class AccountApplicationService:
         Returns:
             账户 DTO，不存在返回 None
         """
+        reload_method = getattr(self.account_repository, "reload", None)
+        if callable(reload_method):
+            reload_method()
         account = self.account_repository.find_by_name(account_name)
         return self._account_to_dto(account) if account else None
     

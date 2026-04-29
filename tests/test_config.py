@@ -1,5 +1,4 @@
 """配置管理单元测试"""
-import pytest
 from pathlib import Path
 from backend.config import settings, Settings
 

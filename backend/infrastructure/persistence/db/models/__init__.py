@@ -6,6 +6,7 @@ from .budget import Budget, BudgetItem
 from .recurring import RecurringRule, RecurringExecution
 from .backup import BackupHistory
 from .sync_log import SyncLog
+from .monthly_report import MonthlyReport
 
 __all__ = [
     "Base",
@@ -18,6 +19,5 @@ __all__ = [
     "RecurringExecution",
     "BackupHistory",
     "SyncLog",
+    "MonthlyReport",
 ]
-
-

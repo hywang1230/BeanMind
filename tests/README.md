@@ -24,27 +24,27 @@ tests/
 
 或者直接使用pytest：
 ```bash
-pytest tests/ -v
+uv run pytest tests/ -v
 ```
 
 ### 运行特定测试文件
 ```bash
-pytest tests/test_config.py -v
+uv run pytest tests/test_config.py -v
 ```
 
 ### 运行特定测试类
 ```bash
-pytest tests/test_jwt_utils.py::TestJWTUtils -v
+uv run pytest tests/test_jwt_utils.py::TestJWTUtils -v
 ```
 
 ### 运行特定测试方法
 ```bash
-pytest tests/test_jwt_utils.py::TestJWTUtils::test_create_access_token -v
+uv run pytest tests/test_jwt_utils.py::TestJWTUtils::test_create_access_token -v
 ```
 
 ### 查看测试覆盖率
 ```bash
-pytest tests/ --cov=backend --cov-report=html
+uv run pytest tests/ --cov=backend --cov-report=html
 ```
 
 生成的覆盖率报告在 `htmlcov/index.html`

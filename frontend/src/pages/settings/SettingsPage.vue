@@ -5,12 +5,6 @@
     </div>
 
     <f7-list inset strong>
-      <f7-list-item link="#" title="AI 智能助手" @click="navigateTo('/ai')">
-        <template #media>
-          <f7-icon ios="f7:sparkles" md="material:auto_awesome" color="pink"></f7-icon>
-        </template>
-      </f7-list-item>
-
       <f7-list-item link="#" title="报表" @click="navigateTo('/reports')">
         <template #media>
           <f7-icon ios="f7:chart_bar_fill" md="material:bar_chart" color="blue"></f7-icon>
@@ -89,7 +83,7 @@ const router = useRouter();
 const uiStore = useUIStore();
 
 // 应用版本
-const appVersion = ref('1.0.0');
+const appVersion = ref('2.0.0');
 
 // 当前主题
 const currentTheme = ref<ThemeMode>(uiStore.themeMode);

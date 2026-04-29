@@ -15,12 +15,6 @@ const routes: RouteRecordRaw[] = [
         alias: ['/dashboard', '/transactions', '/settings']
     },
     {
-        path: '/ai',
-        name: 'AI',
-        component: () => import('../pages/ai/AIPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
         path: '/reports',
         name: 'Reports',
         component: () => import('../pages/reports/ReportsPage.vue'),
@@ -36,6 +30,12 @@ const routes: RouteRecordRaw[] = [
         path: '/reports/income-statement',
         name: 'IncomeStatement',
         component: () => import('../pages/reports/IncomeStatementPage.vue'),
+        meta: { requiresAuth: true }
+    },
+    {
+        path: '/reports/monthly-report',
+        name: 'MonthlyReport',
+        component: () => import('../pages/reports/MonthlyReportPage.vue'),
         meta: { requiresAuth: true }
     },
     {

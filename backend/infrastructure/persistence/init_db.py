@@ -4,12 +4,93 @@
 或使用: python -m backend.infrastructure.persistence.init_db
 """
 from pathlib import Path
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 from backend.infrastructure.persistence.db.models import (
     Base,
     User,
+    MonthlyReport,
 )
+
+
+def ensure_monthly_report_schema(engine) -> None:
+    """兼容旧版 monthly_reports 表结构。"""
+    inspector = inspect(engine)
+    if "monthly_reports" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("monthly_reports")}
+    expected_columns = {
+        "user_id",
+        "report_month",
+        "status",
+        "model_provider",
+        "model_name",
+        "summary_text",
+        "report_json",
+        "facts_json",
+        "generated_at",
+        "id",
+        "created_at",
+        "updated_at",
+    }
+    if expected_columns.issubset(columns):
+        return
+
+    legacy_columns = {
+        "month",
+        "status",
+        "report_payload",
+        "facts_payload",
+        "generated_at",
+        "id",
+        "created_at",
+        "updated_at",
+    }
+    if not legacy_columns.issubset(columns):
+        raise RuntimeError(
+            "monthly_reports 表结构不兼容，无法自动迁移，请先备份数据库后手动处理。"
+        )
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE monthly_reports RENAME TO monthly_reports_legacy"))
+        MonthlyReport.__table__.create(bind=connection)
+        connection.execute(
+            text(
+                """
+                INSERT INTO monthly_reports (
+                    user_id,
+                    report_month,
+                    status,
+                    model_provider,
+                    model_name,
+                    summary_text,
+                    report_json,
+                    facts_json,
+                    generated_at,
+                    id,
+                    created_at,
+                    updated_at
+                )
+                SELECT
+                    :user_id,
+                    month,
+                    status,
+                    NULL,
+                    NULL,
+                    '',
+                    report_payload,
+                    facts_payload,
+                    COALESCE(generated_at, created_at, CURRENT_TIMESTAMP),
+                    id,
+                    created_at,
+                    updated_at
+                FROM monthly_reports_legacy
+                """
+            ),
+            {"user_id": "default"},
+        )
+        connection.execute(text("DROP TABLE monthly_reports_legacy"))
 
 
 def init_database(db_path: str = "data/beanmind.db"):
@@ -28,6 +109,7 @@ def init_database(db_path: str = "data/beanmind.db"):
     # 创建所有表
     print("Creating all tables...")
     Base.metadata.create_all(engine)
+    ensure_monthly_report_schema(engine)
     print("✅ All tables created successfully!")
     
     # 创建会话

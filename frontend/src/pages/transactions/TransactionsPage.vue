@@ -773,6 +773,9 @@ onUnmounted(() => {
 }
 
 .page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 12px 16px 8px;
   position: sticky;
   top: 0;
