@@ -26,6 +26,8 @@ CLAUDE.md
 AGENTS.md
 specs/
 beanmind.egg-info/
+openspec/
+.codex
 
 
 # Data

@@ -41,6 +41,17 @@ class Settings(BaseSettings):
     SCHEDULER_HOUR: int = 12  # 执行时间（小时，24小时制）
     SCHEDULER_MINUTE: int = 0  # 执行时间（分钟）
     SCHEDULER_TIMEZONE: str = "Asia/Shanghai"  # 时区
+    MONTHLY_REPORT_AUTO_ENABLED: bool = False
+    MONTHLY_REPORT_SCHEDULER_DAY: int = 1
+    MONTHLY_REPORT_SCHEDULER_HOUR: int = 8
+    MONTHLY_REPORT_SCHEDULER_MINUTE: int = 0
+
+    # ==================== LLM 配置 ====================
+    LLM_PROVIDER: str = "openai-compatible"
+    LLM_MODEL_NAME: str = "gpt-4o-mini"
+    LLM_API_KEY: str = ""
+    LLM_BASE_URL: str = ""
+    LLM_TEMPERATURE: float = 0.2
     
     # ==================== 服务器配置 ====================
     API_HOST: str = "0.0.0.0"

@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
+    from backend.infrastructure.persistence.init_db import init_database
+
+    init_database(str(settings.DATABASE_FILE))
     
     # 1. 周期记账调度器
     if settings.SCHEDULER_ENABLED:
@@ -68,6 +71,33 @@ async def lifespan(app: FastAPI):
             logger.info(
                 f"GitHub 自动同步调度器已启动: 每 {settings.GITHUB_SYNC_AUTO_INTERVAL} 秒执行"
             )
+
+    # 3. 月报调度器
+    if settings.MONTHLY_REPORT_AUTO_ENABLED:
+        try:
+            from backend.infrastructure.scheduler.monthly_report_scheduler import (
+                monthly_report_scheduler,
+            )
+        except ModuleNotFoundError as exc:
+            if exc.name in {"apscheduler", "langgraph"}:
+                logger.warning("未安装月报调度所需依赖，跳过月报调度器启动")
+            else:
+                raise
+        else:
+            monthly_report_scheduler.start()
+            monthly_report_scheduler.add_monthly_job(
+                day=settings.MONTHLY_REPORT_SCHEDULER_DAY,
+                hour=settings.MONTHLY_REPORT_SCHEDULER_HOUR,
+                minute=settings.MONTHLY_REPORT_SCHEDULER_MINUTE,
+                timezone=settings.SCHEDULER_TIMEZONE,
+            )
+            logger.info(
+                "月报调度器已启动: 每月 %s 日 %02d:%02d (%s) 执行",
+                settings.MONTHLY_REPORT_SCHEDULER_DAY,
+                settings.MONTHLY_REPORT_SCHEDULER_HOUR,
+                settings.MONTHLY_REPORT_SCHEDULER_MINUTE,
+                settings.SCHEDULER_TIMEZONE,
+            )
     
     yield
     
@@ -91,6 +121,18 @@ async def lifespan(app: FastAPI):
         else:
             sync_scheduler.shutdown()
             logger.info("GitHub 自动同步调度器已关闭")
+
+    if settings.MONTHLY_REPORT_AUTO_ENABLED:
+        try:
+            from backend.infrastructure.scheduler.monthly_report_scheduler import (
+                monthly_report_scheduler,
+            )
+        except ModuleNotFoundError as exc:
+            if exc.name not in {"apscheduler", "langgraph"}:
+                raise
+        else:
+            monthly_report_scheduler.shutdown()
+            logger.info("月报调度器已关闭")
 
 
 app = FastAPI(
@@ -121,6 +163,7 @@ from backend.interfaces.api import reports as reports_api
 from backend.interfaces.api import exchange_rate as exchange_rate_api
 from backend.interfaces.api import budget as budget_api
 from backend.interfaces.api import sync as sync_api
+from backend.interfaces.api import monthly_report as monthly_report_api
 
 app.include_router(auth_api.router)
 app.include_router(account_api.router)
@@ -131,6 +174,7 @@ app.include_router(reports_api.router)
 app.include_router(exchange_rate_api.router)
 app.include_router(budget_api.router)
 app.include_router(sync_api.router)
+app.include_router(monthly_report_api.router)
 
 
 @app.get("/api")

@@ -94,6 +94,23 @@ export type AccountDetailResponse = {
     exchange_rates: Record<string, number>     // 汇率表
 }
 
+export type MonthlyReportResponse = {
+    id: string
+    report_month: string
+    status: string
+    model_provider?: string | null
+    model_name?: string | null
+    summary_text: string
+    report: Record<string, any>
+    facts: Record<string, any>
+    generated_at?: string | null
+}
+
+export type MonthlyReportListResponse = {
+    reports: MonthlyReportResponse[]
+    total: number
+}
+
 export const reportsApi = {
     // 获取资产负债表
     getBalanceSheet(params?: {
@@ -117,6 +134,20 @@ export const reportsApi = {
         end_date?: string     // 结束日期 YYYY-MM-DD
     }): Promise<AccountDetailResponse> {
         return apiClient.get('/api/reports/account-detail', { params })
+    },
+
+    generateMonthlyReport(payload: {
+        report_month: string
+        regenerate?: boolean
+    }): Promise<MonthlyReportResponse> {
+        return apiClient.post('/api/monthly-reports/generate', payload)
+    },
+
+    getMonthlyReport(reportMonth: string): Promise<MonthlyReportResponse> {
+        return apiClient.get(`/api/monthly-reports/${reportMonth}`)
+    },
+
+    listMonthlyReports(limit = 12): Promise<MonthlyReportListResponse> {
+        return apiClient.get('/api/monthly-reports', { params: { limit } })
     }
 }
-

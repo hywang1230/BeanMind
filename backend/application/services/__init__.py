@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from .account_service import AccountApplicationService
     from .auth_service import AuthApplicationService
     from .budget_service import BudgetApplicationService
+    from .monthly_report_service import MonthlyReportApplicationService
     from .transaction_service import TransactionApplicationService
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "AuthApplicationService",
     "TransactionApplicationService",
     "BudgetApplicationService",
+    "MonthlyReportApplicationService",
 ]
 
 
@@ -35,4 +37,8 @@ def __getattr__(name: str):
         from .budget_service import BudgetApplicationService
 
         return BudgetApplicationService
+    if name == "MonthlyReportApplicationService":
+        from .monthly_report_service import MonthlyReportApplicationService
+
+        return MonthlyReportApplicationService
     raise AttributeError(name)
