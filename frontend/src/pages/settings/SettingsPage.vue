@@ -83,7 +83,7 @@ const router = useRouter();
 const uiStore = useUIStore();
 
 // 应用版本
-const appVersion = ref('1.0.0');
+const appVersion = ref('2.0.0');
 
 // 当前主题
 const currentTheme = ref<ThemeMode>(uiStore.themeMode);
