@@ -84,15 +84,7 @@ class MonthlyReportFactsService:
         previous_balances: Optional[Dict[str, Dict[str, Decimal]]],
         window: MonthWindow,
     ) -> Dict[str, Any]:
-        income_total = ZERO
-        expense_total = ZERO
-
-        for transaction in transactions:
-            for posting in transaction.postings:
-                if posting.account.startswith("Income:"):
-                    income_total += abs(posting.amount)
-                elif posting.account.startswith("Expenses:"):
-                    expense_total += abs(posting.amount)
+        income_total, expense_total = self._income_and_expense(transactions)
 
         balance = income_total - expense_total
         savings_rate = self._safe_percentage(balance, income_total)
@@ -342,9 +334,9 @@ class MonthlyReportFactsService:
         for transaction in transactions:
             for posting in transaction.postings:
                 if posting.account.startswith("Income:"):
-                    income_total += abs(posting.amount)
+                    income_total += self._normalized_posting_amount(posting.account, posting.amount)
                 elif posting.account.startswith("Expenses:"):
-                    expense_total += abs(posting.amount)
+                    expense_total += self._normalized_posting_amount(posting.account, posting.amount)
         return self._quantize(income_total), self._quantize(expense_total)
 
     def _expense_category_totals(self, transactions: Sequence[Transaction]) -> Dict[str, Decimal]:
@@ -352,7 +344,10 @@ class MonthlyReportFactsService:
         for transaction in transactions:
             for posting in transaction.postings:
                 if posting.account.startswith("Expenses:"):
-                    totals[self._expense_category(posting.account)] += abs(posting.amount)
+                    totals[self._expense_category(posting.account)] += self._normalized_posting_amount(
+                        posting.account,
+                        posting.amount,
+                    )
         return totals
 
     def _classify_expense_pattern(
@@ -410,6 +405,14 @@ class MonthlyReportFactsService:
         if len(parts) >= 2:
             return parts[1]
         return account_name
+
+    @staticmethod
+    def _normalized_posting_amount(account_name: str, amount: Decimal) -> Decimal:
+        if account_name.startswith("Income:"):
+            return -amount
+        if account_name.startswith("Expenses:"):
+            return amount
+        return ZERO
 
     @staticmethod
     def _transaction_single_side_amount(transaction: Transaction, prefix: str) -> Decimal:

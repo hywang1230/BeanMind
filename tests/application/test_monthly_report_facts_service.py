@@ -92,3 +92,79 @@ def test_build_facts_returns_insufficient_data_for_empty_month():
 
     assert facts["anomalies"][0]["message"] == "无法判断"
     assert facts["investment"]["return"] == "0.00"
+
+
+def test_build_facts_uses_beancount_account_signs_for_month_over_month_change():
+    service = MonthlyReportFactsService()
+
+    current_income = build_transaction(
+        date(2026, 4, 1),
+        "工资",
+        [
+            Posting(account="Assets:Bank", amount=Decimal("8000"), currency="CNY"),
+            Posting(account="Income:Salary", amount=Decimal("-8000"), currency="CNY"),
+        ],
+    )
+    current_income_reversal = build_transaction(
+        date(2026, 4, 2),
+        "退款冲回",
+        [
+            Posting(account="Assets:Bank", amount=Decimal("-500"), currency="CNY"),
+            Posting(account="Income:Salary", amount=Decimal("500"), currency="CNY"),
+        ],
+    )
+    current_expense = build_transaction(
+        date(2026, 4, 3),
+        "餐饮",
+        [
+            Posting(account="Expenses:Food", amount=Decimal("1000"), currency="CNY"),
+            Posting(account="Assets:Bank", amount=Decimal("-1000"), currency="CNY"),
+        ],
+    )
+    current_expense_refund = build_transaction(
+        date(2026, 4, 4),
+        "餐饮退款",
+        [
+            Posting(account="Expenses:Food", amount=Decimal("-200"), currency="CNY"),
+            Posting(account="Assets:Bank", amount=Decimal("200"), currency="CNY"),
+        ],
+    )
+
+    previous_income = build_transaction(
+        date(2026, 3, 1),
+        "工资",
+        [
+            Posting(account="Assets:Bank", amount=Decimal("9000"), currency="CNY"),
+            Posting(account="Income:Salary", amount=Decimal("-9000"), currency="CNY"),
+        ],
+    )
+    previous_expense = build_transaction(
+        date(2026, 3, 2),
+        "餐饮",
+        [
+            Posting(account="Expenses:Food", amount=Decimal("600"), currency="CNY"),
+            Posting(account="Assets:Bank", amount=Decimal("-600"), currency="CNY"),
+        ],
+    )
+
+    facts = service.build_facts(
+        report_month="2026-04",
+        current_transactions=[
+            current_income,
+            current_income_reversal,
+            current_expense,
+            current_expense_refund,
+        ],
+        previous_transactions=[previous_income, previous_expense],
+        recent_average_transactions=[],
+        current_balances={},
+        previous_balances={},
+    )
+
+    assert facts["summary_metrics"]["income"] == "7500.00"
+    assert facts["summary_metrics"]["expense"] == "800.00"
+    assert facts["change_analysis"]["vs_previous_month"]["income_change"] == "-1500.00"
+    assert facts["change_analysis"]["vs_previous_month"]["expense_change"] == "200.00"
+    assert facts["change_analysis"]["vs_previous_month"]["expense_change_rate"] == "33.33"
+    assert facts["change_analysis"]["drivers"][0]["category"] == "Food"
+    assert facts["change_analysis"]["drivers"][0]["change_amount"] == "200.00"
