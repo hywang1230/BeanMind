@@ -39,7 +39,7 @@ def build_facts():
             "one_time_expenses": [],
         },
         "change_analysis": {
-            "vs_previous_month": {"income_change": "0.00", "expense_change": "100.00"},
+            "previous_month": {"income": "1000.00", "expense": "200.00"},
             "vs_recent_average": {"expense_average": "200.00", "expense_change": "100.00"},
             "drivers": [],
         },

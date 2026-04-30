@@ -94,7 +94,7 @@ def test_build_facts_returns_insufficient_data_for_empty_month():
     assert facts["investment"]["return"] == "0.00"
 
 
-def test_build_facts_uses_beancount_account_signs_for_month_over_month_change():
+def test_build_facts_returns_previous_month_income_and_expense_with_beancount_signs():
     service = MonthlyReportFactsService()
 
     current_income = build_transaction(
@@ -163,8 +163,7 @@ def test_build_facts_uses_beancount_account_signs_for_month_over_month_change():
 
     assert facts["summary_metrics"]["income"] == "7500.00"
     assert facts["summary_metrics"]["expense"] == "800.00"
-    assert facts["change_analysis"]["vs_previous_month"]["income_change"] == "-1500.00"
-    assert facts["change_analysis"]["vs_previous_month"]["expense_change"] == "200.00"
-    assert facts["change_analysis"]["vs_previous_month"]["expense_change_rate"] == "33.33"
+    assert facts["change_analysis"]["previous_month"]["income"] == "9000.00"
+    assert facts["change_analysis"]["previous_month"]["expense"] == "600.00"
     assert facts["change_analysis"]["drivers"][0]["category"] == "Food"
     assert facts["change_analysis"]["drivers"][0]["change_amount"] == "200.00"
