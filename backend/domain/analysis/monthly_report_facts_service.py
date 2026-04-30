@@ -208,7 +208,6 @@ class MonthlyReportFactsService:
         spending_structure: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         expense_amounts = []
-        repeated_candidates = defaultdict(list)
         for transaction in transactions:
             expense_total = ZERO
             for posting in transaction.postings:
@@ -216,7 +215,6 @@ class MonthlyReportFactsService:
                     expense_total += abs(posting.amount)
             if expense_total > ZERO:
                 expense_amounts.append((transaction, expense_total))
-                repeated_candidates[(transaction.payee or "", transaction.description or "")].append(transaction)
 
         if not expense_amounts:
             return [{"type": "insufficient_data", "message": "无法判断"}]
@@ -235,19 +233,6 @@ class MonthlyReportFactsService:
                     }
                 )
                 break
-
-        repeated = [
-            key for key, values in repeated_candidates.items()
-            if key != ("", "") and len(values) >= 2
-        ]
-        if repeated:
-            payee, narration = repeated[0]
-            anomalies.append(
-                {
-                    "type": "repeated_transaction",
-                    "message": f"检测到重复交易模式：{payee or narration}",
-                }
-            )
 
         top_categories = spending_structure.get("top_categories", [])
         if top_categories:
