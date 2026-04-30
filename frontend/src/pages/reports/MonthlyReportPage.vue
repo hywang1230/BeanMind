@@ -156,7 +156,6 @@ const monthPickerOpened = ref(false)
 const anomalyLabelMap: Record<string, string> = {
   large_expense: '大额支出',
   category_focus: '支出集中',
-  repeated_transaction: '重复交易',
   insufficient_data: '数据不足'
 }
 const suggestions = computed<string[]>(() => {

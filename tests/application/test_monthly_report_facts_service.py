@@ -74,6 +74,8 @@ def test_build_facts_excludes_transfer_and_tracks_investment():
     assert facts["summary_metrics"]["expense"] == "3000.00"
     assert facts["cash_flow"]["transfer_amount"] == "500.00"
     assert facts["investment"]["net_inflow"] == "2000.00"
+    assert facts["income_structure"]["categories"][0]["category"] == "Salary"
+    assert facts["income_structure"]["categories"][0]["amount"] == "10000.00"
     assert facts["spending_structure"]["top_categories"][0]["category"] == "Housing"
     assert facts["spending_structure"]["fixed_expenses"][0]["category"] == "Housing"
 
@@ -92,6 +94,7 @@ def test_build_facts_returns_insufficient_data_for_empty_month():
 
     assert facts["anomalies"][0]["message"] == "无法判断"
     assert facts["investment"]["return"] == "0.00"
+    assert facts["income_structure"]["categories"] == []
 
 
 def test_build_facts_returns_previous_month_income_and_expense_with_beancount_signs():

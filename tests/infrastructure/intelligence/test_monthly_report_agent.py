@@ -38,6 +38,9 @@ def build_facts():
             "variable_expenses": [{"category": "餐饮", "amount": "300.00"}],
             "one_time_expenses": [],
         },
+        "income_structure": {
+            "categories": [{"category": "工资", "amount": "1000.00"}],
+        },
         "change_analysis": {
             "previous_month": {"income": "1000.00", "expense": "200.00"},
             "vs_recent_average": {"expense_average": "200.00", "expense_change": "100.00"},
@@ -83,5 +86,6 @@ def test_monthly_report_agent_invokes_llm_and_merges_facts(monkeypatch):
     assert fake_model.messages is not None
     assert report["monthly_summary"] == "4 月支出集中在餐饮，整体仍有结余，财务表现稳定。"
     assert report["next_month_suggestions"] == ["减少餐饮随手消费", "继续保持结余", "复盘异常支出"]
+    assert report["income_structure"]["categories"][0]["category"] == "工资"
     assert report["core_metrics"]["income"] == "1000.00"
     assert report["spending_structure"]["top_categories"][0]["category"] == "餐饮"

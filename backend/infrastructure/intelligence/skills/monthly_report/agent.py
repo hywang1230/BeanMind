@@ -107,6 +107,7 @@ class MonthlyReportAgent:
             "monthly_summary": summary.strip(),
             "core_metrics": facts["summary_metrics"],
             "spending_structure": facts["spending_structure"],
+            "income_structure": facts["income_structure"],
             "change_analysis": facts["change_analysis"],
             "anomalies": facts["anomalies"],
             "cash_flow": facts["cash_flow"],

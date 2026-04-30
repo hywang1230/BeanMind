@@ -44,6 +44,7 @@ class MonthlyReportFactsService:
         window = self.parse_month(report_month)
         summary = self._calculate_summary(current_transactions, current_balances, previous_balances, window)
         spending_structure = self._calculate_spending_structure(current_transactions)
+        income_structure = self._calculate_income_structure(current_transactions)
         change_analysis = self._calculate_change_analysis(
             current_transactions,
             previous_transactions,
@@ -62,6 +63,7 @@ class MonthlyReportFactsService:
             },
             "summary_metrics": summary,
             "spending_structure": spending_structure,
+            "income_structure": income_structure,
             "change_analysis": change_analysis,
             "anomalies": anomalies,
             "cash_flow": cash_flow,
@@ -157,6 +159,22 @@ class MonthlyReportFactsService:
             "one_time_expenses": self._serialize_amount_map(pattern_groups["one_time"]),
         }
 
+    def _calculate_income_structure(self, transactions: Sequence[Transaction]) -> Dict[str, Any]:
+        category_totals: Dict[str, Decimal] = defaultdict(lambda: ZERO)
+
+        for transaction in transactions:
+            for posting in transaction.postings:
+                if not posting.account.startswith("Income:"):
+                    continue
+                amount = self._normalized_posting_amount(posting.account, posting.amount)
+                if amount == ZERO:
+                    continue
+                category_totals[self._income_category(posting.account)] += amount
+
+        return {
+            "categories": self._serialize_amount_map(category_totals),
+        }
+
     def _calculate_change_analysis(
         self,
         current_transactions: Sequence[Transaction],
@@ -190,7 +208,6 @@ class MonthlyReportFactsService:
         spending_structure: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         expense_amounts = []
-        repeated_candidates = defaultdict(list)
         for transaction in transactions:
             expense_total = ZERO
             for posting in transaction.postings:
@@ -198,7 +215,6 @@ class MonthlyReportFactsService:
                     expense_total += abs(posting.amount)
             if expense_total > ZERO:
                 expense_amounts.append((transaction, expense_total))
-                repeated_candidates[(transaction.payee or "", transaction.description or "")].append(transaction)
 
         if not expense_amounts:
             return [{"type": "insufficient_data", "message": "无法判断"}]
@@ -217,19 +233,6 @@ class MonthlyReportFactsService:
                     }
                 )
                 break
-
-        repeated = [
-            key for key, values in repeated_candidates.items()
-            if key != ("", "") and len(values) >= 2
-        ]
-        if repeated:
-            payee, narration = repeated[0]
-            anomalies.append(
-                {
-                    "type": "repeated_transaction",
-                    "message": f"检测到重复交易模式：{payee or narration}",
-                }
-            )
 
         top_categories = spending_structure.get("top_categories", [])
         if top_categories:
@@ -396,6 +399,13 @@ class MonthlyReportFactsService:
 
     @staticmethod
     def _expense_category(account_name: str) -> str:
+        parts = account_name.split(":")
+        if len(parts) >= 2:
+            return parts[1]
+        return account_name
+
+    @staticmethod
+    def _income_category(account_name: str) -> str:
         parts = account_name.split(":")
         if len(parts) >= 2:
             return parts[1]
