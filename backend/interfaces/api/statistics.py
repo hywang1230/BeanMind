@@ -240,15 +240,11 @@ async def get_monthly_trend(
     
     返回最近 N 个月的收入、支出、净收入趋势（统一转换为 CNY）
     
-    性能优化：一次性获取汇率，避免每月重复获取
+    使用各月截止日可用的最新汇率，将历史月份统一转换为账本主币种
     """
     result = []
     now = datetime.now()
-    
-    # 性能优化：一次性获取当前汇率（用于所有月份的转换）
-    # 对于历史趋势，使用当前汇率是合理的近似
-    exchange_rates = get_exchange_rates()
-    
+
     # 倒序遍历最近 N 个月
     for i in range(months - 1, -1, -1):
         # 计算目标月份
@@ -266,6 +262,8 @@ async def get_monthly_trend(
             end_of_month = datetime(target_year + 1, 1, 1) - timedelta(days=1)
         else:
             end_of_month = datetime(target_year, target_month + 1, 1) - timedelta(days=1)
+
+        exchange_rates = get_exchange_rates(as_of_date=end_of_month)
         
         start_date = start_of_month.strftime("%Y-%m-%d")
         end_date = end_of_month.strftime("%Y-%m-%d")

@@ -44,6 +44,7 @@ class MonthlyReportFactsService:
         window = self.parse_month(report_month)
         summary = self._calculate_summary(current_transactions, current_balances, previous_balances, window)
         spending_structure = self._calculate_spending_structure(current_transactions)
+        income_structure = self._calculate_income_structure(current_transactions)
         change_analysis = self._calculate_change_analysis(
             current_transactions,
             previous_transactions,
@@ -62,6 +63,7 @@ class MonthlyReportFactsService:
             },
             "summary_metrics": summary,
             "spending_structure": spending_structure,
+            "income_structure": income_structure,
             "change_analysis": change_analysis,
             "anomalies": anomalies,
             "cash_flow": cash_flow,
@@ -155,6 +157,22 @@ class MonthlyReportFactsService:
             "fixed_expenses": self._serialize_amount_map(pattern_groups["fixed"]),
             "variable_expenses": self._serialize_amount_map(pattern_groups["variable"]),
             "one_time_expenses": self._serialize_amount_map(pattern_groups["one_time"]),
+        }
+
+    def _calculate_income_structure(self, transactions: Sequence[Transaction]) -> Dict[str, Any]:
+        category_totals: Dict[str, Decimal] = defaultdict(lambda: ZERO)
+
+        for transaction in transactions:
+            for posting in transaction.postings:
+                if not posting.account.startswith("Income:"):
+                    continue
+                amount = self._normalized_posting_amount(posting.account, posting.amount)
+                if amount == ZERO:
+                    continue
+                category_totals[self._income_category(posting.account)] += amount
+
+        return {
+            "categories": self._serialize_amount_map(category_totals),
         }
 
     def _calculate_change_analysis(
@@ -396,6 +414,13 @@ class MonthlyReportFactsService:
 
     @staticmethod
     def _expense_category(account_name: str) -> str:
+        parts = account_name.split(":")
+        if len(parts) >= 2:
+            return parts[1]
+        return account_name
+
+    @staticmethod
+    def _income_category(account_name: str) -> str:
         parts = account_name.split(":")
         if len(parts) >= 2:
             return parts[1]

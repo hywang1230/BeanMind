@@ -3,9 +3,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal
 from typing import Any, Dict, Optional
 
 from backend.domain.analysis.monthly_report_facts_service import MonthlyReportFactsService
+from backend.domain.transaction.entities.posting import Posting
+from backend.domain.transaction.entities.transaction import Transaction
 from backend.infrastructure.intelligence.skills.monthly_report import (
     MonthlyReportAgent,
     MonthlyReportAgentError,
@@ -156,6 +159,14 @@ class MonthlyReportApplicationService:
             previous_window.start_date,
             previous_window.end_date,
         )
+        current_transactions = self._normalize_transactions_to_operating_currency(
+            current_transactions,
+            as_of_date=window.end_date,
+        )
+        previous_transactions = self._normalize_transactions_to_operating_currency(
+            previous_transactions,
+            as_of_date=previous_window.end_date,
+        )
 
         recent_average_transactions = []
         cursor_end = previous_month_end
@@ -163,9 +174,12 @@ class MonthlyReportApplicationService:
             month_str = cursor_end.strftime("%Y-%m")
             historical_window = MonthlyReportFactsService.parse_month(month_str)
             recent_average_transactions.append(
-                self._transaction_repository.find_by_date_range(
-                    historical_window.start_date,
-                    historical_window.end_date,
+                self._normalize_transactions_to_operating_currency(
+                    self._transaction_repository.find_by_date_range(
+                        historical_window.start_date,
+                        historical_window.end_date,
+                    ),
+                    as_of_date=historical_window.end_date,
                 )
             )
             cursor_end = historical_window.start_date - timedelta(days=1)
@@ -183,6 +197,53 @@ class MonthlyReportApplicationService:
             current_balances=current_balances,
             previous_balances=previous_balances,
         )
+
+    def _normalize_transactions_to_operating_currency(
+        self,
+        transactions: list[Transaction],
+        as_of_date: date,
+    ) -> list[Transaction]:
+        operating_currency = self._beancount_service.get_operating_currency()
+        exchange_rates = self._beancount_service.get_all_exchange_rates(
+            to_currency=operating_currency,
+            as_of_date=as_of_date,
+        )
+
+        normalized_transactions = []
+        for transaction in transactions:
+            normalized_postings = []
+            for posting in transaction.postings:
+                rate = exchange_rates.get(posting.currency, Decimal("1"))
+                normalized_postings.append(
+                    Posting(
+                        account=posting.account,
+                        amount=posting.amount * rate,
+                        currency=operating_currency,
+                        cost=posting.cost,
+                        cost_currency=posting.cost_currency,
+                        price=posting.price,
+                        price_currency=posting.price_currency,
+                        flag=posting.flag,
+                        meta=dict(posting.meta),
+                    )
+                )
+
+            normalized_transactions.append(
+                Transaction(
+                    date=transaction.date,
+                    description=transaction.description,
+                    payee=transaction.payee,
+                    postings=normalized_postings,
+                    flag=transaction.flag,
+                    tags=set(transaction.tags),
+                    links=set(transaction.links),
+                    meta=dict(transaction.meta),
+                    id=transaction.id,
+                    created_at=transaction.created_at,
+                    updated_at=transaction.updated_at,
+                )
+            )
+        return normalized_transactions
 
     def _build_response(self, record) -> Dict[str, Any]:
         report_payload = MonthlyReportRepository.deserialize_json(record.report_json)
