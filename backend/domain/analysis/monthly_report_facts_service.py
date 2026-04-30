@@ -171,14 +171,9 @@ class MonthlyReportFactsService:
 
         category_changes = self._category_change_breakdown(current_transactions, previous_transactions)
         return {
-            "vs_previous_month": {
-                "income_change": self._decimal_str(current_income - previous_income),
-                "expense_change": self._decimal_str(current_expense - previous_expense),
-                "expense_change_rate": self._decimal_str(
-                    self._safe_percentage(current_expense - previous_expense, previous_expense)
-                )
-                if previous_expense != ZERO
-                else None,
+            "previous_month": {
+                "income": self._decimal_str(previous_income),
+                "expense": self._decimal_str(previous_expense),
             },
             "vs_recent_average": {
                 "expense_average": self._decimal_str(recent_avg_expense) if recent_avg_expense is not None else None,
