@@ -3,14 +3,25 @@ import { ref } from 'vue'
 
 export type ThemeMode = 'light' | 'dark' | 'auto'
 const STORAGE_KEY = 'beanmind-theme-mode'
+const MEDIA_QUERY = '(prefers-color-scheme: dark)'
 
 export const useUIStore = defineStore('ui', () => {
   const themeMode = ref<ThemeMode>((localStorage.getItem(STORAGE_KEY) as ThemeMode) || 'auto')
+  const isDark = ref(resolveDark(themeMode.value))
+  let initialized = false
+
+  function resolveDark(mode: ThemeMode) {
+    return mode === 'dark' || (mode === 'auto' && Boolean(window.matchMedia?.(MEDIA_QUERY).matches))
+  }
+
   function applyTheme(mode: ThemeMode) {
     const root = document.documentElement
-    root.classList.remove('theme-dark', 'theme-light')
-    const dark = mode === 'dark' || (mode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    const dark = resolveDark(mode)
+    isDark.value = dark
+    root.classList.remove('theme-dark', 'theme-light', 'van-theme-dark')
     root.classList.add(dark ? 'theme-dark' : 'theme-light')
+    root.classList.toggle('van-theme-dark', dark)
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0e1113' : '#f5f6f8')
   }
   function setThemeMode(mode: ThemeMode) {
     themeMode.value = mode
@@ -19,9 +30,11 @@ export const useUIStore = defineStore('ui', () => {
   }
   function initTheme() {
     applyTheme(themeMode.value)
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (initialized) return
+    initialized = true
+    window.matchMedia?.(MEDIA_QUERY).addEventListener('change', () => {
       if (themeMode.value === 'auto') applyTheme('auto')
     })
   }
-  return { themeMode, setThemeMode, initTheme }
+  return { themeMode, isDark, setThemeMode, initTheme }
 })

@@ -1,5 +1,6 @@
 <template>
   <van-field
+    class="money-input"
     :model-value="modelValue"
     :label="label"
     inputmode="decimal"
@@ -7,7 +8,7 @@
     :error-message="error"
     @update:model-value="onInput"
   >
-    <template #left-icon>{{ currency }}</template>
+    <template #left-icon><span class="money-currency">{{ currency }}</span></template>
   </van-field>
 </template>
 
@@ -24,3 +25,9 @@ function onInput(value: string | number) {
   emit('update:modelValue', decimals.length ? `${integer}.${decimals.join('')}` : integer)
 }
 </script>
+
+<style scoped>
+.money-input { padding-top: 18px; padding-bottom: 18px; }
+.money-input :deep(.van-field__control) { color: var(--bm-text); font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
+.money-currency { margin-right: 8px; color: var(--bm-primary); font-size: 13px; font-weight: 700; }
+</style>

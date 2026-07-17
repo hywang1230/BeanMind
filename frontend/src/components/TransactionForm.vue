@@ -1,16 +1,8 @@
 <template>
-  <van-form @submit="submit">
-    <van-cell-group inset>
-      <van-field label="类型">
-        <template #input>
-          <select v-model="form.type" class="native-select" @change="resetAccounts">
-            <option value="expense">支出</option>
-            <option value="income">收入</option>
-            <option value="transfer">转账</option>
-          </select>
-        </template>
-      </van-field>
-      <van-field v-model="form.date" label="日期" type="date" :rules="[{ required: true, message: '请选择日期' }]" />
+  <van-form class="transaction-form" @submit="submit">
+    <van-cell-group inset class="transaction-form-card">
+      <SelectPickerField v-model="form.type" label="类型" :options="transactionTypeOptions" @change="resetAccounts" />
+      <DatePickerField v-model="form.date" label="日期" :rules="[{ required: true, message: '请选择日期' }]" />
       <van-field v-model="form.payee" label="交易方" placeholder="可选" />
       <van-field v-model="form.description" label="备注" placeholder="这笔交易是什么" />
       <MoneyInput v-model="form.amount" :currency="form.currency" :error="amountError" />
@@ -30,8 +22,8 @@
         :error="submitted && !form.toAccount ? '请选择账户' : ''"
       />
     </van-cell-group>
-    <div style="margin: 16px">
-      <van-button block round type="primary" native-type="submit" :loading="loading">保存</van-button>
+    <div class="transaction-submit">
+      <van-button block round type="primary" native-type="submit" :loading="loading">保存交易</van-button>
     </div>
   </van-form>
 </template>
@@ -41,7 +33,9 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { accountsApi, type Account } from '../api/accounts'
 import type { CreateTransactionRequest, Transaction } from '../api/transactions'
 import AccountPicker from './AccountPicker.vue'
+import DatePickerField from './DatePickerField.vue'
 import MoneyInput from './MoneyInput.vue'
+import SelectPickerField from './SelectPickerField.vue'
 
 const props = withDefaults(defineProps<{ initial?: Transaction | null; loading?: boolean }>(), { initial: null, loading: false })
 const emit = defineEmits<{ (event: 'submit', value: CreateTransactionRequest): void }>()
@@ -49,6 +43,11 @@ const accounts = ref<Account[]>([])
 const submitted = ref(false)
 const today = new Date().toISOString().slice(0, 10)
 const form = reactive({ type: 'expense', date: today, payee: '', description: '', amount: '', currency: 'CNY', fromAccount: '', toAccount: '' })
+const transactionTypeOptions = [
+  { text: '支出', value: 'expense' },
+  { text: '收入', value: 'income' },
+  { text: '转账', value: 'transfer' },
+]
 
 const targetPrefixes = computed(() => form.type === 'expense' ? ['Expenses'] : form.type === 'income' ? ['Income'] : ['Assets', 'Liabilities'])
 const amountError = computed(() => submitted.value && (!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(form.amount) || /^0(?:\.0*)?$/.test(form.amount)) ? '请输入大于零的金额' : '')
@@ -94,3 +93,11 @@ function submit() {
   emit('submit', { date: form.date, payee: form.payee || undefined, description: form.description || undefined, postings })
 }
 </script>
+
+<style scoped>
+.transaction-form-card { margin-top: 8px; }
+.transaction-form :deep(.van-cell) { min-height: 54px; align-items: center; }
+.transaction-form :deep(.van-field__label) { color: var(--bm-muted); }
+.transaction-submit { margin: 20px 16px 16px; }
+.transaction-submit :deep(.van-button) { height: 48px; font-size: 16px; font-weight: 700; }
+</style>

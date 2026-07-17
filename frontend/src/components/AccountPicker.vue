@@ -1,19 +1,18 @@
 <template>
-  <van-field :label="label" :error-message="error">
-    <template #input>
-      <select class="native-select" :value="modelValue" @change="onChange">
-        <option value="">请选择账户</option>
-        <option v-for="account in filtered" :key="account.name" :value="account.name">
-          {{ account.name }}
-        </option>
-      </select>
-    </template>
-  </van-field>
+  <SelectPickerField
+    :model-value="modelValue"
+    :label="label"
+    :options="options"
+    :error="error"
+    placeholder="请选择账户"
+    @update:model-value="emit('update:modelValue', $event)"
+  />
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Account } from '../api/accounts'
+import SelectPickerField from './SelectPickerField.vue'
 
 const props = withDefaults(defineProps<{
   modelValue: string
@@ -29,7 +28,8 @@ const filtered = computed(() => {
   const all = flatten(props.accounts)
   return props.prefixes.length ? all.filter(item => props.prefixes.some(prefix => item.name.startsWith(prefix))) : all
 })
-function onChange(event: Event) {
-  emit('update:modelValue', (event.target as HTMLSelectElement).value)
-}
+const options = computed(() => [
+  { text: '请选择账户', value: '' },
+  ...filtered.value.map(account => ({ text: account.name, value: account.name })),
+])
 </script>

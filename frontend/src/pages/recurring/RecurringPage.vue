@@ -3,6 +3,7 @@
     <van-nav-bar title="周期记账" left-arrow @click-left="router.back()">
       <template #right><van-button size="small" type="primary" @click="openCreate">新建规则</van-button></template>
     </van-nav-bar>
+    <h2 class="section-title">自动记账规则</h2>
 
     <div v-if="loading && !rules.length" class="state-card"><van-loading>加载中</van-loading></div>
     <van-empty v-else-if="error && !rules.length" image="error" :description="error">
@@ -24,7 +25,7 @@
         </template>
       </van-cell>
     </van-cell-group>
-    <van-notice-bar v-if="error && rules.length" color="#c92a2a" background="#fff1f0">{{ error }}</van-notice-bar>
+    <van-notice-bar v-if="error && rules.length" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ error }}</van-notice-bar>
 
     <van-popup v-model:show="showCreate" position="bottom" round :style="{ height: '88%' }">
       <div class="popup-page">
@@ -32,18 +33,11 @@
         <van-form @submit="createRule">
           <van-cell-group inset>
             <van-field v-model="draft.name" label="规则名称" placeholder="例如：每月房租" :rules="[{ required: true, message: '请输入规则名称' }]" />
-            <van-field label="频率">
-              <template #input>
-                <select v-model="draft.frequency" class="native-select">
-                  <option value="daily">每日</option><option value="weekly">每周</option>
-                  <option value="biweekly">双周</option><option value="monthly">每月</option><option value="yearly">每年</option>
-                </select>
-              </template>
-            </van-field>
+            <SelectPickerField v-model="draft.frequency" label="频率" :options="frequencyOptions" />
             <van-field v-if="draft.frequency === 'weekly' || draft.frequency === 'biweekly'" v-model="weekdaysText" label="星期" placeholder="1,3,5（周一至周日为 1-7）" />
             <van-field v-if="draft.frequency === 'monthly'" v-model="monthDaysText" label="每月日期" placeholder="1,15,-1（月末）" />
-            <van-field v-model="draft.start_date" label="开始日期" type="date" :rules="[{ required: true, message: '请选择开始日期' }]" />
-            <van-field v-model="draft.end_date" label="结束日期" type="date" />
+            <DatePickerField v-model="draft.start_date" label="开始日期" :rules="[{ required: true, message: '请选择开始日期' }]" />
+            <DatePickerField v-model="draft.end_date" label="结束日期" />
             <van-field v-model="draft.transaction_template.description" label="交易描述" :rules="[{ required: true, message: '请输入交易描述' }]" />
           </van-cell-group>
 
@@ -57,7 +51,7 @@
             </div>
             <van-button block plain type="primary" @click="addPosting">添加分录</van-button>
           </van-cell-group>
-          <van-notice-bar v-if="createError" color="#c92a2a" background="#fff1f0">{{ createError }}</van-notice-bar>
+          <van-notice-bar v-if="createError" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ createError }}</van-notice-bar>
           <div style="margin:16px"><van-button block round type="primary" native-type="submit" :loading="creating">创建</van-button></div>
         </van-form>
       </div>
@@ -71,6 +65,8 @@ import { showFailToast, showSuccessToast } from 'vant'
 import { useRouter } from 'vue-router'
 import { recurringApi, type CreateRecurringRuleRequest, type RecurringRule } from '../../api/recurring'
 import type { ApiError } from '../../api/client'
+import DatePickerField from '../../components/DatePickerField.vue'
+import SelectPickerField from '../../components/SelectPickerField.vue'
 
 const router = useRouter()
 const rules = ref<RecurringRule[]>([])
@@ -81,6 +77,11 @@ const creating = ref(false)
 const createError = ref('')
 const weekdaysText = ref('1')
 const monthDaysText = ref('1')
+const frequencyOptions = [
+  { text: '每日', value: 'daily' }, { text: '每周', value: 'weekly' },
+  { text: '双周', value: 'biweekly' }, { text: '每月', value: 'monthly' },
+  { text: '每年', value: 'yearly' },
+]
 
 function initialDraft(): CreateRecurringRuleRequest {
   return {
