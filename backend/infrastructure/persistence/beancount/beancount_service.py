@@ -264,7 +264,7 @@ class BeancountService:
                 "postings": [
                     {
                         "account": p.account,
-                        "amount": float(p.units.number),
+                        "amount": str(p.units.number),
                         "currency": p.units.currency,
                     }
                     for p in entry.postings
@@ -447,5 +447,4 @@ class BeancountService:
         # 写回文件
         with open(self.ledger_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
-
 

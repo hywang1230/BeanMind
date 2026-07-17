@@ -6,6 +6,7 @@ from typing import Optional, Literal
 from fastapi import APIRouter, Depends, Query
 from datetime import datetime, timedelta
 from decimal import Decimal
+from sqlalchemy.orm import Session
 
 from backend.interfaces.dto.statistics import (
     AssetOverviewResponse,
@@ -33,10 +34,10 @@ def get_account_service() -> AccountApplicationService:
     return AccountApplicationService(account_repo)
 
 
-def get_transaction_service() -> TransactionApplicationService:
+def get_transaction_service(db: Session = Depends(get_db)) -> TransactionApplicationService:
     """获取交易服务"""
     beancount_service = get_beancount_service()
-    transaction_repo = TransactionRepositoryImpl(beancount_service, next(get_db()))
+    transaction_repo = TransactionRepositoryImpl(beancount_service, db)
     account_repo = AccountRepositoryImpl(beancount_service)
     return TransactionApplicationService(transaction_repo, account_repo)
 
@@ -79,7 +80,7 @@ def convert_to_operating_currency(amount: float, currency: str, exchange_rates: 
 
 
 @router.get("/assets", response_model=AssetOverviewResponse)
-async def get_asset_overview() -> AssetOverviewResponse:
+def get_asset_overview() -> AssetOverviewResponse:
     """
     获取资产概览
     
@@ -137,7 +138,7 @@ async def get_asset_overview() -> AssetOverviewResponse:
 
 
 @router.get("/categories", response_model=list[CategoryStatisticsResponse])
-async def get_category_statistics(
+def get_category_statistics(
     type: Literal["expense", "income"] = Query(..., description="统计类型：支出或收入"),
     start_date: Optional[str] = Query(None, description="开始日期 YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD"),
@@ -231,7 +232,7 @@ async def get_category_statistics(
 
 
 @router.get("/trend", response_model=list[MonthlyTrendResponse])
-async def get_monthly_trend(
+def get_monthly_trend(
     months: int = Query(6, ge=1, le=24, description="返回月份数量"),
     transaction_service: TransactionApplicationService = Depends(get_transaction_service)
 ) -> list[MonthlyTrendResponse]:
@@ -299,7 +300,7 @@ async def get_monthly_trend(
 
 
 @router.get("/frequent", response_model=list[FrequentItemResponse])
-async def get_frequent_items(
+def get_frequent_items(
     type: Literal["expense", "income", "transfer", "account"] = Query(..., description="类型：支出/收入/转账/账户"),
     days: int = Query(30, ge=1, le=90, description="统计天数"),
     limit: int = Query(3, ge=1, le=10, description="返回数量限制"),

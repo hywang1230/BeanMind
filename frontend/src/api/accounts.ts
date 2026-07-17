@@ -20,7 +20,7 @@ export type AccountDetail = {
 export type Balance = {
     account: string
     currency: string
-    amount: number
+    amount: string
 }
 
 export type CreateAccountRequest = {
@@ -74,7 +74,7 @@ export const accountsApi = {
         return Object.entries(response.balances).map(([currency, amount]) => ({
             account: response.account_name,
             currency,
-            amount: parseFloat(amount)
+            amount
         }))
     },
 

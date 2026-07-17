@@ -46,7 +46,6 @@ class TransactionService:
         payee: Optional[str] = None,
         tags: Optional[List[str]] = None,
         links: Optional[List[str]] = None,
-        user_id: Optional[str] = None
     ) -> Transaction:
         """
         创建新交易
@@ -64,7 +63,6 @@ class TransactionService:
             payee: 收付款方
             tags: 标签列表
             links: 链接列表
-            user_id: 用户 ID
             
         Returns:
             创建的交易实体
@@ -95,7 +93,7 @@ class TransactionService:
         )
         
         # 6. 保存到仓储
-        return self.transaction_repository.create(transaction, user_id=user_id)
+        return self.transaction_repository.create(transaction)
     
     def _validate_basic_info(self, txn_date: date, description: Optional[str]):
         """
@@ -293,7 +291,6 @@ class TransactionService:
         self,
         start_date: date,
         end_date: date,
-        user_id: Optional[str] = None
     ) -> Dict:
         """
         获取交易摘要
@@ -301,7 +298,6 @@ class TransactionService:
         Args:
             start_date: 开始日期
             end_date: 结束日期
-            user_id: 用户 ID
             
         Returns:
             摘要信息字典
@@ -309,7 +305,6 @@ class TransactionService:
         return self.transaction_repository.get_statistics(
             start_date,
             end_date,
-            user_id
         )
     
     def find_duplicate_transactions(

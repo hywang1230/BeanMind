@@ -135,6 +135,14 @@ class TransactionListResponse(BaseModel):
         }
 
 
+class TransactionCursorPageResponse(BaseModel):
+    """交易列表的游标分页响应。"""
+
+    items: List[TransactionResponse] = Field(..., description="当前页交易")
+    next_cursor: Optional[str] = Field(None, description="下一页不透明游标")
+    has_more: bool = Field(..., description="是否还有下一页")
+
+
 class TransactionStatisticsResponse(BaseModel):
     """
     交易统计响应

@@ -87,7 +87,7 @@ def build_account_tree(
         total_cny = Decimal(0)
         balance_dict = {}
         for currency, amount in balances.items():
-            balance_dict[currency] = float(amount)
+            balance_dict[currency] = amount
             rate = exchange_rates.get(currency, Decimal(1))
             total_cny += amount * rate
         
@@ -95,7 +95,7 @@ def build_account_tree(
             account=account_path,
             display_name=get_display_name(account_path),
             balances=balance_dict,
-            total_cny=float(total_cny),
+            total_cny=total_cny,
             depth=get_account_depth(account_path),
             children=[]
         )
@@ -118,10 +118,10 @@ def build_account_tree(
                 root_accounts.append(item)
     
     # 汇总子账户余额到父账户
-    def aggregate_balances(items: List[AccountBalanceItem]) -> tuple[Dict[str, float], float]:
+    def aggregate_balances(items: List[AccountBalanceItem]) -> tuple[Dict[str, Decimal], Decimal]:
         """递归汇总子账户余额"""
-        total_balances: Dict[str, float] = defaultdict(float)
-        total_cny = 0.0
+        total_balances: Dict[str, Decimal] = defaultdict(Decimal)
+        total_cny = Decimal("0")
         
         for item in items:
             if item.children:
@@ -131,7 +131,7 @@ def build_account_tree(
                 for currency, amount in child_balances.items():
                     total_balances[currency] += amount
                     if currency not in item.balances:
-                        item.balances[currency] = 0.0
+                        item.balances[currency] = Decimal("0")
                     item.balances[currency] += amount
                 # 更新该节点的 CNY 总额
                 item.total_cny += child_cny
@@ -200,9 +200,9 @@ def build_income_expense_tree(
             # - Income 账户：收入时为负数（贷方），需要取负才能显示正确的业务金额
             # - Expenses 账户：支出时为正数（借方），直接使用即可
             if account_type == "Income":
-                display_amount = float(-amount)  # 取负：负数变正数，正数变负数
+                display_amount = -amount  # 取负：负数变正数，正数变负数
             else:
-                display_amount = float(amount)   # Expenses 保持原值
+                display_amount = amount   # Expenses 保持原值
             
             amounts_dict[currency] = display_amount
             rate = exchange_rates.get(currency, Decimal(1))
@@ -217,7 +217,7 @@ def build_income_expense_tree(
             account=account_path,
             display_name=get_display_name(account_path),
             amounts=amounts_dict,
-            total_cny=float(total_cny),
+            total_cny=total_cny,
             depth=get_account_depth(account_path),
             children=[]
         )
@@ -237,10 +237,10 @@ def build_income_expense_tree(
                 root_items.append(item)
     
     # 汇总子账户金额到父账户
-    def aggregate_amounts(items: List[IncomeExpenseItem]) -> tuple[Dict[str, float], float]:
+    def aggregate_amounts(items: List[IncomeExpenseItem]) -> tuple[Dict[str, Decimal], Decimal]:
         """递归汇总子账户金额"""
-        total_amounts: Dict[str, float] = defaultdict(float)
-        total_cny = 0.0
+        total_amounts: Dict[str, Decimal] = defaultdict(Decimal)
+        total_cny = Decimal("0")
         
         for item in items:
             if item.children:
@@ -250,7 +250,7 @@ def build_income_expense_tree(
                 for currency, amount in child_amounts.items():
                     total_amounts[currency] += amount
                     if currency not in item.amounts:
-                        item.amounts[currency] = 0.0
+                        item.amounts[currency] = Decimal("0")
                     item.amounts[currency] += amount
                 # 更新该节点的 CNY 总额
                 item.total_cny += child_cny
@@ -271,10 +271,10 @@ def build_income_expense_tree(
 
 def calculate_category_total(
     accounts: List[AccountBalanceItem]
-) -> tuple[float, Dict[str, float]]:
+) -> tuple[Decimal, Dict[str, Decimal]]:
     """计算分类总额（只计算叶子节点，避免重复计算）"""
-    total_cny = 0.0
-    totals_by_currency: Dict[str, float] = defaultdict(float)
+    total_cny = Decimal("0")
+    totals_by_currency: Dict[str, Decimal] = defaultdict(Decimal)
     
     def process_account(account: AccountBalanceItem):
         nonlocal total_cny
@@ -329,10 +329,10 @@ def convert_accounts_to_absolute(accounts: List[AccountBalanceItem]) -> List[Acc
 
 def calculate_income_expense_total(
     items: List[IncomeExpenseItem]
-) -> tuple[float, Dict[str, float]]:
+) -> tuple[Decimal, Dict[str, Decimal]]:
     """计算收入/支出总额（只计算叶子节点）"""
-    total_cny = 0.0
-    totals_by_currency: Dict[str, float] = defaultdict(float)
+    total_cny = Decimal("0")
+    totals_by_currency: Dict[str, Decimal] = defaultdict(Decimal)
     
     def process_item(item: IncomeExpenseItem):
         nonlocal total_cny
@@ -350,11 +350,11 @@ def calculate_income_expense_total(
     return total_cny, dict(totals_by_currency)
 
 
-def calculate_percentages(items: List[IncomeExpenseItem], total: float):
+def calculate_percentages(items: List[IncomeExpenseItem], total: Decimal):
     """计算占比"""
     def process_item(item: IncomeExpenseItem):
         if total > 0:
-            item.percentage = (item.total_cny / total) * 100
+            item.percentage = (item.total_cny / total) * Decimal("100")
         for child in item.children:
             process_item(child)
     
@@ -363,7 +363,7 @@ def calculate_percentages(items: List[IncomeExpenseItem], total: float):
 
 
 @router.get("/balance-sheet", response_model=BalanceSheetResponse)
-async def get_balance_sheet(
+def get_balance_sheet(
     as_of_date: Optional[str] = Query(None, description="截止日期 YYYY-MM-DD，默认为今天"),
     beancount_service: BeancountService = Depends(get_beancount_service)
 ) -> BalanceSheetResponse:
@@ -444,13 +444,13 @@ async def get_balance_sheet(
         total_liabilities_cny=abs(liabilities_total_cny),
         total_equity_cny=abs(equity_total_cny),
         net_worth_cny=net_worth_cny,
-        exchange_rates={k: float(v) for k, v in exchange_rates.items()},
+        exchange_rates=exchange_rates,
         currencies=currencies
     )
 
 
 @router.get("/income-statement", response_model=IncomeStatementResponse)
-async def get_income_statement(
+def get_income_statement(
     start_date: Optional[str] = Query(None, description="开始日期 YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD"),
     beancount_service: BeancountService = Depends(get_beancount_service)
@@ -532,13 +532,13 @@ async def get_income_statement(
         total_income_cny=income_total_cny,
         total_expenses_cny=expenses_total_cny,
         net_profit_cny=net_profit_cny,
-        exchange_rates={k: float(v) for k, v in exchange_rates.items()},
+        exchange_rates=exchange_rates,
         currencies=currencies
     )
 
 
 @router.get("/account-detail", response_model=AccountDetailResponse)
-async def get_account_detail(
+def get_account_detail(
     account: str = Query(..., description="账户名称"),
     start_date: Optional[str] = Query(None, description="开始日期 YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD"),
@@ -586,29 +586,29 @@ async def get_account_detail(
     opening_date = start - timedelta(days=1)
     opening_balances_raw = beancount_service.get_account_balances(account_name=account, as_of_date=opening_date)
     opening_balances = {}
-    opening_balance_cny = 0.0
+    opening_balance_cny = Decimal("0")
     if account in opening_balances_raw:
         for currency, amount in opening_balances_raw[account].items():
-            opening_balances[currency] = float(amount)
+            opening_balances[currency] = amount
             rate = exchange_rates.get(currency, Decimal(1))
-            opening_balance_cny += float(amount * rate)
+            opening_balance_cny += amount * rate
     
     # 获取当前余额（结束日期）
     current_balances_raw = beancount_service.get_account_balances(account_name=account, as_of_date=end)
     current_balances = {}
-    current_balance_cny = 0.0
+    current_balance_cny = Decimal("0")
     if account in current_balances_raw:
         for currency, amount in current_balances_raw[account].items():
-            current_balances[currency] = float(amount)
+            current_balances[currency] = amount
             rate = exchange_rates.get(currency, Decimal(1))
-            current_balance_cny += float(amount * rate)
+            current_balance_cny += amount * rate
     
     # 计算本期变动
     period_change = {}
     all_currencies = set(opening_balances.keys()) | set(current_balances.keys())
     for currency in all_currencies:
-        opening = opening_balances.get(currency, 0.0)
-        current = current_balances.get(currency, 0.0)
+        opening = opening_balances.get(currency, Decimal("0"))
+        current = current_balances.get(currency, Decimal("0"))
         period_change[currency] = current - opening
     period_change_cny = current_balance_cny - opening_balance_cny
     
@@ -624,11 +624,11 @@ async def get_account_detail(
         for posting in txn.get("postings", []):
             if posting.get("account") == account:
                 currency = posting.get("currency", "CNY")
-                amount = posting.get("amount", 0)
+                amount = Decimal(str(posting.get("amount", "0")))
                 
                 # 更新运行余额
                 if currency not in running_balance:
-                    running_balance[currency] = 0.0
+                    running_balance[currency] = Decimal("0")
                 running_balance[currency] += amount
                 
                 # 获取对方账户
@@ -660,6 +660,5 @@ async def get_account_detail(
         period_change=period_change,
         period_change_cny=period_change_cny,
         transactions=transactions,
-        exchange_rates={k: float(v) for k, v in exchange_rates.items()}
+        exchange_rates=exchange_rates
     )
-

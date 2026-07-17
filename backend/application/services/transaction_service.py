@@ -50,7 +50,6 @@ class TransactionApplicationService:
         payee: Optional[str] = None,
         tags: Optional[List[str]] = None,
         links: Optional[List[str]] = None,
-        user_id: Optional[str] = None
     ) -> Dict:
         """
         创建交易
@@ -62,7 +61,6 @@ class TransactionApplicationService:
             payee: 收付款方
             tags: 标签列表
             links: 链接列表
-            user_id: 用户 ID
             
         Returns:
             交易 DTO
@@ -81,7 +79,6 @@ class TransactionApplicationService:
             payee=payee,
             tags=tags,
             links=links,
-            user_id=user_id
         )
         
         return self._transaction_to_dto(transaction)
@@ -108,8 +105,6 @@ class TransactionApplicationService:
         tags: Optional[List[str]] = None,
         description: Optional[str] = None,
         limit: Optional[int] = None,
-        offset: Optional[int] = None,
-        user_id: Optional[str] = None
     ) -> List[Dict]:
         """
         获取交易列表（支持分页和筛选）
@@ -122,8 +117,6 @@ class TransactionApplicationService:
             tags: 标签过滤
             description: 描述关键词搜索
             limit: 限制返回数量
-            offset: 偏移量
-            user_id: 用户 ID
             
         Returns:
             交易 DTO 列表
@@ -135,7 +128,7 @@ class TransactionApplicationService:
         # 首先获取基础数据集
         if start and end:
             # 日期范围查询作为基础
-            transactions = self.transaction_repository.find_by_date_range(start, end, user_id)
+            transactions = self.transaction_repository.find_by_date_range(start, end)
         elif account:
             # 按账户查询
             transactions = self.transaction_repository.find_by_account(account, start, end)
@@ -147,7 +140,7 @@ class TransactionApplicationService:
             transactions = self.transaction_repository.find_by_keyword(description)
         else:
             # 查询所有
-            transactions = self.transaction_repository.find_all(user_id, None, None)
+            transactions = self.transaction_repository.find_all(None)
         
         # 应用额外的过滤条件（支持多条件组合）
         if transaction_type:
@@ -252,7 +245,6 @@ class TransactionApplicationService:
         self,
         start_date: str,
         end_date: str,
-        user_id: Optional[str] = None
     ) -> Dict:
         """
         获取交易统计信息
@@ -260,7 +252,6 @@ class TransactionApplicationService:
         Args:
             start_date: 开始日期（ISO 格式）
             end_date: 结束日期（ISO 格式）
-            user_id: 用户 ID
             
         Returns:
             统计信息字典
@@ -268,7 +259,7 @@ class TransactionApplicationService:
         start = date.fromisoformat(start_date)
         end = date.fromisoformat(end_date)
         
-        return self.transaction_service.get_transaction_summary(start, end, user_id)
+        return self.transaction_service.get_transaction_summary(start, end)
     
     def validate_transaction(self, transaction_data: Dict) -> Dict:
         """

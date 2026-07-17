@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/recurring", tags=["recurring"])
 # Request/Response Models
 class PostingTemplate(BaseModel):
     account: str
-    amount: float
+    amount: str
     currency: str
 
 
@@ -140,7 +140,6 @@ def create_recurring_rule(
             raise HTTPException(status_code=400, detail="月频率必须指定month_days")
     
     rule = RecurringRule(
-        user_id="default_user",  # TODO: 从认证中获取
         name=request.name,
         frequency=frequency,
         frequency_config=json.dumps(request.frequency_config.model_dump(), ensure_ascii=False),
@@ -253,7 +252,7 @@ def execute_recurring_rule(
             "postings": [
                 {
                     "account": p["account"],
-                    "amount": float(p["amount"]),
+                    "amount": p["amount"],
                     "currency": p["currency"]
                 }
                 for p in postings

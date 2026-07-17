@@ -1,0 +1,14 @@
+2025-01-15 * "公司" "一月工资" #income ^payroll
+  id: "fixed-salary-2025-01"
+  note: "keep-me"
+  Assets:Bank    10000 CNY
+  Income:Salary -10000 CNY
+
+2025-01-15 * "餐厅" "午餐" #food
+  id: "fixed-lunch-2025-01-15"
+  Expenses:Food  50 CNY
+  Assets:Cash   -50 CNY
+
+2025-02-01 * "酒店" "出差住宿" #travel #work
+  Expenses:Travel  99.990000000000001 USD
+  Assets:Broker   -99.990000000000001 USD

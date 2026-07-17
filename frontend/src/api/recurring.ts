@@ -24,7 +24,7 @@ export type TransactionTemplate = {
     payee?: string
     postings: {
         account: string
-        amount: number
+        amount: string
         currency: string
     }[]
     tags?: string[]

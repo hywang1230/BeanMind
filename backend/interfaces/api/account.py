@@ -21,7 +21,7 @@ from backend.interfaces.dto.response.account import (
     AccountSummaryResponse,
     SuggestAccountNameResponse
 )
-from backend.interfaces.dto.response.auth import MessageResponse, ErrorResponse
+from backend.interfaces.dto.common import MessageResponse, ErrorResponse
 
 
 # 创建路由

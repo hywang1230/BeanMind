@@ -1,81 +1,63 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
+import Vant from 'vant'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { budgetsApi } from '../../../api/budgets'
 import BudgetsPage from '../BudgetsPage.vue'
 
-// Mock budgets API
 vi.mock('../../../api/budgets', () => ({
-    budgetsApi: {
-        getBudgets: vi.fn(() => Promise.resolve([])),
-        createBudget: vi.fn(),
-        getBudget: vi.fn(),
-        updateBudget: vi.fn(),
-        deleteBudget: vi.fn(),
-        getBudgetExecution: vi.fn(() => Promise.resolve({
-            budget_id: 1,
-            budget_name: '测试预算',
-            period_start: '2024-01-01',
-            period_end: '2024-01-31',
-            items: [],
-            total_budget: 1000,
-            total_actual: 500,
-            total_remaining: 500,
-            status: 'normal'
-        }))
-    }
+  budgetsApi: {
+    get: vi.fn(),
+    save: vi.fn(),
+    copyPrevious: vi.fn(),
+  },
 }))
 
+const emptyBudget = { month: '2026-07', currency: 'CNY', total: '0', spent: '0', remaining: '0', items: [] }
+
 describe('BudgetsPage', () => {
-    beforeEach(() => {
-        vi.clearAllMocks()
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(budgetsApi.get).mockResolvedValue(emptyBudget)
+  })
+
+  it('renders monthly empty state without an unhandled error', async () => {
+    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.find('h1').text()).toBe('月度预算')
+    expect(wrapper.text()).toContain('本月尚未设置预算')
+    expect(budgetsApi.get).toHaveBeenCalledOnce()
+  })
+
+  it('adds a category and saves the monthly contract', async () => {
+    vi.mocked(budgetsApi.save).mockResolvedValue({
+      ...emptyBudget,
+      total: '100',
+      items: [{ name: '餐饮', account_pattern: 'Expenses:Food', amount: '100', spent: '0', remaining: '100', risk: 'NORMAL' }],
     })
+    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    const buttons = wrapper.findAll('button')
+    await buttons.find(button => button.text().includes('新增分类'))!.trigger('click')
+    const inputs = wrapper.findAll('input')
+    await inputs.find(input => input.attributes('placeholder') === '例如：餐饮')!.setValue('餐饮')
+    await inputs.find(input => input.attributes('placeholder') === 'Expenses:Food')!.setValue('Expenses:Food')
+    const amount = inputs.find(input => input.attributes('inputmode') === 'decimal')!
+    await amount.setValue('100')
+    await wrapper.findAll('button').find(button => button.text().includes('保存预算'))!.trigger('click')
+    await flushPromises()
+    expect(budgetsApi.save).toHaveBeenCalledWith(
+      expect.any(String),
+      'CNY',
+      [expect.objectContaining({ name: '餐饮', account_pattern: 'Expenses:Food', amount: '100' })],
+    )
+  })
 
-    it('应该渲染页面标题', () => {
-        const wrapper = mount(BudgetsPage)
-        expect(wrapper.find('h1').text()).toBe('预算管理')
-    })
-
-    it('应该显示创建按钮', () => {
-        const wrapper = mount(BudgetsPage)
-        expect(wrapper.find('.create-btn').exists()).toBe(true)
-        expect(wrapper.find('.create-btn').text()).toContain('新建预算')
-    })
-
-    it('空状态应该显示正确内容', async () => {
-        const wrapper = mount(BudgetsPage)
-        await wrapper.vm.$nextTick()
-
-        // 等待数据加载
-        await new Promise(resolve => setTimeout(resolve, 100))
-        await wrapper.vm.$nextTick()
-
-        expect(wrapper.find('.empty-state').exists()).toBe(true)
-        expect(wrapper.find('.empty-text').text()).toBe('暂无预算')
-    })
-
-    it('点击创建按钮应该打开模态框', async () => {
-        const wrapper = mount(BudgetsPage)
-        await wrapper.vm.$nextTick()
-
-        await wrapper.find('.create-btn').trigger('click')
-        await wrapper.vm.$nextTick()
-
-        expect(wrapper.find('.modal').exists()).toBe(true)
-    })
-
-    it('格式化金额应该正确', () => {
-        const wrapper = mount(BudgetsPage)
-        const instance = wrapper.vm as any
-
-        expect(instance.formatNumber(1000)).toBe('1,000.00')
-        expect(instance.formatNumber(5000.5)).toBe('5,000.50')
-    })
-
-    it('格式化周期类型应该正确', () => {
-        const wrapper = mount(BudgetsPage)
-        const instance = wrapper.vm as any
-
-        expect(instance.formatPeriodType('monthly')).toBe('月度')
-        expect(instance.formatPeriodType('quarterly')).toBe('季度')
-        expect(instance.formatPeriodType('yearly')).toBe('年度')
-    })
+  it('shows retryable API error', async () => {
+    vi.mocked(budgetsApi.get).mockRejectedValue({ message: '投影恢复中' })
+    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('投影恢复中')
+    expect(wrapper.text()).toContain('重试')
+  })
 })

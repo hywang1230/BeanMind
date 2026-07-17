@@ -1,195 +1,33 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 const routes: RouteRecordRaw[] = [
-    {
-        path: '/login',
-        name: 'Login',
-        component: () => import('../pages/auth/LoginPage.vue'),
-        meta: { requiresAuth: false }
-    },
-    {
-        path: '/',
-        name: 'Main',
-        component: () => import('../layouts/MainLayout.vue'),
-        meta: { requiresAuth: true },
-        alias: ['/dashboard', '/transactions', '/settings']
-    },
-    {
-        path: '/reports',
-        name: 'Reports',
-        component: () => import('../pages/reports/ReportsPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/reports/balance-sheet',
-        name: 'BalanceSheet',
-        component: () => import('../pages/reports/BalanceSheetPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/reports/income-statement',
-        name: 'IncomeStatement',
-        component: () => import('../pages/reports/IncomeStatementPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/reports/monthly-report',
-        name: 'MonthlyReport',
-        component: () => import('../pages/reports/MonthlyReportPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/reports/account-detail',
-        name: 'AccountDetail',
-        component: () => import('../pages/reports/AccountDetailPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/transactions/add',
-        name: 'AddTransaction',
-        component: () => import('../pages/transactions/AddTransactionPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/transactions/distribute',
-        name: 'TransactionDistribute',
-        component: () => import('../pages/transactions/TransactionDistributePage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/transactions/:id/edit',
-        name: 'EditTransaction',
-        component: () => import('../pages/transactions/EditTransactionPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/transactions/:id',
-        name: 'TransactionDetail',
-        component: () => import('../pages/transactions/TransactionDetailPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    // 保留这些页面在主布局外(如果需要单独访问)
-    {
-        path: '/accounts',
-        name: 'Accounts',
-        component: () => import('../pages/accounts/AccountsPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/accounts/:accountName',
-        name: 'AccountManagementDetail',
-        component: () => import('../pages/accounts/AccountDetailPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/budgets',
-        name: 'Budgets',
-        component: () => import('../pages/budgets/BudgetsPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/budgets/create',
-        name: 'CreateBudget',
-        component: () => import('../pages/budgets/BudgetFormPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/budgets/:id',
-        name: 'BudgetDetail',
-        component: () => import('../pages/budgets/BudgetDetailPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/budgets/:id/edit',
-        name: 'EditBudget',
-        component: () => import('../pages/budgets/BudgetFormPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/budgets/:id/cycles',
-        name: 'BudgetCycles',
-        component: () => import('../pages/budgets/BudgetCyclesPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/budgets/:budgetId/items/:itemId/transactions',
-        name: 'BudgetTransactions',
-        component: () => import('../pages/budgets/BudgetTransactionsPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/recurring',
-        name: 'Recurring',
-        component: () => import('../pages/recurring/RecurringPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/recurring/rules',
-        name: 'RecurringRules',
-        component: () => import('../pages/recurring/RecurringRulesPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/recurring/add',
-        name: 'AddRecurringRule',
-        component: () => import('../pages/recurring/RecurringRuleFormPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/recurring/:id/edit',
-        name: 'EditRecurringRule',
-        component: () => import('../pages/recurring/RecurringRuleFormPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/exchange-rates',
-        name: 'ExchangeRates',
-        component: () => import('../pages/exchange-rates/ExchangeRatesPage.vue'),
-        meta: { requiresAuth: true }
-    },
-    {
-        path: '/settings/sync',
-        name: 'Sync',
-        component: () => import('../pages/settings/SyncPage.vue'),
-        meta: { requiresAuth: true }
-    }
+  { path: '/', redirect: '/dashboard' },
+  {
+    path: '/',
+    component: () => import('../layouts/MainLayout.vue'),
+    children: [
+      { path: 'dashboard', component: () => import('../pages/dashboard/DashboardPage.vue'), meta: { tab: 'dashboard', title: '首页' } },
+      { path: 'transactions', component: () => import('../pages/transactions/TransactionsPage.vue'), meta: { tab: 'transactions', title: '流水' } },
+      { path: 'transactions/new', component: () => import('../pages/transactions/AddTransactionPage.vue'), meta: { title: '记一笔' } },
+      { path: 'transactions/:id/edit', component: () => import('../pages/transactions/EditTransactionPage.vue'), meta: { title: '编辑交易' } },
+      { path: 'transactions/:id', component: () => import('../pages/transactions/TransactionDetailPage.vue'), meta: { title: '交易详情' } },
+      { path: 'budgets', component: () => import('../pages/budgets/BudgetsPage.vue'), meta: { tab: 'budgets', title: '预算' } },
+      { path: 'reviews/:month', component: () => import('../pages/reports/MonthlyReportPage.vue'), meta: { title: '月度复盘' } },
+      { path: 'settings', component: () => import('../pages/settings/SettingsPage.vue'), meta: { tab: 'settings', title: '设置' } },
+      { path: 'accounts', component: () => import('../pages/accounts/AccountsPage.vue'), meta: { title: '账户' } },
+      { path: 'accounts/:accountName', component: () => import('../pages/accounts/AccountDetailPage.vue'), meta: { title: '账户详情' } },
+      { path: 'recurring', component: () => import('../pages/recurring/RecurringPage.vue'), meta: { title: '周期记账' } },
+      { path: 'exchange-rates', component: () => import('../pages/exchange-rates/ExchangeRatesPage.vue'), meta: { title: '汇率' } },
+      { path: 'reports', component: () => import('../pages/reports/ReportsPage.vue'), meta: { title: '报表' } },
+    ],
+  },
+  { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
 ]
 
-const router = createRouter({
-    history: createWebHistory(),
-    routes
+export default createRouter({
+  history: createWebHistory(),
+  routes,
+  scrollBehavior(_to, _from, savedPosition) {
+    return savedPosition || { top: 0 }
+  },
 })
-
-// 路由守卫
-router.beforeEach(async (to) => {
-    // 延迟导入 authStore 以避免循环依赖
-    const { useAuthStore } = await import('../stores/auth')
-    const authStore = useAuthStore()
-
-    // 等待配置加载完成
-    let retries = 0
-    while (!authStore.configLoaded && retries < 50) {
-        await new Promise(resolve => setTimeout(resolve, 100))
-        retries++
-    }
-
-    // 如果是 none 模式，不需要认证
-    if (authStore.authMode === 'none') {
-        // 如果访问登录页，重定向到首页
-        if (to.path === '/login') {
-            return '/'
-        }
-        return true
-    }
-
-    // 其他模式下的认证检查
-    if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-        return '/login'
-    } else if (to.path === '/login' && authStore.isAuthenticated) {
-        return '/'
-    }
-
-    return true
-})
-
-export default router

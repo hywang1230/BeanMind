@@ -1,0 +1,12 @@
+2024-12-31 * "超市" "年末采购" #food #shared
+  Expenses:Food  123.456789123456789 CNY
+  Assets:Cash   -123.456789123456789 CNY
+
+2024-12-31 * "地铁" "通勤" #travel
+  Expenses:Travel  8 CNY
+  Assets:Cash     -8 CNY
+
+2024-08-01 * "换汇" "美元资金划转"
+  Assets:Broker  12.34567890123456789 USD
+  Assets:Cash   -12.34567890123456789 USD
+

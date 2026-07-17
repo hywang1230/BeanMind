@@ -8,7 +8,6 @@ class RecurringRule(BaseModel):
     """周期规则模型"""
     __tablename__ = "recurring_rules"
 
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
     frequency = Column(String(50), nullable=False)  # DAILY, WEEKLY, MONTHLY, YEARLY, INTERVAL
     frequency_config = Column(Text, nullable=True)  # JSON 格式的频率配置
@@ -21,7 +20,6 @@ class RecurringRule(BaseModel):
     executions = relationship("RecurringExecution", back_populates="rule", cascade="all, delete-orphan")
 
     __table_args__ = (
-        Index("idx_recurring_rules_user", "user_id"),
         Index("idx_recurring_rules_active", "is_active"),
     )
 

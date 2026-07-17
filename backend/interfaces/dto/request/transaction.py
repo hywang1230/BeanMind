@@ -123,8 +123,8 @@ class TransactionQueryRequest(BaseModel):
     transaction_type: Optional[str] = Field(None, description="交易类型（expense/income/transfer/opening/other）")
     tags: Optional[List[str]] = Field(None, description="标签过滤")
     description: Optional[str] = Field(None, description="描述关键词搜索")
-    limit: Optional[int] = Field(None, ge=1, le=1000, description="限制返回数量（1-1000）")
-    offset: Optional[int] = Field(None, ge=0, description="偏移量")
+    limit: Optional[int] = Field(20, ge=1, le=100, description="限制返回数量（1-100）")
+    cursor: Optional[str] = Field(None, description="下一页不透明游标")
     
     class Config:
         json_schema_extra = {
@@ -133,7 +133,7 @@ class TransactionQueryRequest(BaseModel):
                 "end_date": "2025-01-31",
                 "transaction_type": "expense",
                 "limit": 20,
-                "offset": 0
+                "cursor": None
             }
         }
 
