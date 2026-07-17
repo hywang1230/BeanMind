@@ -36,6 +36,13 @@ class PostingResponse(BaseModel):
         }
 
 
+class DisplayAmountResponse(BaseModel):
+    """流水列表使用的逐币种展示金额。"""
+
+    currency: str = Field(..., description="展示金额币种")
+    amount: str = Field(..., description="Decimal 字符串金额，符号表示实际方向")
+
+
 class TransactionResponse(BaseModel):
     """
     交易信息响应
@@ -50,6 +57,10 @@ class TransactionResponse(BaseModel):
     links: List[str] = Field(default_factory=list, description="链接列表")
     meta: Dict = Field(default_factory=dict, description="元数据")
     transaction_type: str = Field(..., description="交易类型")
+    display_amounts: List[DisplayAmountResponse] = Field(
+        default_factory=list,
+        description="按 Beancount posting weight 计算的逐币种展示金额",
+    )
     accounts: List[str] = Field(..., description="涉及的账户列表")
     currencies: List[str] = Field(..., description="涉及的货币列表")
     created_at: Optional[str] = Field(None, description="创建时间")

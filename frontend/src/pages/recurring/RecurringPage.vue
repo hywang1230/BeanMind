@@ -45,6 +45,7 @@
             <van-cell title="交易分录" :value="`${draft.transaction_template.postings.length} 条`" />
             <div v-for="(posting, index) in draft.transaction_template.postings" :key="index" class="posting-editor">
               <van-field v-model="posting.account" :label="`账户 ${index + 1}`" placeholder="Assets:Cash" />
+              <AccountPicker v-model="posting.account" :accounts="accounts" :label="`选择账户 ${index + 1}`" clearable :error="accountError" />
               <van-field v-model="posting.amount" label="金额" inputmode="decimal" placeholder="正负金额" />
               <van-field v-model="posting.currency" label="币种" />
               <van-button v-if="draft.transaction_template.postings.length > 2" size="mini" type="danger" @click="removePosting(index)">删除分录</van-button>
@@ -63,15 +64,19 @@
 import { onMounted, ref } from 'vue'
 import { showFailToast, showSuccessToast } from 'vant'
 import { useRouter } from 'vue-router'
-import { recurringApi, type CreateRecurringRuleRequest, type RecurringRule } from '../../api/recurring'
+import { accountsApi, type Account } from '../../api/accounts'
 import type { ApiError } from '../../api/client'
+import { recurringApi, type CreateRecurringRuleRequest, type RecurringRule } from '../../api/recurring'
+import AccountPicker from '../../components/AccountPicker.vue'
 import DatePickerField from '../../components/DatePickerField.vue'
 import SelectPickerField from '../../components/SelectPickerField.vue'
 
 const router = useRouter()
 const rules = ref<RecurringRule[]>([])
+const accounts = ref<Account[]>([])
 const loading = ref(false)
 const error = ref('')
+const accountError = ref('')
 const showCreate = ref(false)
 const creating = ref(false)
 const createError = ref('')
@@ -114,6 +119,11 @@ async function loadRules() {
   catch (reason) { error.value = (reason as ApiError).message }
   finally { loading.value = false }
 }
+async function loadAccounts() {
+  accountError.value = ''
+  try { accounts.value = await accountsApi.getAccounts() }
+  catch (reason) { accountError.value = (reason as ApiError).message }
+}
 function openCreate() { draft.value = initialDraft(); weekdaysText.value = '1'; monthDaysText.value = '1'; createError.value = ''; showCreate.value = true }
 function addPosting() { draft.value.transaction_template.postings.push({ account: '', amount: '0', currency: 'CNY' }) }
 function removePosting(index: number) { draft.value.transaction_template.postings.splice(index, 1) }
@@ -146,7 +156,7 @@ async function executeRule(rule: RecurringRule) {
   try { await recurringApi.executeRule(rule.id, new Date().toISOString().slice(0, 10)); showSuccessToast('执行成功') }
   catch (reason) { showFailToast((reason as ApiError).message) }
 }
-onMounted(loadRules)
+onMounted(() => { loadRules(); loadAccounts() })
 </script>
 
 <style scoped>

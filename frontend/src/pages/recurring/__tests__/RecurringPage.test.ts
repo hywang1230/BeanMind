@@ -2,10 +2,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import Vant from 'vant'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { accountsApi } from '../../../api/accounts'
 import { recurringApi } from '../../../api/recurring'
 import RecurringPage from '../RecurringPage.vue'
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ back: vi.fn() }) }))
+vi.mock('../../../api/accounts', () => ({
+  accountsApi: { getAccounts: vi.fn() },
+}))
 vi.mock('../../../api/recurring', () => ({
   recurringApi: {
     getRules: vi.fn(), createRule: vi.fn(), updateRule: vi.fn(), executeRule: vi.fn(),
@@ -15,6 +19,14 @@ vi.mock('../../../api/recurring', () => ({
 describe('RecurringPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(accountsApi.getAccounts).mockResolvedValue([
+      { name: 'Assets', account_type: 'Assets', currencies: ['CNY'], children: [
+        { name: 'Assets:Cash', account_type: 'Assets', currencies: ['CNY'] },
+      ] },
+      { name: 'Expenses', account_type: 'Expenses', currencies: ['CNY'], children: [
+        { name: 'Expenses:Rent', account_type: 'Expenses', currencies: ['CNY'] },
+      ] },
+    ])
     vi.mocked(recurringApi.getRules).mockResolvedValue([])
   })
 

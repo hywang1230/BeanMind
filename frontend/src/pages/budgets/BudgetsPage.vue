@@ -15,6 +15,7 @@
       <van-cell-group v-for="(item, index) in items" :key="index" inset class="page-section budget-item" :class="`risk-${(item.risk || 'NORMAL').toLowerCase()}`">
         <van-field v-model="item.name" label="分类" placeholder="例如：餐饮" />
         <van-field v-model="item.account_pattern" label="账户范围" placeholder="Expenses:Food" />
+        <AccountPicker v-model="item.account_pattern" :accounts="accounts" label="选择账户范围" :prefixes="['Expenses']" clearable :error="accountError" />
         <van-field v-model="item.amount" label="额度" inputmode="decimal" />
         <van-cell v-if="item.spent !== undefined" title="执行" :label="`${item.spent} / ${item.amount}`">
           <template #value><van-tag :type="riskType(item.risk)">{{ riskText(item.risk) }}</van-tag></template>
@@ -39,13 +40,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { showConfirmDialog, showSuccessToast } from 'vant'
+import { accountsApi, type Account } from '../../api/accounts'
 import { budgetsApi, type BudgetItem, type MonthlyBudget } from '../../api/budgets'
 import type { ApiError } from '../../api/client'
+import AccountPicker from '../../components/AccountPicker.vue'
 import MonthPicker from '../../components/MonthPicker.vue'
 
 const month = ref(new Date().toISOString().slice(0, 7)); const currency = ref('CNY')
 const budget = ref<MonthlyBudget|null>(null); const items = ref<BudgetItem[]>([])
-const loading = ref(false); const saving = ref(false); const error = ref('')
+const accounts = ref<Account[]>([])
+const loading = ref(false); const saving = ref(false); const error = ref(''); const accountError = ref('')
 function addDecimalStrings(values: string[]): string {
   const normalized = values.map((value) => value.trim() || '0')
   const scale = Math.max(0, ...normalized.map((value) => value.split('.')[1]?.length ?? 0))
@@ -84,9 +88,10 @@ function percentage(value:string){
 }
 function progress(value:string){const parsed=Number(percentage(value));return Number.isFinite(parsed)?Math.min(100,Math.max(0,parsed)):0}
 async function load(){loading.value=true;error.value='';try{budget.value=await budgetsApi.get(month.value,currency.value);items.value=budget.value.items.map(item=>({...item}))}catch(reason){error.value=(reason as ApiError).message;budget.value=null;items.value=[]}finally{loading.value=false}}
+async function loadAccounts(){accountError.value='';try{accounts.value=await accountsApi.getAccounts()}catch(reason){accountError.value=(reason as ApiError).message}}
 async function save(){saving.value=true;error.value='';try{budget.value=await budgetsApi.save(month.value,currency.value,items.value.map((item,index)=>({...item,display_order:index})));items.value=budget.value.items.map(item=>({...item}));showSuccessToast('预算已保存')}catch(reason){error.value=(reason as ApiError).message}finally{saving.value=false}}
 async function copyPrevious(){error.value='';try{if(items.value.length){await showConfirmDialog({title:'覆盖预算',message:'当前分类会被上月配置替换，是否继续？'});budget.value=await budgetsApi.copyPrevious(month.value,currency.value,true)}else{budget.value=await budgetsApi.copyPrevious(month.value,currency.value)}items.value=budget.value.items.map(item=>({...item}))}catch(reason){if((reason as string)!=='cancel'&&typeof reason==='object')error.value=(reason as ApiError).message}}
-onMounted(load)
+onMounted(() => { load(); loadAccounts() })
 </script>
 
 <style scoped>

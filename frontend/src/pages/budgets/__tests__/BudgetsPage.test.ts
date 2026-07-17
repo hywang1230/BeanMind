@@ -2,8 +2,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import Vant from 'vant'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { accountsApi } from '../../../api/accounts'
 import { budgetsApi } from '../../../api/budgets'
 import BudgetsPage from '../BudgetsPage.vue'
+
+vi.mock('../../../api/accounts', () => ({
+  accountsApi: { getAccounts: vi.fn() },
+}))
 
 vi.mock('../../../api/budgets', () => ({
   budgetsApi: {
@@ -18,6 +23,11 @@ const emptyBudget = { month: '2026-07', currency: 'CNY', total: '0', spent: '0',
 describe('BudgetsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(accountsApi.getAccounts).mockResolvedValue([
+      { name: 'Expenses', account_type: 'Expenses', currencies: ['CNY'], children: [
+        { name: 'Expenses:Food', account_type: 'Expenses', currencies: ['CNY'] },
+      ] },
+    ])
     vi.mocked(budgetsApi.get).mockResolvedValue(emptyBudget)
   })
 

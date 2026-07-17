@@ -49,6 +49,54 @@ def _decimal_text(value: Optional[Decimal]) -> Optional[str]:
     return format(value, "f")
 
 
+def _posting_weight(posting: LedgerPosting) -> tuple[Decimal, str]:
+    """按 Beancount convert.get_weight 规则计算投影分录权重。"""
+    units = Decimal(posting.amount_text)
+    if posting.cost_text is not None and posting.cost_currency:
+        return units * Decimal(posting.cost_text), posting.cost_currency
+    if posting.price_text is not None and posting.price_currency:
+        return units * Decimal(posting.price_text), posting.price_currency
+    return units, posting.currency
+
+
+def _display_amounts(transaction_type: str, postings: Iterable[LedgerPosting]) -> list[dict]:
+    """返回流水列表逐币种金额；符号表示相对用户账户的实际方向。"""
+    posting_list = list(postings)
+    direction = Decimal("1")
+    if transaction_type == "expense":
+        selected = [posting for posting in posting_list if posting.account.startswith("Expenses:")]
+        direction = Decimal("-1")
+    elif transaction_type == "income":
+        selected = [posting for posting in posting_list if posting.account.startswith("Income:")]
+        direction = Decimal("-1")
+    else:
+        weighted = [(posting, *_posting_weight(posting)) for posting in posting_list]
+        selected_weighted = [item for item in weighted if item[1] < 0]
+        if not selected_weighted:
+            selected_weighted = [item for item in weighted if item[1] > 0] or weighted
+        totals: dict[str, Decimal] = {}
+        for _, amount, currency in selected_weighted:
+            totals[currency] = totals.get(currency, Decimal("0")) + amount
+        return [
+            {"currency": currency, "amount": _decimal_text(total if total else Decimal("0"))}
+            for currency, total in sorted(totals.items())
+        ]
+
+    totals: dict[str, Decimal] = {}
+    for posting in selected:
+        amount, currency = _posting_weight(posting)
+        totals[currency] = totals.get(currency, Decimal("0")) + amount
+    return [
+        {
+            "currency": currency,
+            "amount": _decimal_text(
+                total * direction if total * direction else Decimal("0")
+            ),
+        }
+        for currency, total in sorted(totals.items())
+    ]
+
+
 def _entry_payload(entry: BeancountTransaction) -> dict:
     postings = []
     for posting in entry.postings:
@@ -574,6 +622,9 @@ class TransactionQueryService:
                 "lineno": transaction.source_lineno,
             },
             "transaction_type": transaction.transaction_type,
+            "display_amounts": _display_amounts(
+                transaction.transaction_type, transaction.postings
+            ),
             "accounts": [posting.account for posting in transaction.postings],
             "currencies": sorted({posting.currency for posting in transaction.postings}),
             "created_at": None,

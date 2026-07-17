@@ -15,9 +15,94 @@ from backend.infrastructure.persistence.ledger_projection import (
     LedgerProjectionDirtyError,
     LedgerProjectionService,
     TransactionQueryService,
+    _display_amounts,
     decode_transaction_cursor,
     encode_transaction_cursor,
 )
+
+
+def _posting(
+    account,
+    amount,
+    currency="CNY",
+    *,
+    cost=None,
+    cost_currency=None,
+    price=None,
+    price_currency=None,
+):
+    return LedgerPosting(
+        account=account,
+        amount_text=amount,
+        currency=currency,
+        cost_text=cost,
+        cost_currency=cost_currency,
+        price_text=price,
+        price_currency=price_currency,
+        sequence=0,
+    )
+
+
+def test_display_amounts_follow_beancount_weight_and_direction_rules():
+    assert _display_amounts(
+        "expense",
+        [
+            _posting("Expenses:Food", "10.10"),
+            _posting("Expenses:Travel", "20.20"),
+            _posting("Assets:Cash", "-30.30"),
+        ],
+    ) == [{"currency": "CNY", "amount": "-30.30"}]
+    assert _display_amounts(
+        "expense",
+        [_posting("Expenses:Food", "-5"), _posting("Assets:Cash", "5")],
+    ) == [{"currency": "CNY", "amount": "5"}]
+    assert _display_amounts(
+        "income",
+        [_posting("Assets:Cash", "100"), _posting("Income:Salary", "-100")],
+    ) == [{"currency": "CNY", "amount": "100"}]
+    assert _display_amounts(
+        "income",
+        [_posting("Assets:Cash", "-10"), _posting("Income:Salary", "10")],
+    ) == [{"currency": "CNY", "amount": "-10"}]
+
+    cost_and_price = _posting(
+        "Expenses:Invest",
+        "2",
+        "HOOL",
+        cost="3",
+        cost_currency="USD",
+        price="4",
+        price_currency="CAD",
+    )
+    assert _display_amounts("expense", [cost_and_price]) == [
+        {"currency": "USD", "amount": "-6"}
+    ]
+    price_only = _posting(
+        "Expenses:Invest", "2", "HOOL", price="4", price_currency="CAD"
+    )
+    assert _display_amounts("expense", [price_only]) == [
+        {"currency": "CAD", "amount": "-8"}
+    ]
+
+
+def test_display_amounts_keep_currencies_separate_and_transfer_order_independent():
+    multi_currency = [
+        _posting("Expenses:Food", "10", "CNY"),
+        _posting("Expenses:Travel", "2.50", "USD"),
+    ]
+    assert _display_amounts("expense", multi_currency) == [
+        {"currency": "CNY", "amount": "-10"},
+        {"currency": "USD", "amount": "-2.50"},
+    ]
+
+    source = _posting("Assets:Bank", "-100")
+    target = _posting("Assets:Cash", "100")
+    expected = [{"currency": "CNY", "amount": "-100"}]
+    assert _display_amounts("transfer", [source, target]) == expected
+    assert _display_amounts("transfer", [target, source]) == expected
+    assert _display_amounts(
+        "expense", [_posting("Expenses:Food", "-0"), _posting("Assets:Cash", "0")]
+    ) == [{"currency": "CNY", "amount": "0"}]
 
 
 def test_fixture_rebuild_is_idempotent_and_preserves_decimal(db_session, ledger_path):

@@ -28,6 +28,8 @@ def test_transaction_api_uses_cursor_contract(db_session, ledger_path):
     assert set(payload) == {"items", "next_cursor", "has_more"}
     assert len(payload["items"]) == 2
     assert payload["has_more"] is True
+    assert payload["items"][0]["display_amounts"]
+    assert set(payload["items"][0]["display_amounts"][0]) == {"currency", "amount"}
 
 
 def test_transaction_api_maps_invalid_cursor_and_dirty(db_session, ledger_path):

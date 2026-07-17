@@ -21,4 +21,9 @@ describe('router', () => {
     const root = router.getRoutes().find(route => route.path === '/')
     expect(root?.redirect).toBe('/dashboard')
   })
+
+  it('keeps only the transaction list page alive for detail round trips', () => {
+    expect(router.resolve('/transactions').meta.keepAlive).toBe(true)
+    expect(router.resolve('/transactions/example').meta.keepAlive).toBeUndefined()
+  })
 })

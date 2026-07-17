@@ -1,7 +1,11 @@
 <template>
   <div class="app-shell">
     <main class="app-main" :class="{ 'with-tabbar': showTabbar }">
-      <router-view />
+      <router-view v-slot="{ Component, route: currentRoute }">
+        <keep-alive include="TransactionsPage">
+          <component :is="Component" :key="currentRoute.path" />
+        </keep-alive>
+      </router-view>
     </main>
     <van-tabbar
       v-if="showTabbar"

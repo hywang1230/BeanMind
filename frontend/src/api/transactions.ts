@@ -6,12 +6,18 @@ export type Posting = {
     currency: string
 }
 
+export type DisplayAmount = {
+    currency: string
+    amount: string
+}
+
 export type Transaction = {
     id: string
     date: string
     description?: string
     payee?: string
     postings: Posting[]
+    display_amounts: DisplayAmount[]
     tags?: string[]
     transaction_type?: 'expense' | 'income' | 'transfer' | 'opening' | 'other'
     created_at?: string

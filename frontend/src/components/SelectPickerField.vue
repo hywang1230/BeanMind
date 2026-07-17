@@ -6,9 +6,15 @@
     :error-message="error"
     :rules="rules"
     readonly
-    is-link
     @click="open"
-  />
+  >
+    <template #right-icon>
+      <button v-if="clearable && modelValue" type="button" class="field-action" :aria-label="`清空${label}`" @click.stop="clear">
+        <van-icon name="cross" />
+      </button>
+      <van-icon v-else name="arrow" />
+    </template>
+  </van-field>
   <van-popup v-model:show="show" position="bottom" round>
     <van-picker
       v-model="selectedValues"
@@ -30,7 +36,8 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   error?: string
   rules?: Array<Record<string, unknown>>
-}>(), { placeholder: '请选择', error: '', rules: () => [] })
+  clearable?: boolean
+}>(), { placeholder: '请选择', error: '', rules: () => [], clearable: false })
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
   (event: 'change', value: string): void
@@ -52,5 +59,15 @@ function confirm({ selectedValues: values }: { selectedValues: Array<string | nu
   show.value = false
 }
 
+function clear() {
+  emit('update:modelValue', '')
+  emit('change', '')
+  show.value = false
+}
+
 watch(() => props.modelValue, (value) => { selectedValues.value = [value] })
 </script>
+
+<style scoped>
+.field-action { display: inline-grid; padding: 4px; place-items: center; border: 0; background: transparent; color: var(--bm-muted); font-size: 16px; }
+</style>

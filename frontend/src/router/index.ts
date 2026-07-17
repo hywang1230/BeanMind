@@ -7,7 +7,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../layouts/MainLayout.vue'),
     children: [
       { path: 'dashboard', component: () => import('../pages/dashboard/DashboardPage.vue'), meta: { tab: 'dashboard', title: '首页' } },
-      { path: 'transactions', component: () => import('../pages/transactions/TransactionsPage.vue'), meta: { tab: 'transactions', title: '流水' } },
+      { path: 'transactions', component: () => import('../pages/transactions/TransactionsPage.vue'), meta: { tab: 'transactions', title: '流水', keepAlive: true } },
       { path: 'transactions/new', component: () => import('../pages/transactions/AddTransactionPage.vue'), meta: { title: '记一笔' } },
       { path: 'transactions/:id/edit', component: () => import('../pages/transactions/EditTransactionPage.vue'), meta: { title: '编辑交易' } },
       { path: 'transactions/:id', component: () => import('../pages/transactions/TransactionDetailPage.vue'), meta: { title: '交易详情' } },
