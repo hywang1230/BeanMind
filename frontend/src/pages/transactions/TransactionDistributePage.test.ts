@@ -83,6 +83,6 @@ describe('TransactionDistributePage', () => {
         ]),
       }),
     )
-    expect(replace).toHaveBeenCalledWith('/transactions/tx-1')
+    expect(replace).toHaveBeenCalledWith('/transactions/new')
   })
 })

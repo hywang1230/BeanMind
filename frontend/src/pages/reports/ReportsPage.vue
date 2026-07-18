@@ -1,17 +1,15 @@
 <template>
-  <section class="page reports-page">
-    <header class="page-header">
-      <div>
-        <p class="eyebrow">财务报告</p>
-        <h1>报表中心</h1>
-      </div>
+  <section class="page secondary-page reports-page">
+    <van-nav-bar title="报表" left-arrow @click-left="router.back()" />
+    <div class="report-month">
       <MonthPicker v-model="month" />
-    </header>
+    </div>
 
+    <h2 class="section-title">报表入口</h2>
     <van-cell-group inset class="entry-group">
-      <van-cell title="资产负债表" is-link to="/reports/balance-sheet" />
-      <van-cell title="利润表" is-link :to="incomeStatementLink" />
-      <van-cell title="月度复盘" is-link :to="`/reports/monthly-review?month=${month}`" />
+      <van-cell title="资产负债表" label="查看截至某日的资产、负债与权益" is-link to="/reports/balance-sheet" />
+      <van-cell title="利润表" label="查看指定期间的收入、支出与结余" is-link :to="incomeStatementLink" />
+      <van-cell title="月度复盘" label="总结本月收支并生成下月建议" is-link :to="`/reviews/${month}`" />
     </van-cell-group>
 
     <section class="trend-card" data-testid="cashflow-trend-card">
@@ -67,11 +65,13 @@
       <van-button @click="load">重试</van-button>
     </van-empty>
     <template v-else-if="balance && income">
+      <h2 class="section-title">资产概览</h2>
       <van-cell-group inset>
         <van-cell title="净资产" :value="formatMoney(balance.net_worth_cny)" />
         <van-cell title="资产" :value="formatMoney(balance.total_assets_cny)" />
         <van-cell title="负债" :value="formatMoney(balance.total_liabilities_cny)" />
       </van-cell-group>
+      <h2 class="section-title">收支概览</h2>
       <van-cell-group inset>
         <van-cell title="收入"><template #value><span class="income">{{ formatMoney(income.total_income_cny) }}</span></template></van-cell>
         <van-cell title="支出"><template #value><span class="expense">{{ formatMoney(income.total_expenses_cny) }}</span></template></van-cell>
@@ -83,6 +83,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { ApiError } from '../../api/client'
 import {
   reportsApi,
@@ -113,6 +114,7 @@ function monthDates(value: string) {
   }
 }
 
+const router = useRouter()
 const month = ref(currentMonth())
 const balance = ref<BalanceSheetResponse | null>(null)
 const income = ref<IncomeStatementResponse | null>(null)
@@ -184,9 +186,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.page-header { display: grid; gap: 12px; margin-bottom: 16px; }
-.eyebrow { margin: 0; color: var(--bm-muted); font-size: 12px; }
-h1 { margin: 4px 0 0; font-size: 24px; }
+.report-month {
+  display: flex;
+  justify-content: center;
+  margin: 4px 0 14px;
+}
 .entry-group, .van-cell-group { margin-bottom: 12px; }
 .trend-card {
   margin: 0 0 14px;

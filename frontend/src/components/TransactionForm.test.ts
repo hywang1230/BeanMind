@@ -217,4 +217,37 @@ describe('TransactionForm', () => {
     expect(html.indexOf('选择币种') >= 0 || html.indexOf('币种') >= 0).toBe(true)
     expect(html.indexOf('币种')).toBeLessThan(html.indexOf('金额'))
   })
+
+  it('resets amount and category while keeping funding account for continuous entry', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(TransactionForm, {
+      props: { mode: 'create', loading: false },
+      global: { plugins: [Vant, pinia] },
+    })
+    await flushPromises()
+
+    const money = wrapper.findComponent({ name: 'MoneyInput' })
+    await money.vm.$emit('update:modelValue', '12.00')
+    const pickers = wrapper.findAllComponents({ name: 'AccountPicker' })
+    await pickers[0]!.vm.$emit('update:modelValue', 'Assets:Cash')
+    await pickers[1]!.vm.$emit('update:modelValue', 'Expenses:Food')
+    await wrapper.vm.$nextTick()
+
+    ;(wrapper.vm as unknown as { resetForNextEntry: (options?: { lastPayee?: string }) => void }).resetForNextEntry({
+      lastPayee: '新咖啡店',
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findComponent({ name: 'MoneyInput' }).props('modelValue')).toBe('')
+    // funding account chips remain
+    expect(wrapper.text()).toContain('Cash')
+    // category cleared
+    expect(wrapper.text()).not.toContain('Food')
+    await wrapper.find('[aria-label="选择交易方"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('新咖啡店')
+  })
+
+
 })

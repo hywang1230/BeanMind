@@ -413,7 +413,20 @@ function trySubmitFromDraft() {
   return false
 }
 
-defineExpose({ trySubmitFromDraft })
+/** After successful create: keep type/date/funding account for continuous entry. */
+function resetForNextEntry(options?: { lastPayee?: string }) {
+  submitted.value = false
+  form.amount = ''
+  form.payee = ''
+  form.description = ''
+  form.toAccounts = []
+  const lastPayee = options?.lastPayee?.trim()
+  if (lastPayee && !payees.value.includes(lastPayee)) {
+    payees.value = [lastPayee, ...payees.value]
+  }
+}
+
+defineExpose({ trySubmitFromDraft, resetForNextEntry })
 
 watch(() => props.initial, loadInitial, { immediate: true })
 watch(availableCurrencies, () => {

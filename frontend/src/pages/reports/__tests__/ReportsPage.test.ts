@@ -6,8 +6,9 @@ import { reportsApi } from '../../../api/reports'
 import MonthPicker from '../../../components/MonthPicker.vue'
 import ReportsPage from '../ReportsPage.vue'
 
+const back = vi.fn()
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), back }),
 }))
 vi.mock('../../../api/reports', () => ({
   reportsApi: {
@@ -149,4 +150,36 @@ describe('ReportsPage', () => {
     expect(wrapper.text()).toContain('报表加载失败')
     expect(wrapper.text()).toContain('重试')
   })
+  it('shows secondary nav bar with back action', async () => {
+    const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('报表')
+    const nav = wrapper.find('.van-nav-bar')
+    expect(nav.exists()).toBe(true)
+    expect(nav.find('.van-nav-bar__left').exists()).toBe(true)
+    await nav.find('.van-nav-bar__left').trigger('click')
+    expect(back).toHaveBeenCalled()
+  })
+
+  it('links monthly review to reviews route with selected month', async () => {
+    const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    const monthInput = wrapper.findComponent(MonthPicker)
+    await monthInput.vm.$emit('update:modelValue', '2025-12')
+    await flushPromises()
+    const cell = wrapper.findAllComponents({ name: 'VanCell' }).find((c) => c.props('title') === '月度复盘')
+    expect(cell).toBeTruthy()
+    expect(cell!.props('to')).toBe('/reviews/2025-12')
+  })
+
+  it('shows report entry labels and summary section titles', async () => {
+    const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('查看截至某日的资产、负债与权益')
+    expect(wrapper.text()).toContain('查看指定期间的收入、支出与结余')
+    expect(wrapper.text()).toContain('总结本月收支并生成下月建议')
+    expect(wrapper.text()).toContain('资产概览')
+    expect(wrapper.text()).toContain('收支概览')
+  })
+
 })

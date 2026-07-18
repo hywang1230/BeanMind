@@ -9,6 +9,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { showSuccessToast } from 'vant'
 import type { ApiError } from '../../api/client'
 import { transactionsApi, type CreateTransactionRequest } from '../../api/transactions'
 import TransactionForm from '../../components/TransactionForm.vue'
@@ -18,15 +19,19 @@ const router = useRouter()
 const draftStore = useTransactionDraftStore()
 const loading = ref(false)
 const error = ref('')
-const formRef = ref<{ trySubmitFromDraft: () => boolean } | null>(null)
+const formRef = ref<{
+  trySubmitFromDraft: () => boolean
+  resetForNextEntry: (options?: { lastPayee?: string }) => void
+} | null>(null)
 
 async function save(value: CreateTransactionRequest) {
   loading.value = true
   error.value = ''
   try {
-    const created = await transactionsApi.createTransaction(value)
+    await transactionsApi.createTransaction(value)
     draftStore.clear()
-    await router.replace(`/transactions/${created.id}`)
+    formRef.value?.resetForNextEntry({ lastPayee: value.payee })
+    showSuccessToast('已保存，可继续记账')
   } catch (reason) {
     error.value = (reason as ApiError).message
   } finally {

@@ -48,6 +48,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { accountShortLabel } from '../../utils/accountTree'
+import { showSuccessToast } from 'vant'
 import { useRoute, useRouter } from 'vue-router'
 import type { ApiError } from '../../api/client'
 import { transactionsApi } from '../../api/transactions'
@@ -230,9 +231,10 @@ async function handleNext() {
       draftStore.clear()
       await router.replace(`/transactions/${id}`)
     } else {
-      const created = await transactionsApi.createTransaction(payload)
+      await transactionsApi.createTransaction(payload)
       draftStore.clear()
-      await router.replace(`/transactions/${created.id}`)
+      showSuccessToast('已保存，可继续记账')
+      await router.replace('/transactions/new')
     }
   } catch (reason) {
     // keep draft for retry
