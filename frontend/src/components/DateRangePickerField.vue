@@ -15,6 +15,7 @@
   </van-field>
   <van-calendar
     v-model:show="show"
+    teleport="body"
     type="range"
     title="选择日期范围"
     :default-date="selected"

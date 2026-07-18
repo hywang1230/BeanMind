@@ -3,7 +3,7 @@
     {{ modelValue }}
     <van-icon name="arrow" />
   </van-button>
-  <van-popup v-model:show="show" position="bottom" round>
+  <van-popup v-model:show="show" position="bottom" round teleport="body">
     <van-date-picker
       v-model="selected"
       title="选择月份"

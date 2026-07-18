@@ -28,7 +28,7 @@
     </template>
   </van-field>
 
-  <van-popup v-model:show="show" position="bottom" round class="account-picker-popup">
+  <van-popup v-model:show="show" position="bottom" round teleport="body" class="account-picker-popup">
     <div class="account-picker-panel">
       <header class="account-picker-header">
         <button type="button" class="header-action" @click="show = false">取消</button>

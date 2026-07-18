@@ -16,6 +16,12 @@ vi.mock('../api/statistics', () => ({
   },
 }))
 
+const popupStub = {
+  name: 'VanPopup',
+  props: ['show', 'teleport'],
+  template: '<div class="popup-stub"><slot /></div>',
+}
+
 describe('business inputs', () => {
   beforeEach(() => {
     vi.mocked(statisticsApi.getFrequentItems).mockReset()
@@ -133,9 +139,10 @@ describe('business inputs', () => {
           ] },
         ],
       },
-      global: { plugins: [Vant] },
+      global: { plugins: [Vant], stubs: { VanPopup: popupStub } },
     })
 
+    expect(wrapper.findComponent({ name: 'VanPopup' }).props('teleport')).toBe('body')
     await wrapper.find('.van-field').trigger('click')
     // top-level prefixes auto-expand; Food should be visible without collapsing
     expect(wrapper.text()).toContain('Food')
@@ -170,7 +177,7 @@ describe('business inputs', () => {
           },
         ],
       },
-      global: { plugins: [Vant] },
+      global: { plugins: [Vant], stubs: { VanPopup: popupStub } },
     })
 
     await wrapper.find('.van-field').trigger('click')
@@ -189,7 +196,7 @@ describe('business inputs', () => {
         clearable: true,
         accounts: [{ name: 'Assets:Cash', account_type: 'Assets', currencies: ['CNY'] }],
       },
-      global: { plugins: [Vant] },
+      global: { plugins: [Vant], stubs: { VanPopup: popupStub } },
     })
     await wrapper.find('[aria-label="清空账户"]').trigger('click')
     expect(wrapper.emitted('update:modelValue')).toEqual([['']])
@@ -227,7 +234,7 @@ describe('business inputs', () => {
           },
         ],
       },
-      global: { plugins: [Vant] },
+      global: { plugins: [Vant], stubs: { VanPopup: popupStub } },
     })
 
     await wrapper.find('.van-field').trigger('click')
@@ -256,7 +263,7 @@ describe('business inputs', () => {
           { name: 'Expenses:Food:Lunch', account_type: 'Expenses', currencies: ['CNY'] },
         ],
       },
-      global: { plugins: [Vant] },
+      global: { plugins: [Vant], stubs: { VanPopup: popupStub } },
     })
 
     await wrapper.find('.van-field').trigger('click')
@@ -284,9 +291,10 @@ describe('business inputs', () => {
   it('uses the Vant date picker instead of a native month input', async () => {
     const wrapper = shallowMount(MonthPicker, {
       props: { modelValue: '2026-07' },
-      global: { plugins: [Vant], stubs: { VanPopup: { template: '<div><slot /></div>' } } },
+      global: { plugins: [Vant], stubs: { VanPopup: popupStub } },
     })
     expect(wrapper.find('input[type="month"]').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'VanPopup' }).props('teleport')).toBe('body')
     expect(wrapper.find('van-date-picker-stub').exists()).toBe(true)
   })
 
@@ -317,6 +325,7 @@ describe('business inputs', () => {
     const calendar = wrapper.findComponent({ name: 'van-calendar' })
     expect(calendar.props('type')).toBe('range')
     expect(calendar.props('allowSameDay')).toBe(true)
+    expect(calendar.props('teleport')).toBe('body')
     calendar.vm.$emit('confirm', [new Date(2026, 4, 1), new Date(2026, 4, 3)])
     expect(wrapper.emitted('update:startDate')).toEqual([['2026-05-01']])
     expect(wrapper.emitted('update:endDate')).toEqual([['2026-05-03']])
@@ -337,9 +346,10 @@ describe('business inputs', () => {
   it('uses the Vant picker instead of a native select', () => {
     const wrapper = shallowMount(SelectPickerField, {
       props: { modelValue: 'expense', label: '类型', options: [{ text: '支出', value: 'expense' }] },
-      global: { plugins: [Vant], stubs: { VanPopup: { template: '<div><slot /></div>' } } },
+      global: { plugins: [Vant], stubs: { VanPopup: popupStub } },
     })
     expect(wrapper.find('select').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'VanPopup' }).props('teleport')).toBe('body')
     expect(wrapper.find('van-picker-stub').exists()).toBe(true)
   })
 })

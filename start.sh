@@ -207,13 +207,24 @@ fi
 
 log_success "数据文件初始化完成"
 
+# 局域网调试地址：默认读取 Mac Wi-Fi 地址，也可通过 BEANMIND_LAN_IP 手动指定
+LAN_IP="${BEANMIND_LAN_IP:-}"
+if [ -z "$LAN_IP" ] && command_exists ipconfig; then
+    LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || true)"
+fi
+if [ -z "$LAN_IP" ]; then
+    LAN_IP="localhost"
+    log_warning "未检测到局域网 IP；如需手机访问，请设置 BEANMIND_LAN_IP 后重新启动。"
+fi
+
 # ==================== 5. 启动后端服务 ====================
 print_separator
 log_info "步骤 5/6: 启动后端服务..."
 
 # 使用 uvicorn 启动后端（在项目根目录运行）
 log_info "后端服务正在启动，监听端口: 8000"
-$UV_BIN run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload > logs/backend.log 2>&1 &
+CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:5173,http://${LAN_IP}:5173}" \
+    $UV_BIN run uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload > logs/backend.log 2>&1 &
 BACKEND_PID=$!
 
 # 等待后端启动
@@ -235,7 +246,8 @@ cd frontend
 
 # 使用 Vite 启动前端
 log_info "前端服务正在启动，监听端口: 5173"
-npm run dev > ../logs/frontend.log 2>&1 &
+VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://${LAN_IP}:8000}" \
+    npm run dev -- --host 0.0.0.0 > ../logs/frontend.log 2>&1 &
 FRONTEND_PID=$!
 
 # 等待前端启动
@@ -244,6 +256,7 @@ sleep 3
 if kill -0 $FRONTEND_PID 2>/dev/null; then
     log_success "前端服务启动成功 (PID: $FRONTEND_PID)"
     log_info "前端地址: http://localhost:5173"
+    log_info "手机访问: http://${LAN_IP}:5173"
 else
     log_error "前端服务启动失败！请查看日志: logs/frontend.log"
     kill $BACKEND_PID 2>/dev/null || true
@@ -259,6 +272,7 @@ print_separator
 echo ""
 echo -e "${GREEN}服务地址:${NC}"
 echo -e "  🌐 前端应用: ${BLUE}http://localhost:5173${NC}"
+echo -e "  📱 手机访问: ${BLUE}http://${LAN_IP}:5173${NC}"
 echo -e "  🔌 后端 API: ${BLUE}http://localhost:8000${NC}"
 echo -e "  📚 API 文档: ${BLUE}http://localhost:8000/docs${NC}"
 echo ""

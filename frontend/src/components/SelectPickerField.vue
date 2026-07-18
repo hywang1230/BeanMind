@@ -15,7 +15,7 @@
       <van-icon v-else name="arrow" />
     </template>
   </van-field>
-  <van-popup v-model:show="show" position="bottom" round>
+  <van-popup v-model:show="show" position="bottom" round teleport="body">
     <van-picker
       v-model="selectedValues"
       :title="`选择${label}`"
