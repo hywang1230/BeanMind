@@ -37,6 +37,17 @@ cp .env.example .env
 cd frontend && npm install && npm run dev
 ```
 
+## PWA 安装与更新
+
+BeanMind 支持在手机或桌面浏览器中添加到主屏幕，并以独立窗口启动。PWA 仅缓存前端静态壳层；发现新版本时，页面会提示用户选择“立即更新”或“稍后”，不会在使用过程中静默切换版本。
+
+- 本机可使用 `localhost` 验证 Service Worker。
+- 手机或其他局域网设备访问时，部署环境必须提供 HTTPS，浏览器才会保证 Service Worker 和安装入口可用。
+- 直接通过 `http://<局域网地址>:8000` 访问时，BeanMind 仍可作为普通 Web 应用使用，但不承诺可以安装。
+- PWA 不缓存账户、流水、预算、报表等 API 响应，不支持离线查账、离线记账、后台同步或失败写请求自动重放。
+
+后端不可访问时，财务页面会显示现有网络错误和重试入口，不会把缓存数据当作当前财务结果。
+
 ## 数据与恢复
 
 默认账本入口是 `data/ledger/main.beancount`，数据库是 `data/beanmind.db`。流水、预算执行和报表查询依赖 SQLite 投影；投影异常会进入 `DIRTY` 状态并拒绝返回可能错误的财务结果。
@@ -90,6 +101,7 @@ LLM_TIMEOUT_SECONDS=30
 ```bash
 ~/.local/bin/uv run pytest tests/ -v
 cd frontend && npm run test:run && npm run build
+cd frontend && npm run verify:pwa
 openspec validate complete-beanmind-core-reform --type change --strict --no-interactive
 ```
 
