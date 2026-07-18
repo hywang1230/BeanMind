@@ -129,6 +129,40 @@ class LedgerAggregationService:
             "income": {currency: -amount for currency, amount in raw_income.items()},
         }
 
+    def monthly_category_currency_totals(
+        self, month: str, root: str
+    ) -> dict[str, dict[str, Decimal]]:
+        """按二级分类 + 币种聚合指定月金额（SQL group by 账户/币种后折叠）。
+
+        账户 ``Expenses:Food`` / ``Expenses:Food:Lunch`` 的二级分类均为 ``Food``。
+        返回 {category: {currency: Decimal}}；金额保留投影分录原符号。
+        """
+        self.projection.assert_ready()
+        start, end = month_range(month)
+        rows = (
+            self.db.query(
+                LedgerPosting.account,
+                LedgerPosting.currency,
+                func.decimal_sum(LedgerPosting.amount_text),
+            )
+            .join(LedgerTransaction, LedgerTransaction.id == LedgerPosting.transaction_id)
+            .filter(LedgerTransaction.date >= start)
+            .filter(LedgerTransaction.date <= end)
+            .filter(self._pattern_filter(root))
+            .group_by(LedgerPosting.account, LedgerPosting.currency)
+            .all()
+        )
+        result: dict[str, dict[str, Decimal]] = {}
+        for account, currency, total in rows:
+            parts = str(account).split(":")
+            if len(parts) < 2:
+                continue
+            category = parts[1]
+            amount = Decimal(str(total or 0))
+            bucket = result.setdefault(category, {})
+            bucket[currency] = bucket.get(currency, Decimal("0")) + amount
+        return result
+
     def monthly_cashflow_by_currency(
         self, start_month: str, end_month: str
     ) -> dict[str, dict[str, dict[str, Decimal]]]:

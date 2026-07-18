@@ -1,4 +1,4 @@
-"""最小 OpenAI-compatible Chat Completions 客户端。"""
+"""OpenAI-compatible Chat Completions 客户端（月度复盘）。"""
 
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ class MonthlyReviewText(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     monthly_summary: str = Field(min_length=1)
-    next_month_suggestions: list[str] = Field(max_length=3)
+    highlights: list[str] = Field(default_factory=list, max_length=5)
+    next_month_suggestions: list[str] = Field(min_length=1, max_length=5)
 
 
 class OpenAICompatibleClient:
@@ -46,12 +47,25 @@ class OpenAICompatibleClient:
             {
                 "role": "system",
                 "content": (
-                    "你是个人财务复盘助手。只能解释提供的确定性事实，不得重算金额。"
-                    "只返回 JSON：monthly_summary 为非空字符串，"
-                    "next_month_suggestions 为最多三条字符串。"
+                    "你是个人财务月度复盘助手。只能解释用户提供的确定性事实，"
+                    "不得重算、估算或编造任何金额、比例、排名或预算状态。"
+                    "只能引用事实中已给出的数字、分类名与风险标签。"
+                    "输出必须是单个 JSON 对象，不要 Markdown 代码块，不要额外说明。"
+                    "字段要求："
+                    "1) monthly_summary：非空字符串，使用多个自然段（用 \\n 分隔），"
+                    "覆盖收支总览、环比变化、结构亮点、预算风险与分类重点；"
+                    "2) highlights：字符串数组，最多 5 条关键发现短句，无内容时可为 []；"
+                    "3) next_month_suggestions：1 到 5 条具体可执行建议。"
+                    "禁止返回金额字段或其它财务结构。"
                 ),
             },
-            {"role": "user", "content": json.dumps(facts, ensure_ascii=False)},
+            {
+                "role": "user",
+                "content": (
+                    "请基于以下 JSON 事实撰写本月复盘。金额已由系统折算到主币种，请直接引用。\n"
+                    f"{json.dumps(facts, ensure_ascii=False)}"
+                ),
+            },
         ]
         try:
             with httpx.Client(timeout=self.timeout_seconds, transport=self.transport) as client:
