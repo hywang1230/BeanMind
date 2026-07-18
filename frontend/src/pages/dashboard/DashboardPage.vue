@@ -12,7 +12,7 @@
     </van-empty>
     <template v-else-if="data">
       <div class="finance-card net-worth-card page-section">
-        <div class="metric-label net-worth-label">净资产 <van-icon name="info-o" /></div>
+        <div class="metric-label net-worth-label">净资产</div>
         <div class="net-worth-value">{{ money(data.net_worth) }}</div>
         <div class="asset-summary">
           <span>资产 {{ money(data.assets) }}</span><i>·</i><span>负债 {{ money(data.liabilities) }}</span>

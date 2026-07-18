@@ -36,17 +36,13 @@ def get_db() -> Generator[Session, None, None]:
 
 # ==================== Beancount Service ====================
 
+from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
-
-_beancount_service: BeancountService | None = None
 
 
 def get_beancount_service() -> BeancountService:
-    """获取 Beancount 服务单例"""
-    global _beancount_service
-    if _beancount_service is None:
-        _beancount_service = BeancountService(settings.LEDGER_FILE)
-    return _beancount_service
+    """获取 Beancount 服务（账本变更后按 mtime 自动重载，与报表共用 Provider）。"""
+    return BeancountServiceProvider.get_service(settings.LEDGER_FILE)
 
 
 # ==================== 辅助函数 ====================
