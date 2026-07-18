@@ -71,7 +71,6 @@ cd frontend && npm run test:run && npm run build
 openspec validate complete-beanmind-core-reform --type change --strict --no-interactive
 ```
 
-改革目标和边界见 `docs/BeanMind-Reform-Plan.md`。
 
 ## License
 
