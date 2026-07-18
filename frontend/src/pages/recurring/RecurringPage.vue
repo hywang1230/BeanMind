@@ -78,6 +78,7 @@
             </div>
             <van-button block plain type="primary" @click="addPosting">添加分录</van-button>
           </van-cell-group>
+          <van-notice-bar v-if="currencyCatalogError" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ currencyCatalogError }}</van-notice-bar>
           <van-notice-bar v-if="editorError" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ editorError }}</van-notice-bar>
           <div style="margin:16px"><van-button block round type="primary" native-type="submit" :loading="saving">{{ editingId ? '保存' : '创建' }}</van-button></div>
         </van-form>
@@ -134,6 +135,7 @@ import { recurringApi, type CreateRecurringRuleRequest, type RecurringRule } fro
 import AccountPicker from '../../components/AccountPicker.vue'
 import DatePickerField from '../../components/DatePickerField.vue'
 import SelectPickerField from '../../components/SelectPickerField.vue'
+import { currenciesApi } from '../../api/currencies'
 
 const router = useRouter()
 const rules = ref<RecurringRule[]>([])
@@ -159,14 +161,24 @@ const frequencyOptions = [
 ]
 
 
-// 与记账表单一致：产品仅支持人民币、美元；编辑存量数据时保留当前币种可选。
-const SUPPORTED_CURRENCIES = ['CNY', 'USD']
+// 币种选项来自统一目录（启用）；编辑存量时若当前码不在目录中则仍展示以便识别。
+const catalogCurrencies = ref<string[]>([])
+const currencyCatalogError = ref('')
 
 function currencyOptionsFor(current: string) {
-  const values = current && !SUPPORTED_CURRENCIES.includes(current)
-    ? [...SUPPORTED_CURRENCIES, current]
-    : [...SUPPORTED_CURRENCIES]
+  const base = catalogCurrencies.value
+  const values = current && !base.includes(current) ? [...base, current] : [...base]
   return values.map((currency) => ({ text: currency, value: currency }))
+}
+
+async function loadCurrencyCatalog() {
+  currencyCatalogError.value = ''
+  try {
+    catalogCurrencies.value = await currenciesApi.listEnabledCodes()
+  } catch (reason) {
+    catalogCurrencies.value = []
+    currencyCatalogError.value = (reason as ApiError).message || '币种目录加载失败'
+  }
 }
 const weekdayOptions = [
   { text: '周一', value: 1 }, { text: '周二', value: 2 }, { text: '周三', value: 3 },
@@ -357,7 +369,11 @@ async function executeRule(rule: RecurringRule) {
   try { await recurringApi.executeRule(rule.id, new Date().toISOString().slice(0, 10)); showSuccessToast('执行成功') }
   catch (reason) { showFailToast((reason as ApiError).message) }
 }
-onMounted(() => { loadRules(); loadAccounts() })
+onMounted(async () => {
+  await loadCurrencyCatalog()
+  loadRules()
+  loadAccounts()
+})
 </script>
 
 <style scoped>

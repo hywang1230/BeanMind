@@ -117,7 +117,7 @@
                 </div>
               </template>
             </van-field>
-            <van-field name="currencies" label="币种" required>
+            <van-field name="currencies" label="币种" required :error-message="currencyLoadError || (!currencyOptions.length ? '暂无可用币种' : '')">
               <template #input>
                 <van-checkbox-group v-model="createForm.currencies" direction="horizontal" class="currency-checks">
                   <van-checkbox
@@ -134,6 +134,7 @@
           <div class="create-actions">
             <van-button block type="primary" native-type="submit" :loading="creating">创建</van-button>
           </div>
+          <van-notice-bar v-if="currencyLoadError" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ currencyLoadError }}</van-notice-bar>
           <van-notice-bar v-if="createError" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ createError }}</van-notice-bar>
         </van-form>
       </div>
@@ -148,14 +149,13 @@ import { useRouter } from 'vue-router'
 import { accountsApi, type Account } from '../../api/accounts'
 import type { ApiError } from '../../api/client'
 import DatePickerField from '../../components/DatePickerField.vue'
+import { currenciesApi } from '../../api/currencies'
 import {
   buildAccountTree,
   visibleAccountNodes,
   type AccountTreeNode,
   type VisibleAccountNode,
 } from '../../utils/accountTree'
-
-const BASE_CURRENCIES = ['CNY', 'USD'] as const
 
 const router = useRouter()
 const accounts = ref<Account[]>([])
@@ -182,7 +182,25 @@ const nameSuffixPlaceholder = computed(() => {
   return 'Food:Lunch'
 })
 
-const currencyOptions = computed(() => [...BASE_CURRENCIES])
+const enabledCurrencies = ref<string[]>([])
+const currencyLoadError = ref('')
+const currencyOptions = computed(() => [...enabledCurrencies.value])
+
+async function loadCurrencies() {
+  currencyLoadError.value = ''
+  try {
+    enabledCurrencies.value = await currenciesApi.listEnabledCodes()
+    if (!createForm.currencies.length || !createForm.currencies.every((c) => enabledCurrencies.value.includes(c))) {
+      createForm.currencies = enabledCurrencies.value.includes('CNY')
+        ? ['CNY']
+        : (enabledCurrencies.value[0] ? [enabledCurrencies.value[0]] : [])
+    }
+  } catch (reason) {
+    enabledCurrencies.value = []
+    currencyLoadError.value = (reason as ApiError).message || '币种目录加载失败'
+  }
+}
+
 
 async function load() {
   loading.value = true
@@ -287,7 +305,7 @@ function accountTypeMeta(name: string) {
   return map[name] || { title: name, mark: name.slice(0, 1) }
 }
 
-onMounted(load)
+onMounted(async () => { await loadCurrencies(); await load() })
 </script>
 
 <style scoped>

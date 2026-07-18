@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import Vant from 'vant'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { currenciesApi } from '../../../api/currencies'
 import { accountsApi } from '../../../api/accounts'
 import { recurringApi } from '../../../api/recurring'
 import RecurringPage from '../RecurringPage.vue'
@@ -16,9 +17,14 @@ vi.mock('../../../api/recurring', () => ({
   },
 }))
 
+vi.mock('../../../api/currencies', () => ({
+  currenciesApi: { listEnabledCodes: vi.fn(), list: vi.fn() },
+}))
+
 describe('RecurringPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(currenciesApi.listEnabledCodes).mockResolvedValue(['CNY', 'USD'])
     vi.mocked(accountsApi.getAccounts).mockResolvedValue([
       { name: 'Assets', account_type: 'Assets', currencies: ['CNY'], children: [
         { name: 'Assets:Cash', account_type: 'Assets', currencies: ['CNY'] },
@@ -100,7 +106,8 @@ describe('RecurringPage', () => {
     await flushPromises()
 
     expect(recurringApi.updateRule).toHaveBeenCalled()
-    const [id, payload] = vi.mocked(recurringApi.updateRule).mock.calls.at(-1)!
+    const calls = vi.mocked(recurringApi.updateRule).mock.calls
+    const [id, payload] = calls[calls.length - 1]!
     expect(id).toBe('rule-1')
     expect(payload).toMatchObject({
       name: '停车费',

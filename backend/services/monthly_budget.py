@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy.orm import Session, selectinload
 
 from backend.infrastructure.persistence.db.models import MonthlyBudget, MonthlyBudgetItem
+from backend.services.currency_catalog import CurrencyCatalogError, CurrencyCatalogService
 from backend.services.ledger_aggregation import (
     LedgerAggregationService,
     month_range,
@@ -100,12 +101,19 @@ class MonthlyBudgetService:
             .first()
         )
 
+    def _require_enabled_currency(self, currency: str) -> str:
+        try:
+            return CurrencyCatalogService(self.db).require_enabled(currency)
+        except CurrencyCatalogError as exc:
+            raise MonthlyBudgetError(exc.code, str(exc), exc.details) from exc
+
     def save(self, month: str, currency: str, items: list[dict]) -> dict:
         self.aggregation.projection.assert_ready()
         month_range(month)
         currency = currency.strip().upper()
         if not currency:
             raise MonthlyBudgetError("INVALID_MONTHLY_BUDGET", "币种不能为空")
+        currency = self._require_enabled_currency(currency)
         normalized = self.validate_items(items)
         try:
             budget = self._find(month, currency)

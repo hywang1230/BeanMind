@@ -97,3 +97,25 @@ def test_advanced_reports_keep_decimal_string_contract() -> None:
     assert income.status_code == 200
     assert income.json()["total_expenses_cny"] == "0.123456789"
     assert isinstance(income.json()["total_expenses_cny"], str)
+
+
+def test_create_exchange_rate_unknown_currency_rejected(db_session) -> None:
+    """汇率创建拒绝目录外币种；不触碰真实账本（override service + 测试 DB）。"""
+    from backend.config import get_db
+    from backend.services.currency_catalog import CurrencyCatalogService
+
+    CurrencyCatalogService(db_session).ensure_seeded()
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[exchange_rate_api.get_exchange_rate_service] = (
+        lambda: FakeExchangeRateService()
+    )
+    try:
+        response = TestClient(app).post(
+            "/api/exchange-rates",
+            json={"currency": "ZZZ", "rate": "1.23", "quote_currency": "CNY", "effective_date": "2026-07-01"},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body.get("code") in ("UNKNOWN_CURRENCY", "INVALID_CURRENCY_CODE") or "ZZZ" in response.text

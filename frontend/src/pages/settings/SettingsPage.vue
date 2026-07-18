@@ -8,6 +8,7 @@
     <van-cell-group inset class="page-section">
       <van-cell title="账户管理" label="查看 Assets / Liabilities 余额" is-link to="/accounts" />
       <van-cell title="周期记账" label="按规则生成记账模板" is-link to="/recurring" />
+      <van-cell title="币种管理" label="维护可选币种目录" is-link to="/currencies" />
       <van-cell title="汇率" label="查看与管理美元汇率" is-link to="/exchange-rates" />
       <van-cell title="高级报表" label="查看资产与收支报表" is-link to="/reports" />
     </van-cell-group>

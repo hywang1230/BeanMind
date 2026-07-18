@@ -121,3 +121,18 @@ def test_close_date_before_open_rejected(core_api_client: TestClient):
         json={"close_date": "2019-01-01"},
     )
     assert response.status_code == 400
+
+
+def test_create_account_unknown_currency_rejected(core_api_client: TestClient):
+    response = core_api_client.post(
+        "/api/accounts",
+        json={
+            "name": "Assets:Bank:FxGhost",
+            "account_type": "Assets",
+            "currencies": ["ZZZ"],
+            "open_date": "2025-05-01",
+        },
+    )
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body.get("code") in ("UNKNOWN_CURRENCY", "INVALID_CURRENCY_CODE") or "ZZZ" in response.text

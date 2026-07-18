@@ -3,6 +3,7 @@ import Vant from 'vant'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { accountsApi } from '../../../api/accounts'
+import { currenciesApi } from '../../../api/currencies'
 import { budgetsApi } from '../../../api/budgets'
 import BudgetsPage from '../BudgetsPage.vue'
 
@@ -20,9 +21,14 @@ vi.mock('../../../api/budgets', () => ({
 
 const emptyBudget = { month: '2026-07', currency: 'CNY', total: '0', spent: '0', remaining: '0', items: [] }
 
+vi.mock('../../../api/currencies', () => ({
+  currenciesApi: { listEnabledCodes: vi.fn(), list: vi.fn() },
+}))
+
 describe('BudgetsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(currenciesApi.listEnabledCodes).mockResolvedValue(['CNY', 'USD'])
     vi.mocked(accountsApi.getAccounts).mockResolvedValue([
       { name: 'Expenses', account_type: 'Expenses', currencies: ['CNY'], children: [
         { name: 'Expenses:Food', account_type: 'Expenses', currencies: ['CNY'] },

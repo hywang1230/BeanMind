@@ -216,3 +216,16 @@ def test_temp_ledger_only_no_real_path(temp_ledger_env, tmp_path):
 
 # keep import for monkeypatched settings check helpers
 from backend.config import settings  # noqa: E402
+
+
+def test_create_transaction_unknown_currency_rejected(core_api_client: TestClient):
+    response = _create(
+        core_api_client,
+        [
+            {"account": "Expenses:Food", "amount": "10.00", "currency": "ZZZ"},
+            {"account": "Assets:Cash", "amount": "-10.00", "currency": "ZZZ"},
+        ],
+    )
+    assert response.status_code == 400, response.text
+    body = response.json()
+    assert body.get("code") in ("UNKNOWN_CURRENCY", "INVALID_CURRENCY_CODE") or "ZZZ" in response.text

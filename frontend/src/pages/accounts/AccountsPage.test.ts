@@ -3,14 +3,22 @@ import Vant from 'vant'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { accountsApi } from '../../api/accounts'
+import { currenciesApi } from '../../api/currencies'
 import AccountsPage from './AccountsPage.vue'
 
 const push = vi.fn()
 vi.mock('vue-router', () => ({ useRouter: () => ({ back: vi.fn(), push }) }))
 vi.mock('../../api/accounts', () => ({ accountsApi: { getAccounts: vi.fn(), createAccount: vi.fn() } }))
 
+vi.mock('../../api/currencies', () => ({
+  currenciesApi: { listEnabledCodes: vi.fn(), list: vi.fn() },
+}))
+
 describe('AccountsPage', () => {
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(currenciesApi.listEnabledCodes).mockResolvedValue(['CNY', 'USD'])
+  })
 
   it('renders a grouped tree from flat account names and opens leaf details', async () => {
     vi.mocked(accountsApi.getAccounts).mockResolvedValue([

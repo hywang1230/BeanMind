@@ -9,8 +9,8 @@
     <article class="quote-card">
       <div class="quote-card__title">主货币：{{ quoteCurrency }}</div>
       <p class="quote-card__desc">
-        当前仅管理美元（USD）对主货币的汇率；表示 1 单位美元可兑换的主货币数量。
-        例如：1 USD = {{ usdDisplayRate }} {{ quoteCurrency }}
+        汇率来自币种目录中已启用的外币，表示 1 单位源货币可兑换的主货币数量。
+        例如：1 {{ exampleCurrency }} = {{ exampleRate }} {{ quoteCurrency }}
       </p>
     </article>
 
@@ -96,7 +96,16 @@
 
         <van-form @submit="saveRate">
           <van-cell-group inset>
-            <van-cell title="源货币" :value="`${form.currency} - 美元`" />
+            <SelectPickerField
+              v-if="!isEditing"
+              v-model="form.currency"
+              label="源货币"
+              :options="sourceCurrencyOptions"
+              placeholder="请选择源货币"
+              :rules="[{ required: true, message: '请选择源货币' }]"
+              :error="currencyFieldError"
+            />
+            <van-cell v-else title="源货币" :value="sourceCurrencyLabel(form.currency)" />
 
             <van-field
               v-model="form.rate"
@@ -151,15 +160,15 @@ import {
   exchangeRatesApi,
   type ExchangeRate,
 } from '../../api/exchangeRates'
+import { currenciesApi, type CurrencyItem } from '../../api/currencies'
 import type { ApiError } from '../../api/client'
 import DatePickerField from '../../components/DatePickerField.vue'
+import SelectPickerField from '../../components/SelectPickerField.vue'
 import { isValidAmount, normalizeAmountInput } from '../../utils/decimal'
-
-/** 当前账本仅管理美元外币汇率 */
-const FOREIGN_CURRENCY = 'USD'
 
 const router = useRouter()
 const quoteCurrency = ref('CNY')
+const catalogCurrencies = ref<CurrencyItem[]>([])
 const rates = ref<ExchangeRate[]>([])
 const loading = ref(false)
 const error = ref('')
@@ -175,28 +184,61 @@ const isEditing = ref(false)
 const saving = ref(false)
 const saveError = ref('')
 const rateFieldError = ref('')
+const currencyFieldError = ref('')
 const returnToDetailCurrency = ref('')
 
 const form = reactive({
-  currency: FOREIGN_CURRENCY,
+  currency: '',
   rate: '',
   effective_date: todayIso(),
 })
 
-const usdDisplayRate = computed(() => {
-  const usd = rates.value.find((item) => item.currency === FOREIGN_CURRENCY)
-  return usd?.rate || '—'
+const enabledSourceCodes = computed(() => {
+  const quote = quoteCurrency.value.toUpperCase()
+  return catalogCurrencies.value
+    .filter((item) => item.enabled && item.code.toUpperCase() !== quote)
+    .map((item) => item.code.toUpperCase())
 })
+
+const sourceCurrencyOptions = computed(() =>
+  catalogCurrencies.value
+    .filter((item) => item.enabled && item.code.toUpperCase() !== quoteCurrency.value.toUpperCase())
+    .map((item) => ({
+      text: `${item.code} - ${item.name}`,
+      value: item.code.toUpperCase(),
+    })),
+)
+
+const exampleRateItem = computed(() => {
+  const preferred = rates.value.find((item) => item.currency.toUpperCase() === 'USD')
+  return preferred || rates.value[0] || null
+})
+
+const exampleCurrency = computed(() => exampleRateItem.value?.currency || 'USD')
+const exampleRate = computed(() => exampleRateItem.value?.rate || '—')
 
 const beancountPreview = computed(() => {
   const datePart = form.effective_date || 'YYYY-MM-DD'
-  const currency = form.currency || FOREIGN_CURRENCY
+  const currency = form.currency || 'CURRENCY'
   const rate = form.rate || 'RATE'
   return `${datePart} price ${currency} ${rate} ${quoteCurrency.value}`
 })
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10)
+}
+
+function sourceCurrencyLabel(code: string) {
+  const upper = code.toUpperCase()
+  const item = catalogCurrencies.value.find((entry) => entry.code.toUpperCase() === upper)
+  if (!item) return upper
+  return `${item.code} - ${item.name}`
+}
+
+function defaultSourceCurrency() {
+  const options = sourceCurrencyOptions.value
+  const usd = options.find((option) => option.value === 'USD')
+  return usd?.value || options[0]?.value || ''
 }
 
 function onRateInput(value: string) {
@@ -208,8 +250,18 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const list = await exchangeRatesApi.getExchangeRates(quoteCurrency.value)
-    rates.value = list.filter((item) => item.currency.toUpperCase() === FOREIGN_CURRENCY)
+    const [catalog, list] = await Promise.all([
+      currenciesApi.list(true),
+      exchangeRatesApi.getExchangeRates(quoteCurrency.value),
+    ])
+    catalogCurrencies.value = catalog
+    const quote = quoteCurrency.value.toUpperCase()
+    const enabledCodes = new Set(
+      catalog
+        .filter((item) => item.enabled && item.code.toUpperCase() !== quote)
+        .map((item) => item.code.toUpperCase()),
+    )
+    rates.value = list.filter((item) => enabledCodes.has(item.currency.toUpperCase()))
   } catch (reason) {
     error.value = (reason as ApiError).message || '汇率加载失败'
   } finally {
@@ -218,7 +270,6 @@ async function load() {
 }
 
 async function openDetail(rate: ExchangeRate) {
-  if (rate.currency.toUpperCase() !== FOREIGN_CURRENCY) return
   selectedRate.value = rate
   showDetail.value = true
   historyLoading.value = true
@@ -239,48 +290,63 @@ async function openDetail(rate: ExchangeRate) {
 }
 
 function resetForm() {
-  form.currency = FOREIGN_CURRENCY
+  form.currency = defaultSourceCurrency()
   form.rate = ''
   form.effective_date = todayIso()
   isEditing.value = false
   saveError.value = ''
   rateFieldError.value = ''
+  currencyFieldError.value = ''
 }
 
 function openCreate() {
+  if (!sourceCurrencyOptions.value.length) {
+    showToast('暂无可用外币，请先在币种管理中启用或新增')
+    return
+  }
   resetForm()
   showForm.value = true
 }
 
 function openCreateForCurrency(currency: string) {
-  if (currency.toUpperCase() !== FOREIGN_CURRENCY) {
-    showToast('仅支持管理美元汇率')
+  const code = currency.toUpperCase()
+  if (!enabledSourceCodes.value.includes(code)) {
+    showToast('该币种未在币种目录中启用')
     return
   }
-  returnToDetailCurrency.value = FOREIGN_CURRENCY
+  returnToDetailCurrency.value = code
   showDetail.value = false
-  openCreate()
+  resetForm()
+  form.currency = code
+  showForm.value = true
 }
 
 function openEdit(rate: ExchangeRate) {
-  if (rate.currency.toUpperCase() !== FOREIGN_CURRENCY) {
-    showToast('仅支持管理美元汇率')
-    return
-  }
+  const code = rate.currency.toUpperCase()
   resetForm()
   isEditing.value = true
-  form.currency = FOREIGN_CURRENCY
+  form.currency = code
   form.rate = rate.rate
   form.effective_date = rate.effective_date
-  returnToDetailCurrency.value = FOREIGN_CURRENCY
+  returnToDetailCurrency.value = code
   showDetail.value = false
   showForm.value = true
 }
 
 function validateForm(): boolean {
   rateFieldError.value = ''
+  currencyFieldError.value = ''
   saveError.value = ''
-  form.currency = FOREIGN_CURRENCY
+
+  form.currency = (form.currency || '').toUpperCase()
+  if (!form.currency) {
+    currencyFieldError.value = '请选择源货币'
+    return false
+  }
+  if (!enabledSourceCodes.value.includes(form.currency)) {
+    currencyFieldError.value = '请选择币种目录中已启用的外币'
+    return false
+  }
   if (!form.rate || !isValidAmount(form.rate, { allowNegative: false, allowZero: false })) {
     rateFieldError.value = '请输入大于 0 的汇率'
     return false

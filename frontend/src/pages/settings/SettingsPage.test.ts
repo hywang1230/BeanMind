@@ -41,4 +41,10 @@ describe('SettingsPage', () => {
     expect(wrapper.text()).not.toContain('登录')
     expect(wrapper.text()).not.toContain('远端同步')
   })
+
+  it('shows currency catalog entry', async () => {
+    const wrapper = mount(SettingsPage, { global: { plugins: [Vant, createPinia()] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('币种管理')
+  })
 })

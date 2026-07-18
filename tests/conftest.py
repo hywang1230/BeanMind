@@ -21,6 +21,8 @@ from backend.infrastructure.persistence.ledger_projection import (
     TransactionQueryService,
 )
 from backend.config import get_db
+from backend.interfaces.errors import ApiError
+from fastapi.responses import JSONResponse
 
 
 CORE_FIXTURE = Path(__file__).parent / "fixtures" / "core_financial"
@@ -85,6 +87,14 @@ def build_api_client(
     settings.LEDGER_FILE = ledger_path
 
     app = FastAPI()
+
+    @app.exception_handler(ApiError)
+    def _handle_api_error(request, error: ApiError):
+        return JSONResponse(
+            status_code=error.status_code,
+            content={"code": error.code, "message": error.message, "details": error.details},
+        )
+
     if include_accounts:
         app.include_router(account_api.router)
     if include_transactions:

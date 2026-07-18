@@ -40,12 +40,13 @@ export const statisticsApi = {
 
     const request = apiClient
       .get('/api/statistics/frequent', { params })
-      .then((data: FrequentItem[]) => {
+      .then((data) => {
+        const items = data as unknown as FrequentItem[]
         frequentCache.set(key, {
           expiresAt: Date.now() + FREQUENT_TTL_MS,
-          data,
+          data: items,
         })
-        return data
+        return items
       })
       .catch((error) => {
         const current = frequentCache.get(key)

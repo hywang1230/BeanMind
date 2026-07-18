@@ -4,6 +4,7 @@ import Vant from 'vant'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { accountsApi } from '../api/accounts'
+import { currenciesApi } from '../api/currencies'
 import { transactionsApi } from '../api/transactions'
 import { useTransactionDraftStore } from '../stores/transactionDraft'
 import TransactionForm from './TransactionForm.vue'
@@ -18,6 +19,9 @@ vi.mock('../api/accounts', () => ({
 }))
 vi.mock('../api/transactions', () => ({
   transactionsApi: { getPayees: vi.fn() },
+}))
+vi.mock('../api/currencies', () => ({
+  currenciesApi: { listEnabledCodes: vi.fn(), list: vi.fn() },
 }))
 
 const accountTree = [
@@ -49,6 +53,7 @@ describe('TransactionForm', () => {
     vi.clearAllMocks()
     vi.mocked(accountsApi.getAccounts).mockResolvedValue(accountTree as never)
     vi.mocked(transactionsApi.getPayees).mockResolvedValue(['星巴克', '地铁'])
+    vi.mocked(currenciesApi.listEnabledCodes).mockResolvedValue(['CNY', 'USD'])
   })
 
   it('submits single-account expense directly', async () => {

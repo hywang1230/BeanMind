@@ -1,6 +1,7 @@
 """ORM 模型导出"""
 from .base import Base, BaseModel
 from .budget import MonthlyBudget, MonthlyBudgetItem
+from .currency import Currency
 from .recurring import RecurringRule, RecurringExecution
 from .monthly_report import MonthlyReview
 from .ledger_projection import (
@@ -13,6 +14,7 @@ from .ledger_projection import (
 __all__ = [
     "Base",
     "BaseModel",
+    "Currency",
     "MonthlyBudget",
     "MonthlyBudgetItem",
     "RecurringRule",

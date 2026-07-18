@@ -118,6 +118,8 @@ import AccountPicker from './AccountPicker.vue'
 import DatePickerField from './DatePickerField.vue'
 import MoneyInput from './MoneyInput.vue'
 import SelectPickerField from './SelectPickerField.vue'
+import { currenciesApi } from '../api/currencies'
+import type { ApiError } from '../api/client'
 
 const props = defineProps<{
   initial?: Transaction | null
@@ -183,8 +185,9 @@ const distributeHint = computed(() => {
 
 const pickerAccounts = computed(() => accounts.value)
 
-// 产品仅支持人民币、美元。
-const SUPPORTED_CURRENCIES = ['CNY', 'USD'] as const
+// 可选币种 = 目录启用 ∩ 账户声明（账户未声明时取目录启用全集）
+const catalogCurrencies = ref<string[]>([])
+const currencyCatalogError = ref('')
 
 const accountCurrencyMap = computed(() => {
   const map = new Map<string, string[]>()
@@ -207,8 +210,9 @@ const fundingAccountNames = computed(() => {
 
 const availableCurrencies = computed(() => {
   if (!fundingAccountNames.value.length) return [] as string[]
+  if (!catalogCurrencies.value.length) return [] as string[]
 
-  const supported = new Set<string>(SUPPORTED_CURRENCIES)
+  const supported = new Set<string>(catalogCurrencies.value)
   const declared = new Set<string>()
   let unrestricted = false
   for (const name of fundingAccountNames.value) {
@@ -228,11 +232,21 @@ const availableCurrencies = computed(() => {
   }
 
   if (unrestricted || !declared.size) {
-    return [...SUPPORTED_CURRENCIES]
+    return [...catalogCurrencies.value]
   }
 
   return Array.from(declared).sort()
 })
+
+async function loadCurrencyCatalog() {
+  currencyCatalogError.value = ''
+  try {
+    catalogCurrencies.value = await currenciesApi.listEnabledCodes()
+  } catch (reason) {
+    catalogCurrencies.value = []
+    currencyCatalogError.value = (reason as ApiError).message || '币种目录加载失败'
+  }
+}
 
 const currencyOptions = computed(() =>
   availableCurrencies.value.map((currency) => ({ text: currency, value: currency })),
@@ -243,8 +257,10 @@ const currencyPlaceholder = computed(() =>
 )
 
 const currencyError = computed(() => {
+  if (currencyCatalogError.value) return currencyCatalogError.value
   if (!submitted.value) return ''
   if (!fundingAccountNames.value.length) return '请先选择资金账户'
+  if (!catalogCurrencies.value.length) return '暂无可用币种'
   if (!form.currency) return '请选择币种'
   if (availableCurrencies.value.length && !availableCurrencies.value.includes(form.currency)) {
     return '币种不在可选范围内'
@@ -439,6 +455,7 @@ onMounted(async () => {
   const [loadedAccounts, loadedPayees] = await Promise.all([
     accountsApi.getAccounts(),
     transactionsApi.getPayees().catch(() => [] as string[]),
+    loadCurrencyCatalog(),
   ])
   accounts.value = loadedAccounts
   payees.value = loadedPayees

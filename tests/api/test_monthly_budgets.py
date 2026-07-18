@@ -49,3 +49,27 @@ def test_monthly_budget_api_rejects_overlap_without_changing_existing(db_session
         app.dependency_overrides.clear()
     assert response.status_code == 400
     assert response.json()["code"] == "OVERLAPPING_BUDGET_PATTERN"
+
+
+def test_monthly_budget_rejects_unknown_currency(db_session, ledger_path) -> None:
+    from backend.infrastructure.persistence.ledger_projection import LedgerProjectionService
+    from backend.config import get_db
+    from backend.main import app
+    from fastapi.testclient import TestClient
+
+    LedgerProjectionService(db_session, ledger_path).rebuild_all()
+    app.dependency_overrides[get_db] = lambda: db_session
+    try:
+        response = TestClient(app).put(
+            "/api/budgets/2025-02",
+            json={
+                "currency": "ZZZ",
+                "items": [
+                    {"name": "餐饮", "account_pattern": "Expenses:Food", "amount": "100"}
+                ],
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 400
+    assert response.json()["code"] in ("UNKNOWN_CURRENCY", "INVALID_CURRENCY_CODE")

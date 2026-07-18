@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import Vant, { showConfirmDialog } from 'vant'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { currenciesApi } from '../../../api/currencies'
 import { exchangeRatesApi } from '../../../api/exchangeRates'
 import ExchangeRatesPage from '../ExchangeRatesPage.vue'
 
@@ -23,6 +24,11 @@ vi.mock('../../../api/exchangeRates', () => ({
     deleteExchangeRate: vi.fn(),
   },
 }))
+vi.mock('../../../api/currencies', () => ({
+  currenciesApi: {
+    list: vi.fn(),
+  },
+}))
 
 const sampleRate = {
   currency: 'USD',
@@ -31,6 +37,11 @@ const sampleRate = {
   effective_date: '2026-07-01',
   currency_pair: 'USD/CNY',
 }
+
+const catalog = [
+  { code: 'CNY', name: '人民币', symbol: '¥', enabled: true, sort_order: 0 },
+  { code: 'USD', name: '美元', symbol: '$', enabled: true, sort_order: 1 },
+]
 
 function mountPage() {
   return mount(ExchangeRatesPage, {
@@ -49,10 +60,11 @@ function mountPage() {
 describe('ExchangeRatesPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(currenciesApi.list).mockResolvedValue(catalog)
     vi.mocked(exchangeRatesApi.getExchangeRateHistory).mockResolvedValue([sampleRate])
   })
 
-  it('renders retained USD rates without losing decimal precision', async () => {
+  it('renders catalog-enabled rates without losing decimal precision', async () => {
     vi.mocked(exchangeRatesApi.getExchangeRates).mockResolvedValue([
       sampleRate,
       {
@@ -67,9 +79,31 @@ describe('ExchangeRatesPage', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('USD/CNY')
     expect(wrapper.text()).toContain('7.123456789')
-    expect(wrapper.text()).toContain('仅管理美元')
+    expect(wrapper.text()).toContain('币种目录')
     expect(wrapper.text()).toContain('主货币：CNY')
     expect(wrapper.text()).not.toContain('EUR/CNY')
+    expect(currenciesApi.list).toHaveBeenCalledWith(true)
+  })
+
+  it('shows enabled foreign rates from catalog', async () => {
+    vi.mocked(currenciesApi.list).mockResolvedValue([
+      ...catalog,
+      { code: 'EUR', name: '欧元', symbol: '€', enabled: true, sort_order: 2 },
+    ])
+    vi.mocked(exchangeRatesApi.getExchangeRates).mockResolvedValue([
+      sampleRate,
+      {
+        currency: 'EUR',
+        rate: '7.8',
+        quote_currency: 'CNY',
+        effective_date: '2026-07-02',
+        currency_pair: 'EUR/CNY',
+      },
+    ])
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(wrapper.text()).toContain('USD/CNY')
+    expect(wrapper.text()).toContain('EUR/CNY')
   })
 
   it('shows empty state with add action', async () => {
@@ -95,7 +129,7 @@ describe('ExchangeRatesPage', () => {
     expect(wrapper.text()).toContain('USD/CNY')
   })
 
-  it('opens create form locked to USD', async () => {
+  it('opens create form with selectable catalog currency', async () => {
     vi.mocked(exchangeRatesApi.getExchangeRates).mockResolvedValue([sampleRate])
     const wrapper = mountPage()
     await flushPromises()
@@ -104,11 +138,12 @@ describe('ExchangeRatesPage', () => {
     await addButtons[0]!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('添加汇率')
-    expect(wrapper.text()).toContain('USD - 美元')
+    expect(wrapper.text()).toContain('源货币')
     expect(wrapper.text()).toContain('Beancount 预览')
+    expect(wrapper.text()).toContain('price USD')
   })
 
-  it('creates a USD rate and refreshes list', async () => {
+  it('creates a rate with default source currency and refreshes list', async () => {
     const created = {
       currency: 'USD',
       rate: '7.8',

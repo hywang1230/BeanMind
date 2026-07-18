@@ -34,6 +34,19 @@ async def lifespan(app: FastAPI):
     init_database(str(settings.DATABASE_FILE))
     database = get_db_session()
     try:
+        from backend.infrastructure.persistence.beancount.beancount_provider import (
+            BeancountServiceProvider,
+        )
+        from backend.services.currency_catalog import CurrencyCatalogService
+
+        try:
+            operating = BeancountServiceProvider.get_service(
+                settings.LEDGER_FILE
+            ).get_operating_currency()
+        except Exception:
+            operating = "CNY"
+        CurrencyCatalogService(database, operating_currency=operating or "CNY").ensure_seeded()
+        logger.info("币种目录已就绪")
         result = LedgerProjectionService(database, settings.LEDGER_FILE).ensure_current()
         logger.info("账本查询投影已就绪: %s", result)
     except Exception:
@@ -90,6 +103,7 @@ def handle_api_error(request: Request, error: ApiError):
     )
 
 from backend.interfaces.api import account as account_api
+from backend.interfaces.api import currency as currency_api
 from backend.interfaces.api import budget as budget_api
 from backend.interfaces.api import dashboard as dashboard_api
 from backend.interfaces.api import exchange_rate as exchange_rate_api
@@ -102,6 +116,7 @@ from backend.interfaces.api import transaction as transaction_api
 
 for router in (
     account_api.router,
+    currency_api.router,
     transaction_api.router,
     statistics_api.router,
     recurring_api.router,

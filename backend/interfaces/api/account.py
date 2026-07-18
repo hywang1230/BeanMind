@@ -5,7 +5,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from typing import Optional
 
-from backend.config import settings
+from backend.config import settings, get_db
+from sqlalchemy.orm import Session
 from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.repositories import AccountRepositoryImpl
 from backend.application.services import AccountApplicationService
@@ -22,6 +23,8 @@ from backend.interfaces.dto.response.account import (
     SuggestAccountNameResponse
 )
 from backend.interfaces.dto.common import MessageResponse, ErrorResponse
+from backend.interfaces.errors import ApiError
+from backend.services.currency_catalog import CurrencyCatalogError, CurrencyCatalogService
 
 
 # 创建路由
@@ -55,7 +58,8 @@ def get_account_service() -> AccountApplicationService:
 )
 def create_account(
     request: CreateAccountRequest,
-    account_service: AccountApplicationService = Depends(get_account_service)
+    account_service: AccountApplicationService = Depends(get_account_service),
+    db: Session = Depends(get_db),
 ):
     """
     创建新账户
@@ -63,13 +67,19 @@ def create_account(
     需要提供账户名称、类型等信息。
     """
     try:
+        catalog = CurrencyCatalogService(db)
+        currencies = request.currencies or []
+        for code in currencies:
+            catalog.require_enabled(code)
         account_dto = account_service.create_account(
             name=request.name,
             account_type=request.account_type,
-            currencies=request.currencies,
+            currencies=currencies,
             open_date=request.open_date
         )
         return account_dto
+    except CurrencyCatalogError as e:
+        raise ApiError(400, e.code, str(e), e.details) from e
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

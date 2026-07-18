@@ -19,6 +19,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'accounts/:accountName', component: () => import('../pages/accounts/AccountDetailPage.vue'), meta: { title: '账户详情' } },
       { path: 'recurring', component: () => import('../pages/recurring/RecurringPage.vue'), meta: { title: '周期记账' } },
       { path: 'exchange-rates', component: () => import('../pages/exchange-rates/ExchangeRatesPage.vue'), meta: { title: '汇率' } },
+      { path: 'currencies', component: () => import('../pages/currencies/CurrenciesPage.vue'), meta: { title: '币种管理' } },
       { path: 'reports', component: () => import('../pages/reports/ReportsPage.vue'), meta: { title: '报表' } },
       { path: 'reports/balance-sheet', component: () => import('../pages/reports/BalanceSheetPage.vue'), meta: { title: '资产负债表' } },
       { path: 'reports/income-statement', component: () => import('../pages/reports/IncomeStatementPage.vue'), meta: { title: '利润表' } },

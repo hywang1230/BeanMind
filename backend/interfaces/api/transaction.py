@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 
 from backend.config import settings, get_db
+from backend.interfaces.errors import ApiError
+from backend.services.currency_catalog import CurrencyCatalogError, CurrencyCatalogService
 from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.repositories import TransactionRepositoryImpl, AccountRepositoryImpl
 from backend.application.services import TransactionApplicationService
@@ -66,6 +68,15 @@ def get_projection_service(db: Session = Depends(get_db)) -> LedgerProjectionSer
     return LedgerProjectionService(db, settings.LEDGER_FILE)
 
 
+def _require_posting_currencies(db: Session, postings: list[dict]) -> None:
+    catalog = CurrencyCatalogService(db)
+    for posting in postings:
+        currency = posting.get("currency")
+        if currency:
+            catalog.require_enabled(str(currency))
+
+
+
 @router.post(
     "",
     response_model=TransactionResponse,
@@ -79,7 +90,8 @@ def get_projection_service(db: Session = Depends(get_db)) -> LedgerProjectionSer
 )
 def create_transaction(
     request: CreateTransactionRequest,
-    transaction_service: TransactionApplicationService = Depends(get_transaction_service)
+    transaction_service: TransactionApplicationService = Depends(get_transaction_service),
+    db: Session = Depends(get_db),
 ):
     """
     创建新交易
@@ -89,7 +101,8 @@ def create_transaction(
     try:
         # 转换 DTO
         postings = [posting.model_dump() for posting in request.postings]
-        
+        _require_posting_currencies(db, postings)
+
         transaction_dto = transaction_service.create_transaction(
             txn_date=request.date,
             description=request.description,
@@ -99,6 +112,8 @@ def create_transaction(
             links=request.links
         )
         return transaction_dto
+    except CurrencyCatalogError as e:
+        raise ApiError(400, e.code, str(e), e.details) from e
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -329,7 +344,8 @@ def get_transaction(
 def update_transaction(
     transaction_id: str,
     request: UpdateTransactionRequest,
-    transaction_service: TransactionApplicationService = Depends(get_transaction_service)
+    transaction_service: TransactionApplicationService = Depends(get_transaction_service),
+    db: Session = Depends(get_db),
 ):
     """
     更新交易
@@ -341,7 +357,8 @@ def update_transaction(
         postings = None
         if request.postings:
             postings = [posting.model_dump() for posting in request.postings]
-        
+            _require_posting_currencies(db, postings)
+
         transaction_dto = transaction_service.update_transaction(
             transaction_id=transaction_id,
             txn_date=request.date,
@@ -352,6 +369,8 @@ def update_transaction(
             links=request.links
         )
         return transaction_dto
+    except CurrencyCatalogError as e:
+        raise ApiError(400, e.code, str(e), e.details) from e
     except ValueError as e:
         if "不存在" in str(e):
             raise HTTPException(
