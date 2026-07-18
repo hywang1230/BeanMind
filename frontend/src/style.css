@@ -42,7 +42,9 @@
 * { box-sizing: border-box; }
 html, body, #app { margin: 0; min-width: 320px; min-height: 100%; }
 body { background: var(--bm-bg); }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
+/* iOS Safari 会在聚焦字号小于 16px 的可编辑控件时自动放大页面。 */
+#app input, #app select, #app textarea { font-size: 16px; }
 .app-shell { min-height: 100vh; }
 .app-main { min-height: 100vh; }
 .app-main.with-tabbar { padding-bottom: calc(50px + env(safe-area-inset-bottom)); }
