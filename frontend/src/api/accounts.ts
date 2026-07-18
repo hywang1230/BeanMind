@@ -1,101 +1,105 @@
 import apiClient from './client'
 
+export type AccountType = 'Assets' | 'Liabilities' | 'Equity' | 'Income' | 'Expenses'
+
 export type Account = {
-    name: string
-    account_type: 'Assets' | 'Liabilities' | 'Equity' | 'Income' | 'Expenses'
-    currencies: string[]
-    children?: Account[]
+  name: string
+  account_type: AccountType | string
+  currencies: string[]
+  is_active?: boolean
+  open_date?: string | null
+  close_date?: string | null
+  depth?: number
+  parent?: string | null
+  meta?: Record<string, unknown>
+  children?: Account[]
 }
 
 export type AccountDetail = {
-    name: string
-    account_type: string
-    currencies: string[]
-    open_date?: string
-    close_date?: string
-    is_active: boolean
-    children?: Account[]
+  name: string
+  account_type: string
+  currencies: string[]
+  open_date?: string | null
+  close_date?: string | null
+  is_active: boolean
+  depth?: number
+  parent?: string | null
+  children?: Account[]
 }
 
 export type Balance = {
-    account: string
-    currency: string
-    amount: number
+  account: string
+  currency: string
+  amount: string
 }
 
 export type CreateAccountRequest = {
-    name: string
-    account_type: string
-    currencies?: string[]
+  name: string
+  account_type: string
+  currencies?: string[]
+  open_date?: string
 }
 
 export type CloseAccountRequest = {
-    close_date?: string
+  close_date?: string
 }
 
-export type Transaction = {
-    id: string
-    date: string
-    description: string
-    payee: string | null
-    flag: string
-    postings: Array<{
-        account: string
-        amount: string
-        currency: string
-    }>
-}
-
-export type TransactionListResponse = {
-    transactions: Transaction[]
-    total: number
-    page: number
-    page_size: number
+export type ListAccountsQuery = {
+  account_type?: string
+  prefix?: string
+  active_only?: boolean
 }
 
 export const accountsApi = {
-    // 获取账户树
-    async getAccounts(): Promise<Account[]> {
-        const response: { accounts: Account[], total: number } = await apiClient.get('/api/accounts')
-        return response.accounts
-    },
+  async getAccounts(query: ListAccountsQuery = {}): Promise<Account[]> {
+    const response: { accounts: Account[]; total: number } = await apiClient.get('/api/accounts', {
+      params: {
+        account_type: query.account_type,
+        prefix: query.prefix,
+        active_only: query.active_only,
+      },
+    })
+    return response.accounts
+  },
 
-    // 创建账户
-    createAccount(data: CreateAccountRequest): Promise<Account> {
-        return apiClient.post('/api/accounts', data)
-    },
+  /** Active accounts for pickers. */
+  async getActiveAccounts(query: Omit<ListAccountsQuery, 'active_only'> = {}): Promise<Account[]> {
+    return this.getAccounts({ ...query, active_only: true })
+  },
 
-    // 获取账户余额
-    async getBalance(accountName: string, date?: string): Promise<Balance[]> {
-        const params = date ? { date } : {}
-        const response: { account_name: string, balances: Record<string, string> } = await apiClient.get(`/api/accounts/${encodeURIComponent(accountName)}/balance`, { params })
+  createAccount(data: CreateAccountRequest): Promise<Account> {
+    return apiClient.post('/api/accounts', data)
+  },
 
-        // 将字典格式转换为数组格式
-        return Object.entries(response.balances).map(([currency, amount]) => ({
-            account: response.account_name,
-            currency,
-            amount: parseFloat(amount)
-        }))
-    },
+  async getBalance(accountName: string, date?: string): Promise<Balance[]> {
+    const params = date ? { date } : {}
+    const response: { account_name: string; balances: Record<string, string> } = await apiClient.get(
+      `/api/accounts/${encodeURIComponent(accountName)}/balance`,
+      { params },
+    )
+    return Object.entries(response.balances).map(([currency, amount]) => ({
+      account: response.account_name,
+      currency,
+      amount,
+    }))
+  },
 
-    // 获取账户详情
-    getAccountDetail(accountName: string): Promise<AccountDetail> {
-        return apiClient.get(`/api/accounts/${encodeURIComponent(accountName)}`)
-    },
+  getAccountDetail(accountName: string): Promise<AccountDetail> {
+    return apiClient.get(`/api/accounts/${encodeURIComponent(accountName)}`)
+  },
 
-    // 关闭账户
-    closeAccount(accountName: string, data?: CloseAccountRequest): Promise<{ message: string }> {
-        return apiClient.delete(`/api/accounts/${encodeURIComponent(accountName)}`, { data })
-    },
+  closeAccount(accountName: string, data?: CloseAccountRequest): Promise<{ message: string }> {
+    return apiClient.delete(`/api/accounts/${encodeURIComponent(accountName)}`, { data })
+  },
 
-    // 获取账户的子账户
-    async getChildren(accountName: string): Promise<Account[]> {
-        const response: { accounts: Account[], total: number } = await apiClient.get(`/api/accounts/${encodeURIComponent(accountName)}/children`)
-        return response.accounts
-    },
+  async getChildren(accountName: string): Promise<Account[]> {
+    const response: { accounts: Account[]; total: number } = await apiClient.get(
+      `/api/accounts/${encodeURIComponent(accountName)}/children`,
+    )
+    return response.accounts
+  },
 
-    // 重新开启账户
-    reopenAccount(accountName: string): Promise<{ message: string }> {
-        return apiClient.post(`/api/accounts/${encodeURIComponent(accountName)}/reopen`)
-    }
+  reopenAccount(accountName: string): Promise<{ message: string }> {
+    return apiClient.post(`/api/accounts/${encodeURIComponent(accountName)}/reopen`)
+  },
 }

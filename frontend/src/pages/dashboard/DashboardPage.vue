@@ -1,520 +1,141 @@
 <template>
-  <PullToRefresh @refresh="onRefresh">
-    <div class="dashboard-page">
-      <!-- 顶部标题 -->
-      <div class="page-header">
-        <h1>首页</h1>
-      </div>
-
-      <!-- 加载状态 -->
-      <div v-if="loading" class="loading-container">
-        <div class="loading-spinner"></div>
-      </div>
-
-      <div v-else class="dashboard-content">
-        <!-- 总资产卡片 -->
-        <div class="card assets-card">
-          <!-- 净资产 - 主要信息 -->
-          <div class="net-worth-section">
-            <div class="net-worth-label">净资产</div>
-            <div class="net-worth-value" :class="{ negative: assetData.net_assets < 0 }">
-              {{ assetData.net_assets >= 0 ? '' : '-' }}{{ currencySymbol }}{{ formatNumber(assetData.net_assets) }}
-            </div>
-          </div>
-
-          <!-- 资产与负债 - 次要信息 -->
-          <div class="asset-liability-row">
-            <div class="al-item">
-              <span class="al-label">资产</span>
-              <span class="al-value assets">{{ currencySymbol }}{{ formatNumber(assetData.total_assets) }}</span>
-            </div>
-            <div class="al-divider"></div>
-            <div class="al-item">
-              <span class="al-label">负债</span>
-              <span class="al-value liabilities">{{ currencySymbol }}{{ formatNumber(assetData.total_liabilities)
-                }}</span>
-            </div>
-          </div>
-        </div>
-
-
-        <!-- 本月概览 -->
-        <div class="card">
-          <div class="card-header">本月概览</div>
-          <div class="monthly-row">
-            <div class="monthly-item">
-              <div class="monthly-label">收入</div>
-              <div class="monthly-value" :class="monthlyData.income >= 0 ? 'income' : 'expense'">
-                {{ monthlyData.income >= 0 ? '+' : '-' }}{{ currencySymbol }}{{ formatNumber(monthlyData.income) }}
-              </div>
-            </div>
-            <div class="monthly-item">
-              <div class="monthly-label">支出</div>
-              <div class="monthly-value expense">{{ currencySymbol }}{{ formatNumber(monthlyData.expense) }}</div>
-            </div>
-            <div class="monthly-item">
-              <div class="monthly-label">结余</div>
-              <div class="monthly-value" :class="monthlyData.net >= 0 ? 'income' : 'expense'">
-                {{ monthlyData.net >= 0 ? '+' : '-' }}{{ currencySymbol }}{{ formatNumber(monthlyData.net) }}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 本月支出 Top 3 -->
-        <div class="card">
-          <div class="card-header">本月支出 Top 3</div>
-          <div class="top-list">
-            <div v-for="(item, index) in topCategories" :key="item.category" class="top-item">
-              <div class="top-rank">{{ index + 1 }}</div>
-              <div class="top-info">
-                <div class="top-name">{{ item.category }}</div>
-                <div class="top-meta">{{ item.percentage.toFixed(1) }}% · {{ item.count }}笔</div>
-              </div>
-              <div class="top-amount">{{ currencySymbol }}{{ formatNumber(item.amount) }}</div>
-            </div>
-            <div v-if="topCategories.length === 0" class="empty-hint">
-              暂无支出记录
-            </div>
-          </div>
-        </div>
-
-        <!-- 近 6 个月趋势 -->
-        <div class="card">
-          <div class="card-header">收支趋势</div>
-          <div class="chart-container">
-            <apexchart v-if="trendData.length > 0" type="line" height="200" :options="chartOptions"
-              :series="chartSeries" />
-            <div v-else class="empty-hint">暂无数据</div>
-          </div>
+  <section class="page page-with-pull dashboard-page">
+    <div class="page-scroll">
+    <van-pull-refresh v-model="refreshing" class="page-pull-refresh" pulling-text="下拉刷新" loosing-text="释放刷新" loading-text="刷新中..." success-text="刷新成功" @refresh="onRefresh">
+    <header class="page-header">
+      <h1>本月总览</h1>
+      <MonthPicker v-model="month" @change="() => load()" />
+    </header>
+    <div v-if="loading" class="state-card"><van-loading>加载中</van-loading></div>
+    <van-empty v-else-if="error" image="error" :description="error">
+      <van-button type="primary" size="small" @click="() => load()">重试</van-button>
+    </van-empty>
+    <template v-else-if="data">
+      <div class="finance-card net-worth-card page-section">
+        <div class="metric-label net-worth-label">净资产</div>
+        <div class="net-worth-value">{{ money(data.net_worth) }}</div>
+        <div class="asset-summary">
+          <span>资产 {{ money(data.assets) }}</span><i>·</i><span>负债 {{ money(data.liabilities) }}</span>
         </div>
       </div>
+      <div class="finance-card cashflow-card page-section">
+        <div><span class="metric-label">收入</span><strong class="income">{{ money(data.income) }}</strong></div>
+        <div><span class="metric-label">支出</span><strong class="expense">{{ money(data.expense) }}</strong></div>
+        <div><span class="metric-label">结余</span><strong :class="data.net_income.startsWith('-') ? 'expense' : 'income'">{{ money(data.net_income) }}</strong></div>
+      </div>
+      <h2 class="section-heading">本月关注</h2>
+      <van-cell-group inset class="attention-list page-section">
+        <van-cell title="预算风险" is-link to="/budgets">
+          <template #icon><span class="attention-icon" :class="data.budget_risk === 'NORMAL' ? 'safe' : 'risky'">!</span></template>
+          <template #value><van-tag :type="riskTagType">{{ riskText }}</van-tag></template>
+        </van-cell>
+        <van-cell title="月度复盘" is-link :to="`/reviews/${month}`">
+          <template #icon><span class="attention-icon safe"><van-icon name="description-o" /></span></template>
+          <template #value><van-tag plain type="success">{{ reviewStatusText }}</van-tag></template>
+        </van-cell>
+        <van-cell v-if="data.missing_exchange_rates.length" title="缺少汇率" is-link to="/exchange-rates">
+          <template #icon><span class="attention-icon rate"><van-icon name="gold-coin-o" /></span></template>
+          <template #value><strong class="warning">{{ data.missing_exchange_rates.join('、') }}</strong></template>
+        </van-cell>
+      </van-cell-group>
+      <h2 class="section-heading">快捷入口</h2>
+      <div class="finance-card quick-actions">
+        <van-button plain class="quick-action" icon="balance-list-o" to="/accounts">账户</van-button>
+        <van-button plain class="quick-action" icon="bar-chart-o" to="/reports">报表</van-button>
+        <van-button type="primary" class="quick-action primary-action" icon="edit" to="/transactions/new">记一笔</van-button>
+      </div>
+    </template>
+    </van-pull-refresh>
+
     </div>
-  </PullToRefresh>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
-import VueApexCharts from 'vue3-apexcharts'
-import { useStatisticsStore } from '../../stores/statistics'
-import { useUIStore } from '../../stores/ui'
-import type { AssetOverview, CategoryStatistics, MonthlyTrend } from '../../api/statistics'
-import PullToRefresh from '../../components/PullToRefresh.vue'
+import { computed, onMounted, ref } from 'vue'
+import { dashboardApi, type Dashboard } from '../../api/dashboard'
+import type { ApiError } from '../../api/client'
+import MonthPicker from '../../components/MonthPicker.vue'
 
-const apexchart = VueApexCharts
-const statisticsStore = useStatisticsStore()
+const month = ref(new Date().toISOString().slice(0, 7))
+const data = ref<Dashboard | null>(null)
+const loading = ref(false)
+const refreshing = ref(false)
+const error = ref('')
+const riskText = computed(() => ({ NORMAL: '正常', WARNING: '接近额度', EXCEEDED: '已超支' }[data.value?.budget_risk || 'NORMAL']))
+const riskTagType = computed(() => data.value?.budget_risk === 'EXCEEDED' ? 'danger' : data.value?.budget_risk === 'WARNING' ? 'warning' : 'success')
+const reviewStatusText = computed(() => ({
+  READY: '已生成',
+  NOT_GENERATED: '可生成',
+  PROCESSING: '生成中',
+  FAILED: '可重试',
+  DISABLED: '未启用',
+}[data.value?.review_status || 'NOT_GENERATED'] || data.value?.review_status || '可生成'))
 
-const loading = ref(true)
-
-// 资产数据
-const assetData = ref<AssetOverview>({
-  net_assets: 0,
-  total_assets: 0,
-  total_liabilities: 0,
-  currency: 'CNY'
-})
-
-// 本月数据
-const monthlyData = ref({
-  income: 0,
-  expense: 0,
-  net: 0
-})
-
-// 支出 Top 3
-const topCategories = ref<CategoryStatistics[]>([])
-
-// 月度趋势数据
-const trendData = ref<MonthlyTrend[]>([])
-
-// 固定取最近 6 个月数据
-const last6MonthsTrend = computed(() => trendData.value.slice(-6))
-
-// 货币符号映射
-const currencySymbolMap: Record<string, string> = {
-  CNY: '¥',
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-  JPY: '¥',
-  HKD: 'HK$',
-  TWD: 'NT$',
-  KRW: '₩',
-  AUD: 'A$',
-  CAD: 'C$',
-  SGD: 'S$',
-  CHF: 'CHF',
-  THB: '฿',
-  INR: '₹',
-  RUB: '₽'
+function money(value: string) {
+  const currency = data.value?.currency || 'CNY'
+  const normalized = value.trim()
+  const negative = normalized.startsWith('-')
+  const magnitude = negative ? normalized.slice(1) : normalized
+  if (!/^\d+(?:\.\d+)?$/.test(magnitude)) return `${currency} ${value}`
+  const [integer = '0', fraction = ''] = magnitude.split('.')
+  const twoDigits = fraction.padEnd(2, '0').slice(0, 2)
+  const thirdDigit = fraction[2] || '0'
+  let cents = BigInt(integer) * 100n + BigInt(twoDigits)
+  if (thirdDigit >= '5') cents += 1n
+  const whole = (cents / 100n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  const decimal = (cents % 100n).toString().padStart(2, '0')
+  const sign = negative && cents !== 0n ? '-' : ''
+  return currency === 'CNY' ? `${sign}¥${whole}.${decimal}` : `${sign}${currency} ${whole}.${decimal}`
 }
-
-// 获取货币符号
-function getCurrencySymbol(currency: string): string {
-  return currencySymbolMap[currency] || currency
+async function load(options: { silent?: boolean } = {}) {
+  if (!options.silent) loading.value = true
+  error.value = ''
+  try { data.value = await dashboardApi.get(month.value) }
+  catch (reason) { error.value = (reason as ApiError).message }
+  finally { if (!options.silent) loading.value = false }
 }
-
-// 当前主币种符号（计算属性，响应式）
-const currencySymbol = computed(() => getCurrencySymbol(assetData.value.currency))
-
-// 图表配置
-const chartOptions = computed(() => {
-  const uiStore = useUIStore();
-  // 检查是否为暗黑模式 (dark 或 auto 且系统为 dark)
-  const isDark = uiStore.themeMode === 'dark' ||
-    (uiStore.themeMode === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-
-  return {
-    chart: {
-      id: 'trend-chart',
-      toolbar: { show: false },
-      background: 'transparent',
-      fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
-      animations: { enabled: true, easing: 'easeinout', speed: 500 },
-      // 禁用缩放、选区、平移，只保留查看详情
-      zoom: { enabled: false },
-      selection: { enabled: false }
-    },
-    colors: [isDark ? '#30d158' : '#34c759', isDark ? '#ff453a' : '#ff3b30'], // iOS 绿/红
-    stroke: { curve: 'smooth' as const, width: 2.5 },
-    xaxis: {
-      categories: last6MonthsTrend.value.map(item => {
-        const [, month] = item.month.split('-')
-        return `${parseInt(month || '0')}月`
-      }),
-      labels: { style: { colors: '#8e8e93', fontSize: '10px' } },
-      axisBorder: { show: false },
-      axisTicks: { show: false }
-    },
-    yaxis: {
-      labels: {
-        formatter: (v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : `${v}`,
-        style: { colors: '#8e8e93', fontSize: '10px' }
-      }
-    },
-    tooltip: {
-      theme: isDark ? 'dark' : 'light',
-      y: { formatter: (v: number) => `${v >= 0 ? '' : '-'}${getCurrencySymbol(assetData.value.currency)}${formatNumber(v)}` }
-    },
-    legend: {
-      position: 'top' as const,
-      horizontalAlign: 'right' as const,
-      fontSize: '11px',
-      labels: { colors: '#8e8e93' },
-      markers: { size: 6 }
-    },
-    grid: {
-      borderColor: isDark ? '#2c2c2e' : '#e5e5ea',
-      strokeDashArray: 0,
-      xaxis: { lines: { show: false } },
-      yaxis: { lines: { show: true } },
-      padding: { left: 0, right: 0 }
-    },
-    markers: { size: 3, strokeWidth: 0 }
-  }
-})
-
-const chartSeries = computed(() => [
-  { name: '收入', data: last6MonthsTrend.value.map(item => item.income) },
-  { name: '支出', data: last6MonthsTrend.value.map(item => Math.abs(item.expense)) }
-])
-
-function formatNumber(num: number | undefined | null): string {
-  if (num === undefined || num === null || isNaN(num)) return '0.00'
-  return Math.abs(num).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+async function onRefresh() {
+  try { await load({ silent: true }) }
+  finally { refreshing.value = false }
 }
-
-async function loadDashboardData() {
-  loading.value = true
-  try {
-    // 使用统计缓存 Store（自动处理缓存逻辑）
-    const { assets, categories, trend } = await statisticsStore.fetchDashboardData()
-
-    assetData.value = assets || {
-      net_assets: 0, total_assets: 0, total_liabilities: 0, currency: 'CNY'
-    }
-
-    // 从 trend 数据获取本月概览（最后一个月即为当前月）
-    const currentMonthTrend = trend && trend.length > 0 ? trend[trend.length - 1] : null
-    // 收入直接使用，支出取绝对值，结余 = 收入 - 支出
-    const income = currentMonthTrend?.income || 0
-    const expense = Math.abs(currentMonthTrend?.expense || 0)
-    monthlyData.value = {
-      income,
-      expense,
-      net: income - expense
-    }
-
-    topCategories.value = categories || []
-    trendData.value = trend || []
-  } catch (error) {
-    console.error('Failed to load dashboard data:', error)
-  } finally {
-    loading.value = false
-  }
-}
-
-// 下拉刷新处理
-async function onRefresh(done: () => void) {
-  try {
-    // 强制刷新数据（清除缓存）
-    statisticsStore.invalidateCache()
-    await loadDashboardData()
-  } finally {
-    done()
-  }
-}
-
-onMounted(() => { loadDashboardData() })
+onMounted(() => { load() })
 </script>
 
 <style scoped>
-.dashboard-page {
-  min-height: 100vh;
-  background: var(--bg-primary);
-  padding: 0 0px 8px;
-  /* 确保变量更新能重新渲染 */
-  transition: background-color 0.3s;
-}
-
-.page-header {
-  padding: 12px 0 8px;
-  position: sticky;
-  top: 0;
-  background: var(--bg-primary);
-  z-index: 10;
-  transition: background-color 0.3s;
-}
-
-.page-header h1 {
-  font-size: 34px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin: 0;
-  letter-spacing: -0.4px;
-}
-
-.loading-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 0;
-}
-
-.loading-spinner {
-  width: 28px;
-  height: 28px;
-  border: 3px solid var(--separator);
-  border-top-color: var(--ios-blue);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-
-.dashboard-content {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-
-/* iOS 风格卡片 */
-.card {
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  overflow: hidden;
-  transition: background-color 0.3s;
-}
-
-.card-header {
-  font-size: 13px;
-  font-weight: 600;
-  color: #8e8e93;
-  text-transform: uppercase;
-  letter-spacing: -0.08px;
-  padding: 12px 16px 8px;
-}
-
-/* 资产卡片 */
-.assets-card {
-  padding: 20px 16px;
-}
-
-/* 净资产区域 */
-.net-worth-section {
-  text-align: center;
-  margin-bottom: 16px;
-}
-
-.net-worth-label {
-  font-size: 13px;
-  color: #8e8e93;
-  letter-spacing: 0.5px;
-  margin-bottom: 6px;
-}
-
-.net-worth-value {
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ios-blue);
-  letter-spacing: -0.5px;
-}
-
-.net-worth-value.negative {
-  color: var(--ios-red);
-}
-
-/* 资产与负债行 */
-.asset-liability-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding-top: 12px;
-  border-top: 0.5px solid var(--separator);
-}
-
-.al-item {
-  flex: 1;
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.al-label {
-  font-size: 12px;
-  color: #8e8e93;
-}
-
-.al-value {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.al-value.assets {
-  color: var(--ios-green);
-}
-
-.al-value.liabilities {
-  color: var(--ios-orange);
-}
-
-.al-divider {
-  width: 0.5px;
-  height: 28px;
-  background: var(--separator);
-}
-
-/* 本月概览 */
-.monthly-row {
-  display: flex;
-  padding: 0 16px 16px;
-}
-
-.monthly-item {
-  flex: 1;
-  text-align: center;
-}
-
-.monthly-label {
-  font-size: 13px;
-  color: #8e8e93;
-  margin-bottom: 4px;
-}
-
-.monthly-value {
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.monthly-value.income {
-  color: var(--ios-green);
-}
-
-.monthly-value.expense {
-  color: var(--ios-red);
-}
-
-/* Top 列表 */
-.top-list {
-  padding: 0 16px 8px;
-}
-
-.top-item {
-  display: flex;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 0.5px solid var(--separator);
-}
-
-.top-item:last-child {
-  border-bottom: none;
-}
-
-.top-rank {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: var(--ios-blue);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-right: 12px;
-}
-
-.top-item:nth-child(1) .top-rank {
-  background: var(--ios-orange);
-}
-
-.top-item:nth-child(2) .top-rank {
-  background: #8e8e93;
-}
-
-.top-item:nth-child(3) .top-rank {
-  background: #af7e56;
-}
-
-.top-info {
-  flex: 1;
-}
-
-.top-name {
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.top-meta {
-  font-size: 12px;
-  color: #8e8e93;
-  margin-top: 2px;
-}
-
-.top-amount {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ios-red);
-}
-
-/* 图表容器 */
-.chart-container {
-  padding: 0 8px 8px;
-}
-
-.empty-hint {
-  text-align: center;
-  padding: 24px 16px;
-  font-size: 14px;
-  color: #8e8e93;
+.dashboard-page { padding: 18px 16px 24px; }
+.dashboard-page .page-header { margin-bottom: 22px; }
+.dashboard-page .page-header h1 { flex: 1; font-size: 30px; font-weight: 750; white-space: nowrap; }
+.net-worth-card { min-width: 0; padding: 24px 22px 23px; border-radius: 16px; }
+.net-worth-label { display: flex; align-items: center; gap: 5px; font-size: 16px; }
+.net-worth-value { margin-top: 14px; overflow: hidden; font-size: clamp(29px, 9.2vw, 40px); font-weight: 750; letter-spacing: -.035em; line-height: 1.15; white-space: nowrap; }
+.asset-summary { display: flex; min-width: 0; margin-top: 18px; align-items: center; gap: 8px; color: var(--bm-muted); font-size: clamp(12px, 3.6vw, 15px); white-space: nowrap; }
+.asset-summary span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.asset-summary i { flex: none; color: var(--bm-faint); font-style: normal; }
+.cashflow-card { display: grid; min-height: 108px; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: center; padding: 18px 4px; border-radius: 16px; text-align: center; }
+.cashflow-card > div { min-width: 0; padding: 2px 5px; border-right: 1px solid var(--bm-border); }
+.cashflow-card > div:last-child { border-right: 0; }
+.cashflow-card span, .cashflow-card strong { display: block; }
+.cashflow-card .metric-label { font-size: 15px; }
+.cashflow-card strong { overflow: hidden; margin-top: 10px; font-size: clamp(13px, 4vw, 17px); line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.dashboard-page .section-heading { margin: 26px 2px 13px; font-size: 20px; }
+.attention-list { margin-right: 0; margin-left: 0; border-radius: 16px; box-shadow: 0 3px 14px rgba(31, 35, 41, .035); }
+.attention-icon { display: inline-grid; width: 30px; height: 30px; margin-right: 12px; place-items: center; border-radius: 50%; color: white; font-weight: 700; }
+.attention-icon.safe { background: var(--bm-primary); }
+.attention-icon.risky { background: var(--bm-expense); }
+.attention-icon.rate { background: #f59e0b; }
+.attention-list :deep(.van-cell) { align-items: center; min-height: 64px; padding: 14px 16px; }
+.attention-list :deep(.van-cell__title) { font-size: 16px; }
+.attention-list :deep(.van-cell__value) { display: flex; flex: none; align-items: center; margin-left: 10px; }
+.quick-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 10px; border-radius: 16px; }
+.quick-action { display: flex; height: 94px; flex-direction: column; gap: 8px; border-color: var(--bm-border); border-radius: 12px; color: var(--bm-text); font-size: 16px; }
+.quick-action :deep(.van-button__icon) { margin: 0; color: var(--bm-primary); font-size: 28px; }
+.quick-action :deep(.van-button__content) { flex-direction: column; gap: 8px; }
+.quick-action.primary-action { color: white; }
+.quick-action.primary-action :deep(.van-button__icon) { color: white; }
+@media (max-width: 380px) {
+  .dashboard-page .page-header h1 { font-size: 27px; }
+  .cashflow-card strong { font-size: 13px; }
+  .quick-actions { gap: 8px; padding: 10px; }
 }
 </style>

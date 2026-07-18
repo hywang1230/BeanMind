@@ -172,7 +172,6 @@ class RecurringApplicationService:
         
         return RecurringRuleDomain(
             id=rule.id,
-            user_id=rule.user_id,
             name=rule.name,
             frequency_config=frequency_config,
             transaction_template=transaction_template,
@@ -203,7 +202,7 @@ class RecurringApplicationService:
         for posting in template.get("postings", []):
             postings.append({
                 "account": posting["account"],
-                "amount": float(posting["amount"]),
+                "amount": str(posting["amount"]),
                 "currency": posting["currency"]
             })
         
@@ -258,4 +257,3 @@ class RecurringApplicationService:
                 })
         
         return pending_rules
-

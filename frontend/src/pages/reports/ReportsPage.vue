@@ -1,240 +1,220 @@
 <template>
-  <f7-page name="reports">
-    <f7-navbar title="财务报表">
-      <template #left>
-        <f7-link @click="goBack">
-          <f7-icon f7="chevron_left"></f7-icon>
-        </f7-link>
-      </template>
-    </f7-navbar>
-
-    <div class="reports-content">
-      <!-- 报表入口卡片 -->
-      <div class="report-cards">
-        <!-- 资产负债表 -->
-        <div class="report-card" @click="goToBalanceSheet">
-          <div class="report-icon balance-sheet-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-              <path
-                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
-            </svg>
-          </div>
-          <div class="report-info">
-            <h3 class="report-title">资产负债表</h3>
-            <p class="report-desc">查看某一时点的资产、负债和权益状况</p>
-          </div>
-          <div class="report-arrow">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-            </svg>
-          </div>
-        </div>
-
-        <!-- 利润表 -->
-        <div class="report-card" @click="goToIncomeStatement">
-          <div class="report-icon income-statement-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-              <path d="M5 9.2h3V19H5V9.2zM10.6 5h2.8v14h-2.8V5zm5.6 8H19v6h-2.8v-6z" />
-            </svg>
-          </div>
-          <div class="report-info">
-            <h3 class="report-title">利润表</h3>
-            <p class="report-desc">查看某一期间的收入、支出和净利润</p>
-          </div>
-          <div class="report-arrow">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-            </svg>
-          </div>
-        </div>
-
-        <div class="report-card" @click="goToMonthlyReport">
-          <div class="report-icon monthly-report-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-              <path
-                d="M7 2v2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2H7zm12 8H5v8h14v-8zm-9 2h2v4h-2v-4zm4-1h2v5h-2v-5z" />
-            </svg>
-          </div>
-          <div class="report-info">
-            <h3 class="report-title">AI 月报</h3>
-            <p class="report-desc">按月份生成总结、指标、异常和建议</p>
-          </div>
-          <div class="report-arrow">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-              <path d="M8.59 16.59L13.17 12 8.59 7.41 10 6l6 6-6 6-1.41-1.41z" />
-            </svg>
-          </div>
-        </div>
-      </div>
-
-      <!-- 报表说明 -->
-      <div class="report-help">
-        <h4 class="help-title">报表说明</h4>
-        <div class="help-item">
-          <span class="help-label">资产负债表</span>
-          <span class="help-text">反映某一特定日期企业的资产、负债和所有者权益的静态报表。会计恒等式：资产 = 负债 + 权益</span>
-        </div>
-        <div class="help-item">
-          <span class="help-label">利润表</span>
-          <span class="help-text">反映某一会计期间收入和支出情况的动态报表，用于分析盈利能力。净利润 = 收入 - 支出</span>
-        </div>
-        <div class="help-item">
-          <span class="help-label">AI 月报</span>
-          <span class="help-text">基于账本数据生成月度总结、结构分析、异常提醒和下月建议，支持重新生成</span>
-        </div>
-        <div class="help-item">
-          <span class="help-label">多币种支持</span>
-          <span class="help-text">所有金额均按账本中记录的汇率折算为人民币显示，同时保留原币种明细</span>
-        </div>
-      </div>
+  <section class="page secondary-page reports-page">
+    <van-nav-bar title="报表" left-arrow @click-left="router.back()" />
+    <div class="report-month">
+      <MonthPicker v-model="month" />
     </div>
-  </f7-page>
+
+    <h2 class="section-title">报表入口</h2>
+    <van-cell-group inset class="entry-group">
+      <van-cell title="资产负债表" label="查看截至某日的资产、负债与权益" is-link to="/reports/balance-sheet" />
+      <van-cell title="利润表" label="查看指定期间的收入、支出与结余" is-link :to="incomeStatementLink" />
+      <van-cell title="月度复盘" label="总结本月收支并生成下月建议" is-link :to="`/reviews/${month}`" />
+    </van-cell-group>
+
+    <section class="trend-card" data-testid="cashflow-trend-card">
+      <div class="section-head">
+        <h2>近 12 个月收支趋势</h2>
+        <span class="muted">截至 {{ month }}</span>
+      </div>
+
+      <van-notice-bar
+        v-if="trendData?.missing_exchange_rates?.length"
+        class="trend-warning"
+        color="var(--bm-warn)"
+        background="var(--bm-warn-soft)"
+        left-icon="warning-o"
+        data-testid="cashflow-trend-missing-rates"
+      >
+        部分月份缺少汇率，趋势不完整
+      </van-notice-bar>
+
+      <div v-if="trendLoading && !trendData" class="state-card" data-testid="cashflow-trend-loading">
+        <van-loading size="20px">加载趋势…</van-loading>
+      </div>
+      <van-empty
+        v-else-if="trendError && !trendData"
+        image="error"
+        :description="trendError"
+        data-testid="cashflow-trend-error"
+      >
+        <van-button size="small" type="primary" @click="loadTrend">重试趋势</van-button>
+      </van-empty>
+      <template v-else-if="trendData">
+        <van-notice-bar
+          v-if="trendError"
+          color="var(--bm-expense)"
+          background="var(--bm-danger-soft)"
+          data-testid="cashflow-trend-soft-error"
+        >
+          {{ trendError }}
+          <template #right-icon>
+            <van-button size="mini" plain type="primary" @click="loadTrend">重试</van-button>
+          </template>
+        </van-notice-bar>
+        <MonthlyCashflowTrendChart
+          :key="trendData.end_month"
+          :points="trendData.points"
+          :currency="trendData.currency"
+        />
+      </template>
+    </section>
+
+    <div v-if="loading" class="state-card"><van-loading /></div>
+    <van-empty v-else-if="error" image="error" :description="error">
+      <van-button @click="load">重试</van-button>
+    </van-empty>
+    <template v-else-if="balance && income">
+      <h2 class="section-title">资产概览</h2>
+      <van-cell-group inset>
+        <van-cell title="净资产" :value="formatMoney(balance.net_worth_cny)" />
+        <van-cell title="资产" :value="formatMoney(balance.total_assets_cny)" />
+        <van-cell title="负债" :value="formatMoney(balance.total_liabilities_cny)" />
+      </van-cell-group>
+      <h2 class="section-title">收支概览</h2>
+      <van-cell-group inset>
+        <van-cell title="收入"><template #value><span class="income">{{ formatMoney(income.total_income_cny) }}</span></template></van-cell>
+        <van-cell title="支出"><template #value><span class="expense">{{ formatMoney(income.total_expenses_cny) }}</span></template></van-cell>
+        <van-cell title="结余" :value="formatMoney(income.net_profit_cny)" />
+      </van-cell-group>
+    </template>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { f7Page, f7Navbar, f7Link, f7Icon } from 'framework7-vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import type { ApiError } from '../../api/client'
+import {
+  reportsApi,
+  type BalanceSheetResponse,
+  type IncomeStatementResponse,
+  type MonthlyCashflowTrendResponse,
+} from '../../api/reports'
+import MonthPicker from '../../components/MonthPicker.vue'
+import MonthlyCashflowTrendChart from '../../components/MonthlyCashflowTrendChart.vue'
+import { formatAmountDisplay } from '../../utils/decimal'
+
+function currentMonth() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+function monthDates(value: string) {
+  const parts = value.split('-')
+  const year = Number(parts[0])
+  const mon = Number(parts[1])
+  if (!Number.isFinite(year) || !Number.isFinite(mon)) {
+    return { start_date: `${value}-01`, end_date: `${value}-01` }
+  }
+  const end = new Date(year, mon, 0).getDate()
+  return {
+    start_date: `${value}-01`,
+    end_date: `${value}-${String(end).padStart(2, '0')}`,
+  }
+}
 
 const router = useRouter()
+const month = ref(currentMonth())
+const balance = ref<BalanceSheetResponse | null>(null)
+const income = ref<IncomeStatementResponse | null>(null)
+const loading = ref(false)
+const error = ref('')
 
-function goBack() {
-  router.back()
+const trendData = ref<MonthlyCashflowTrendResponse | null>(null)
+const trendLoading = ref(false)
+const trendError = ref('')
+
+const incomeStatementLink = computed(() => {
+  const dates = monthDates(month.value)
+  return `/reports/income-statement?start_date=${dates.start_date}&end_date=${dates.end_date}`
+})
+
+function formatMoney(value: string): string {
+  return formatAmountDisplay(value, 2)
 }
 
-function goToBalanceSheet() {
-  router.push('/reports/balance-sheet')
+async function loadTrend() {
+  trendLoading.value = true
+  trendError.value = ''
+  try {
+    trendData.value = await reportsApi.getMonthlyCashflowTrend({ end_month: month.value })
+  } catch (reason) {
+    const err = reason as ApiError
+    trendError.value = err.code === 'LEDGER_PROJECTION_DIRTY'
+      ? '账本投影未就绪，请稍后重试趋势'
+      : (err.message || '趋势加载失败')
+    // 保留已有趋势数据时仅提示，不遮挡整页
+    if (!trendData.value) trendData.value = null
+  } finally {
+    trendLoading.value = false
+  }
 }
 
-function goToIncomeStatement() {
-  router.push('/reports/income-statement')
+async function load() {
+  loading.value = true
+  error.value = ''
+  try {
+    const dates = monthDates(month.value)
+    const [bs, is] = await Promise.all([
+      reportsApi.getBalanceSheet({ as_of_date: dates.end_date }),
+      reportsApi.getIncomeStatement(dates),
+    ])
+    balance.value = bs
+    income.value = is
+  } catch (reason) {
+    const err = reason as ApiError
+    error.value = err.message || '报表加载失败'
+    balance.value = null
+    income.value = null
+  } finally {
+    loading.value = false
+  }
 }
 
-function goToMonthlyReport() {
-  router.push('/reports/monthly-report')
-}
+watch(month, () => {
+  // 切换月份时清空旧趋势选中态（通过 key 重置组件）并独立刷新
+  trendData.value = null
+  void load()
+  void loadTrend()
+})
 
+onMounted(() => {
+  void load()
+  void loadTrend()
+})
 </script>
 
 <style scoped>
-.reports-content {
-  min-height: 100%;
-  background: var(--bg-primary);
-  padding: 16px;
-  transition: background-color 0.3s;
-}
-
-.report-cards {
+.report-month {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.report-card {
-  display: flex;
-  align-items: center;
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  padding: 16px;
-  cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.report-card:active {
-  transform: scale(0.98);
-  background: var(--bg-tertiary);
-}
-
-.report-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
   justify-content: center;
-  margin-right: 14px;
-  flex-shrink: 0;
+  margin: 4px 0 14px;
 }
-
-.balance-sheet-icon {
-  background: linear-gradient(135deg, #34c759 0%, #30b354 100%);
-  color: #fff;
+.entry-group, .van-cell-group { margin-bottom: 12px; }
+.trend-card {
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid var(--bm-border);
+  border-radius: 14px;
+  background: var(--bm-surface);
+  box-shadow: var(--bm-card-shadow);
+  display: grid;
+  gap: 10px;
 }
-
-.income-statement-icon {
-  background: linear-gradient(135deg, #007aff 0%, #0066d6 100%);
-  color: #fff;
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
 }
-
-.monthly-report-icon {
-  background: linear-gradient(135deg, #ff9500 0%, #ff7a00 100%);
-  color: #fff;
-}
-
-.report-info {
-  flex: 1;
-  min-width: 0;
-}
-
-.report-title {
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 4px;
-}
-
-.report-desc {
-  font-size: 13px;
-  color: #8e8e93;
+.section-head h2 {
   margin: 0;
-  line-height: 1.4;
+  font-size: 16px;
 }
-
-.report-arrow {
-  color: #c6c6c8;
-  flex-shrink: 0;
-  margin-left: 8px;
-}
-
-/* 报表说明 */
-.report-help {
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  padding: 16px;
-  transition: background-color 0.3s;
-}
-
-.help-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #8e8e93;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin: 0 0 12px;
-}
-
-.help-item {
-  padding: 12px 0;
-  border-bottom: 0.5px solid var(--separator);
-}
-
-.help-item:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-
-.help-label {
-  display: block;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 4px;
-}
-
-.help-text {
-  font-size: 13px;
-  color: #8e8e93;
-  line-height: 1.5;
-}
+.muted { color: var(--bm-muted); font-size: 12px; }
+.trend-warning { border-radius: 10px; }
+.state-card { padding: 24px; display: flex; justify-content: center; }
+.income { color: var(--bm-income, #07c160); }
+.expense { color: var(--bm-expense, #ee0a24); }
 </style>

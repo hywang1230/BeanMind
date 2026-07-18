@@ -5,6 +5,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from backend.config import get_db, get_beancount_service
+from backend.interfaces.errors import ApiError
+from backend.services.currency_catalog import CurrencyCatalogError, CurrencyCatalogService
 from backend.infrastructure.persistence.db.models import RecurringRule, RecurringExecution
 from sqlalchemy.orm import Session
 import json
@@ -16,7 +18,7 @@ router = APIRouter(prefix="/api/recurring", tags=["recurring"])
 # Request/Response Models
 class PostingTemplate(BaseModel):
     account: str
-    amount: float
+    amount: str
     currency: str
 
 
@@ -122,12 +124,30 @@ def get_recurring_rules(db: Session = Depends(get_db)):
     return [db_model_to_response(rule) for rule in rules]
 
 
+
+
+def _require_template_currencies(db: Session, template) -> None:
+    catalog = CurrencyCatalogService(db)
+    postings = []
+    if hasattr(template, "postings"):
+        postings = template.postings or []
+    elif isinstance(template, dict):
+        postings = template.get("postings") or []
+    for posting in postings:
+        currency = posting.currency if hasattr(posting, "currency") else posting.get("currency")
+        if currency:
+            catalog.require_enabled(str(currency))
+
 @router.post("/rules", response_model=RecurringRuleResponse)
 def create_recurring_rule(
     request: CreateRecurringRuleRequest,
     db: Session = Depends(get_db)
 ):
     """创建周期规则"""
+    try:
+        _require_template_currencies(db, request.transaction_template)
+    except CurrencyCatalogError as e:
+        raise ApiError(400, e.code, str(e), e.details) from e
     # 将频率转换为大写存储
     frequency = request.frequency.upper()
     
@@ -140,7 +160,6 @@ def create_recurring_rule(
             raise HTTPException(status_code=400, detail="月频率必须指定month_days")
     
     rule = RecurringRule(
-        user_id="default_user",  # TODO: 从认证中获取
         name=request.name,
         frequency=frequency,
         frequency_config=json.dumps(request.frequency_config.model_dump(), ensure_ascii=False),
@@ -187,6 +206,10 @@ def update_recurring_rule(
         rule.frequency_config = json.dumps(request.frequency_config.model_dump(), ensure_ascii=False)
     
     if request.transaction_template is not None:
+        try:
+            _require_template_currencies(db, request.transaction_template)
+        except CurrencyCatalogError as e:
+            raise ApiError(400, e.code, str(e), e.details) from e
         rule.transaction_template = json.dumps(request.transaction_template.model_dump(), ensure_ascii=False)
     
     if request.start_date is not None:
@@ -253,7 +276,7 @@ def execute_recurring_rule(
             "postings": [
                 {
                     "account": p["account"],
-                    "amount": float(p["amount"]),
+                    "amount": p["amount"],
                     "currency": p["currency"]
                 }
                 for p in postings

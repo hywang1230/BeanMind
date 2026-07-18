@@ -14,7 +14,6 @@ class RecurringRule:
     定义周期性自动执行的交易规则
     """
     id: str
-    user_id: str
     name: str
     frequency_config: FrequencyConfig
     transaction_template: Dict[str, Any]  # 交易模板（JSON格式）

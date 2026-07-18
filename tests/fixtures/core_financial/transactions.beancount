@@ -1,0 +1,37 @@
+2024-01-01 * "期初" "Opening"
+  id: "opening-2024"
+  Assets:Cash                 1000.00 CNY
+  Assets:Cash                  100.00 USD
+  Assets:Bank:Checking        5000.00 CNY
+  Assets:Broker                200.00 USD
+  Liabilities:CreditCard      -300.00 CNY
+  Equity:OpeningBalances     -5700.00 CNY
+  Equity:OpeningBalances      -300.00 USD
+
+2025-01-15 * "公司" "一月工资"
+  id: "salary-2025-01"
+  Assets:Bank:Checking       10000.00 CNY
+  Income:Salary             -10000.00 CNY
+
+2025-01-16 * "餐厅" "多人午餐"
+  id: "multi-lunch-2025-01-16"
+  Expenses:Food:Lunch           30.00 CNY
+  Expenses:Food                 20.00 CNY
+  Assets:Cash                  -30.00 CNY
+  Assets:Bank:Checking         -20.00 CNY
+
+2025-02-01 * "酒店" "出差"
+  id: "travel-usd-2025-02-01"
+  Expenses:Travel               99.99 USD
+  Assets:Broker                -99.99 USD
+
+2025-03-01 * "转账" "储蓄"
+  id: "transfer-2025-03-01"
+  Assets:Bank:Savings          500.00 CNY
+  Assets:Bank:Checking        -500.00 CNY
+
+2025-03-10 * "超市" "日用品分摊"
+  id: "split-expense-2025-03-10"
+  Expenses:Food                 0.10 CNY
+  Expenses:Transport            0.20 CNY
+  Assets:Cash                  -0.30 CNY

@@ -40,17 +40,13 @@ class TransactionRepository(ABC):
     @abstractmethod
     def find_all(
         self,
-        user_id: Optional[str] = None,
         limit: Optional[int] = None,
-        offset: Optional[int] = None
     ) -> List[Transaction]:
         """
         查找所有交易（支持分页）
         
         Args:
-            user_id: 可选，用户 ID，用于多用户场景
             limit: 可选，限制返回数量
-            offset: 可选，偏移量
             
         Returns:
             交易列表
@@ -62,7 +58,6 @@ class TransactionRepository(ABC):
         self,
         start_date: date,
         end_date: date,
-        user_id: Optional[str] = None
     ) -> List[Transaction]:
         """
         查找指定日期范围内的交易
@@ -70,7 +65,6 @@ class TransactionRepository(ABC):
         Args:
             start_date: 开始日期（包含）
             end_date: 结束日期（包含）
-            user_id: 可选，用户 ID
             
         Returns:
             交易列表，按日期升序排列
@@ -172,13 +166,12 @@ class TransactionRepository(ABC):
         pass
     
     @abstractmethod
-    def create(self, transaction: Transaction, user_id: Optional[str] = None) -> Transaction:
+    def create(self, transaction: Transaction) -> Transaction:
         """
         创建新交易
         
         Args:
             transaction: 交易实体
-            user_id: 可选，用户 ID
             
         Returns:
             创建后的交易实体（包含生成的 ID）
@@ -243,7 +236,6 @@ class TransactionRepository(ABC):
     @abstractmethod
     def count(
         self,
-        user_id: Optional[str] = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None
     ) -> int:
@@ -251,7 +243,6 @@ class TransactionRepository(ABC):
         统计交易数量
         
         Args:
-            user_id: 可选，用户 ID
             start_date: 可选，开始日期
             end_date: 可选，结束日期
             
@@ -265,7 +256,6 @@ class TransactionRepository(ABC):
         self,
         start_date: date,
         end_date: date,
-        user_id: Optional[str] = None
     ) -> Dict[str, any]:
         """
         获取交易统计信息
@@ -273,7 +263,6 @@ class TransactionRepository(ABC):
         Args:
             start_date: 开始日期
             end_date: 结束日期
-            user_id: 可选，用户 ID
             
         Returns:
             统计信息字典，包含：

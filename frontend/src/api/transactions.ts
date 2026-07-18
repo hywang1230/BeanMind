@@ -6,12 +6,18 @@ export type Posting = {
     currency: string
 }
 
+export type DisplayAmount = {
+    currency: string
+    amount: string
+}
+
 export type Transaction = {
     id: string
     date: string
     description?: string
     payee?: string
     postings: Posting[]
+    display_amounts: DisplayAmount[]
     tags?: string[]
     transaction_type?: 'expense' | 'income' | 'transfer' | 'opening' | 'other'
     created_at?: string
@@ -33,23 +39,25 @@ export type CreateTransactionRequest = {
 
 export type TransactionsQuery = {
     limit?: number
-    offset?: number
+    cursor?: string
     start_date?: string
     end_date?: string
     account?: string
+    tags?: string
     description?: string
     transaction_type?: 'expense' | 'income' | 'transfer'
 }
 
 export type TransactionsResponse = {
-    transactions: Transaction[]
-    total: number
+    items: Transaction[]
+    next_cursor: string | null
+    has_more: boolean
 }
 
 export type TransactionStatistics = {
-    total_income: number
-    total_expense: number
-    net_amount: number
+    total_income: string
+    total_expense: string
+    net_amount: string
     currency: string
 }
 
@@ -93,7 +101,7 @@ export const transactionsApi = {
     },
 
     // 获取汇率（货币到 CNY）
-    getExchangeRates(): Promise<Record<string, number>> {
+    getExchangeRates(): Promise<Record<string, string>> {
         return apiClient.get('/api/transactions/exchange-rates')
     }
 }

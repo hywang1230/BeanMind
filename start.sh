@@ -166,14 +166,14 @@ if [ ! -f ".env" ]; then
     log_warning ".env 文件不存在，正在从 .env.example 复制..."
     cp .env.example .env
     log_success ".env 文件已创建"
-    log_warning "⚠️  请编辑 .env 文件，修改默认密码和其他配置！"
+    log_warning "请按需编辑 .env；LLM 默认关闭。"
 else
     log_success ".env 文件已存在"
 fi
 
 # 创建数据目录
 mkdir -p data/ledger
-mkdir -p data/backups
+mkdir -p logs
 
 # 检查主账本文件
 if [ ! -f "data/ledger/main.beancount" ]; then

@@ -1,599 +1,118 @@
 <template>
-  <f7-page name="balance-sheet">
-    <f7-navbar title="资产负债表">
-      <template #left>
-        <f7-link @click="goBack">
-          <f7-icon f7="chevron_left"></f7-icon>
-          <span></span>
-        </f7-link>
-      </template>
-    </f7-navbar>
+  <section class="page secondary-page balance-sheet-page">
+    <van-nav-bar title="资产负债表" left-arrow @click-left="router.back()" />
+    <header class="page-header">
+      <van-cell-group inset>
+        <DatePickerField v-model="asOfDate" label="截止日期" />
+      </van-cell-group>
+      <van-button block size="small" type="primary" @click="applyDate">查询</van-button>
+    </header>
 
-    <div class="balance-sheet-content">
-      <!-- 日期选择器 -->
-      <div class="date-picker-section" @click="openDatePicker">
-        <div class="date-picker-label">截止日期</div>
-        <div class="date-picker-value">
-          <span>{{ formatDisplayDate(selectedDate || '') }}</span>
-          <f7-icon f7="calendar" size="18" class="date-icon"></f7-icon>
-        </div>
-      </div>
+    <div v-if="loading" class="state-card"><van-loading /></div>
+    <van-empty v-else-if="error" image="error" :description="error">
+      <van-button @click="load">重试</van-button>
+    </van-empty>
+    <template v-else-if="data">
+      <van-cell-group inset class="summary-card">
+        <van-cell title="净资产" :value="fmt(data.net_worth_cny)" />
+        <van-cell title="总资产" :value="fmt(data.total_assets_cny)" />
+        <van-cell title="总负债" :value="fmt(data.total_liabilities_cny)" />
+        <van-cell title="总权益" :value="fmt(data.total_equity_cny)" />
+      </van-cell-group>
 
-      <!-- 加载状态 -->
-      <div v-if="loading" class="loading-container">
-        <div class="loading-spinner"></div>
-        <p class="loading-text">加载中...</p>
-      </div>
-
-      <!-- 错误状态 -->
-      <div v-else-if="error" class="error-container">
-        <p class="error-text">{{ error }}</p>
-        <button @click="loadBalanceSheet()" class="retry-btn">重试</button>
-      </div>
-
-      <!-- 报表内容 -->
-      <div v-else-if="data" class="report-body">
-        <!-- 汇总卡片 -->
-        <div class="summary-card">
-          <div class="summary-row main-row">
-            <div class="summary-label">净资产</div>
-            <div class="summary-value" :class="{ negative: data.net_worth_cny < 0 }">
-              {{ formatCurrency(data.net_worth_cny) }}
-            </div>
-          </div>
-          <div class="summary-divider"></div>
-          <div class="summary-details">
-            <div class="summary-item">
-              <span class="item-label">总资产</span>
-              <span class="item-value assets">{{ formatCurrency(data.total_assets_cny) }}</span>
-            </div>
-            <div class="summary-item">
-              <span class="item-label">总负债</span>
-              <span class="item-value liabilities">{{ formatCurrency(data.total_liabilities_cny) }}</span>
-            </div>
-            <div class="summary-item">
-              <span class="item-label">总权益</span>
-              <span class="item-value equity">{{ formatCurrency(data.total_equity_cny) }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 汇率信息 -->
-        <div v-if="data.currencies.length > 1" class="exchange-rates-card">
-          <div class="card-header">汇率参考</div>
-          <div class="rates-list">
-            <div v-for="currency in data.currencies" :key="currency" class="rate-item">
-              <span class="rate-currency">{{ currency }}</span>
-              <span class="rate-value">{{ currency === 'CNY' ? '1.00' : formatRate(data.exchange_rates[currency])
-              }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 资产类 -->
-        <div class="category-section">
-          <div class="category-header">
-            <div class="category-title">
-              <span class="category-icon assets">📊</span>
-              <span>资产</span>
-            </div>
-            <div class="category-total">{{ formatCurrency(data.assets.total_cny) }}</div>
-          </div>
-          <div class="accounts-list">
-            <ReportAccountTreeItem v-for="account in data.assets.accounts" :key="account.account" :item="account"
-              type="asset" :default-expanded="false" :expanded-accounts="expandedAccounts"
-              @click-account="handleAccountClick" @toggle-expand="handleToggleExpand" />
-          </div>
-        </div>
-
-        <!-- 负债类 -->
-        <div class="category-section">
-          <div class="category-header">
-            <div class="category-title">
-              <span class="category-icon liabilities">💳</span>
-              <span>负债</span>
-            </div>
-            <div class="category-total liabilities">{{ formatCurrency(data.liabilities.total_cny) }}</div>
-          </div>
-          <div class="accounts-list">
-            <ReportAccountTreeItem v-for="account in data.liabilities.accounts" :key="account.account" :item="account"
-              type="liability" :default-expanded="false" :expanded-accounts="expandedAccounts"
-              @click-account="handleAccountClick" @toggle-expand="handleToggleExpand" />
-          </div>
-        </div>
-
-        <!-- 权益类 -->
-        <div class="category-section">
-          <div class="category-header">
-            <div class="category-title">
-              <span class="category-icon equity">🏦</span>
-              <span>权益</span>
-            </div>
-            <div class="category-total equity">{{ formatCurrency(data.equity.total_cny) }}</div>
-          </div>
-          <div class="accounts-list">
-            <ReportAccountTreeItem v-for="account in data.equity.accounts" :key="account.account" :item="account"
-              type="equity" :default-expanded="false" :expanded-accounts="expandedAccounts"
-              @click-account="handleAccountClick" @toggle-expand="handleToggleExpand" />
-          </div>
-        </div>
-      </div>
-    </div>
-  </f7-page>
+      <ReportTreeSection
+        title="资产"
+        :items="data.assets?.accounts || []"
+        amount-key="balances"
+        @open="openAccount"
+      />
+      <ReportTreeSection
+        title="负债"
+        :items="data.liabilities?.accounts || []"
+        amount-key="balances"
+        @open="openAccount"
+      />
+      <ReportTreeSection
+        title="权益"
+        :items="data.equity?.accounts || []"
+        amount-key="balances"
+        @open="openAccount"
+      />
+    </template>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { f7Page, f7Navbar, f7Link, f7Icon } from 'framework7-vue'
-import { f7 } from 'framework7-vue'
-import { useRouter, onBeforeRouteLeave } from 'vue-router'
-import { reportsApi, type BalanceSheetResponse, type AccountBalanceItem } from '../../api/reports'
-import ReportAccountTreeItem from '../../components/ReportAccountTreeItem.vue'
+import { onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import type { ApiError } from '../../api/client'
+import { reportsApi, type BalanceSheetResponse } from '../../api/reports'
+import DatePickerField from '../../components/DatePickerField.vue'
+import { formatAmountDisplay } from '../../utils/decimal'
+import ReportTreeSection from './ReportTreeSection.vue'
 
+const route = useRoute()
 const router = useRouter()
-
-// 状态缓存 key
-const STATE_CACHE_KEY = 'balance-sheet-state'
-
-interface CachedState {
-  scrollPosition: number
-  selectedDate: string
-  expandedAccounts: string[] // 展开的账户列表
-}
-
-function goBack() {
-  // 返回时清除缓存
-  sessionStorage.removeItem(STATE_CACHE_KEY)
-  router.back()
-}
-
-// 保存页面状态
-function savePageState() {
-  const pageContent = document.querySelector('.page[data-name="balance-sheet"] .page-content')
-  const state: CachedState = {
-    scrollPosition: pageContent ? pageContent.scrollTop : 0,
-    selectedDate: selectedDate.value,
-    expandedAccounts: Array.from(expandedAccounts.value)
-  }
-  sessionStorage.setItem(STATE_CACHE_KEY, JSON.stringify(state))
-}
-
-// 恢复滚动位置
-function restoreScrollPosition(position: number) {
-  // 使用 requestAnimationFrame 确保 DOM 已完全渲染
-  requestAnimationFrame(() => {
-    setTimeout(() => {
-      const pageContent = document.querySelector('.page[data-name="balance-sheet"] .page-content')
-      if (pageContent) {
-        pageContent.scrollTop = position
-      }
-    }, 50)
-  })
-}
-
-// 获取缓存的状态
-function getCachedState(): CachedState | null {
-  const cached = sessionStorage.getItem(STATE_CACHE_KEY)
-  if (cached) {
-    try {
-      return JSON.parse(cached)
-    } catch {
-      return null
-    }
-  }
-  return null
-}
-
-// 路由离开前保存状态（进入详情页时保存）
-onBeforeRouteLeave((to) => {
-  // 只有进入账户详情页时才保存状态
-  if (to.path === '/reports/account-detail') {
-    savePageState()
-  }
-})
-
+const asOfDate = ref(String(route.query.as_of_date || new Date().toISOString().slice(0, 10)))
+const data = ref<BalanceSheetResponse | null>(null)
 const loading = ref(false)
 const error = ref('')
-const data = ref<BalanceSheetResponse | null>(null)
 
-// 初始化状态（从缓存恢复或使用默认值）
-function getInitialState(): { selectedDate: string, expandedAccounts: Set<string> } {
-  const cached = getCachedState()
-  if (cached) {
-    return {
-      selectedDate: cached.selectedDate,
-      expandedAccounts: new Set(cached.expandedAccounts || [])
-    }
-  }
-  return {
-    selectedDate: new Date().toISOString().split('T')[0] ?? '',
-    expandedAccounts: new Set()
-  }
+function fmt(value: string) {
+  return formatAmountDisplay(value, 2)
 }
 
-const initialState = getInitialState()
-const selectedDate = ref(initialState.selectedDate)
-
-// 展开的账户集合（从缓存初始化）
-const expandedAccounts = ref<Set<string>>(initialState.expandedAccounts)
-
-// 处理账户展开/折叠事件
-function handleToggleExpand(account: string, expanded: boolean) {
-  if (expanded) {
-    expandedAccounts.value.add(account)
-  } else {
-    expandedAccounts.value.delete(account)
-  }
+function applyDate() {
+  router.replace({ query: { ...route.query, as_of_date: asOfDate.value } })
 }
 
-// 日期选择器实例
-let dateCalendar: any = null
-
-function openDatePicker() {
-  if (dateCalendar) {
-    dateCalendar.destroy()
-    dateCalendar = null
-  }
-
-  dateCalendar = f7.calendar.create({
-    openIn: 'customModal',
-    header: true,
-    headerPlaceholder: '选择截止日期',
-    toolbar: true,
-    toolbarCloseText: '确定',
-    monthPicker: true,
-    yearPicker: true,
-    closeByOutsideClick: true,
-    cssClass: 'report-date-calendar',
-    value: [new Date(selectedDate.value || new Date())],
-    on: {
-      change: function (_calendar: any, value: unknown) {
-        const values = value as Date[]
-        if (values && values.length > 0 && values[0]) {
-          selectedDate.value = formatDateValue(values[0])
-          // 选中日期后自动关闭控件
-          if (dateCalendar) {
-            dateCalendar.close()
-          }
-        }
-      },
-      closed: function () {
-        loadBalanceSheet()
-      }
-    }
-  })
-
-  dateCalendar.open()
-}
-
-function formatDateValue(d: Date): string {
-  const year = d.getFullYear()
-  const month = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function formatDisplayDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`
-}
-
-onBeforeUnmount(() => {
-  if (dateCalendar) {
-    dateCalendar.destroy()
-    dateCalendar = null
-  }
-})
-
-function formatCurrency(amount: number): string {
-  const prefix = amount < 0 ? '-' : ''
-  return `${prefix}¥${Math.abs(amount).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function formatRate(rate: number | undefined): string {
-  if (rate === undefined) return '-'
-  return rate.toFixed(4)
-}
-
-async function loadBalanceSheet(scrollPositionToRestore?: number) {
+async function load() {
   loading.value = true
   error.value = ''
-
   try {
-    data.value = await reportsApi.getBalanceSheet({
-      as_of_date: selectedDate.value
-    })
-    // 数据加载完成后恢复滚动位置
-    if (scrollPositionToRestore !== undefined && scrollPositionToRestore > 0) {
-      restoreScrollPosition(scrollPositionToRestore)
-    }
-  } catch (err: any) {
-    error.value = err.message || '加载失败，请重试'
-    console.error('Failed to load balance sheet:', err)
+    data.value = await reportsApi.getBalanceSheet({ as_of_date: asOfDate.value })
+  } catch (reason) {
+    const err = reason as ApiError
+    error.value = err.code === 'MISSING_EXCHANGE_RATE'
+      ? `${err.message}（缺少汇率）`
+      : err.message
+    data.value = null
   } finally {
     loading.value = false
   }
 }
 
-function handleAccountClick(account: AccountBalanceItem) {
-  // 导航到账户明细页面
+function openAccount(account: string) {
   router.push({
     path: '/reports/account-detail',
-    query: {
-      account: account.account,
-      end_date: selectedDate.value
-    }
+    query: { account, end_date: asOfDate.value },
   })
 }
 
-onMounted(() => {
-  // 检查是否有缓存的状态（从详情页返回）
-  const cachedState = getCachedState()
-  const scrollPosition = cachedState?.scrollPosition
-  // 加载数据并在完成后恢复滚动位置
-  loadBalanceSheet(scrollPosition)
-  // 恢复状态后清除缓存
-  if (cachedState) {
-    sessionStorage.removeItem(STATE_CACHE_KEY)
-  }
-})
+watch(
+  () => route.query.as_of_date,
+  (value) => {
+    if (value) asOfDate.value = String(value)
+    load()
+  },
+)
+
+onMounted(load)
 </script>
 
 <style scoped>
-.balance-sheet-content {
-  min-height: 100%;
-  background: var(--bg-primary);
-  padding-bottom: 20px;
-  transition: background-color 0.3s;
-}
-
-/* 日期选择器 */
-.date-picker-section {
-  background: var(--bg-secondary);
-  padding: 12px 16px;
-  margin-bottom: 8px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  cursor: pointer;
-  transition: background-color 0.15s;
-}
-
-.date-picker-section:active {
-  background-color: var(--bg-tertiary);
-}
-
-.date-picker-label {
-  font-size: 15px;
-  color: var(--text-primary);
-  font-weight: 500;
-}
-
-.date-picker-value {
-  display: flex;
-  align-items: center;
+.page-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
-  font-size: 15px;
-  color: var(--ios-blue);
-}
-
-.date-icon {
-  color: var(--ios-blue);
-}
-
-/* 加载状态 */
-.loading-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
-}
-
-.loading-spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--separator);
-  border-top-color: var(--ios-blue);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.loading-text {
-  margin-top: 12px;
-  font-size: 14px;
-  color: #8e8e93;
-}
-
-/* 错误状态 */
-.error-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 60px 20px;
-}
-
-.error-text {
-  font-size: 15px;
-  color: var(--ios-red);
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 8px 0 0;
   margin-bottom: 16px;
 }
-
-.retry-btn {
-  padding: 10px 24px;
-  background: var(--ios-blue);
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 500;
-  cursor: pointer;
+.page-header :deep(.van-cell-group--inset) {
+  margin-left: 0;
+  margin-right: 0;
 }
-
-/* 汇总卡片 */
-.summary-card {
-  background: var(--bg-secondary);
-  margin: 0 16px 12px;
-  border-radius: 12px;
-  padding: 20px 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.main-row {
-  text-align: center;
-  margin-bottom: 16px;
-}
-
-.summary-label {
-  font-size: 13px;
-  color: #8e8e93;
-  margin-bottom: 4px;
-}
-
-.summary-value {
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--ios-green);
-}
-
-.summary-value.negative {
-  color: var(--ios-red);
-}
-
-.summary-divider {
-  height: 1px;
-  background: var(--separator);
-  margin-bottom: 16px;
-}
-
-.summary-details {
-  display: flex;
-  justify-content: space-around;
-}
-
-.summary-item {
-  text-align: center;
-}
-
-.item-label {
-  display: block;
-  font-size: 12px;
-  color: #8e8e93;
-  margin-bottom: 4px;
-}
-
-.item-value {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.item-value.assets {
-  color: var(--ios-green);
-}
-
-.item-value.liabilities {
-  color: var(--ios-orange);
-}
-
-.item-value.equity {
-  color: var(--ios-blue);
-}
-
-/* 汇率信息卡片 */
-.exchange-rates-card {
-  background: var(--bg-secondary);
-  margin: 0 16px 12px;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.card-header {
-  font-size: 13px;
-  font-weight: 600;
-  color: #8e8e93;
-  text-transform: uppercase;
-  padding: 12px 16px 8px;
-}
-
-.rates-list {
-  display: flex;
-  flex-wrap: wrap;
-  padding: 0 16px 12px;
-  gap: 12px;
-}
-
-.rate-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background: var(--bg-tertiary);
-  border-radius: 6px;
-}
-
-.rate-currency {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.rate-value {
-  font-size: 13px;
-  color: #8e8e93;
-}
-
-/* 分类区域 */
-.category-section {
-  background: var(--bg-secondary);
-  margin: 0 16px 12px;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.category-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 14px 16px;
-  background: var(--bg-tertiary);
-  border-bottom: 1px solid var(--separator);
-}
-
-.category-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.category-icon {
-  font-size: 18px;
-}
-
-.category-total {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ios-green);
-}
-
-.category-total.liabilities {
-  color: var(--ios-orange);
-}
-
-.category-total.equity {
-  color: var(--ios-blue);
-}
-
-.accounts-list {
-  padding: 0;
-}
+.summary-card { margin-top: 8px; }
 </style>

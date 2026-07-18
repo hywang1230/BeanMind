@@ -27,7 +27,7 @@ log_info "🛑 停止 BeanMind 服务"
 echo -e "${BLUE}========================================${NC}"
 
 # 停止后端服务 (uvicorn)
-BACKEND_PIDS=$(pgrep -f "uvicorn main:app")
+BACKEND_PIDS=$(pgrep -f "uvicorn backend.main:app")
 if [ ! -z "$BACKEND_PIDS" ]; then
     log_info "正在停止后端服务..."
     echo "$BACKEND_PIDS" | xargs kill 2>/dev/null

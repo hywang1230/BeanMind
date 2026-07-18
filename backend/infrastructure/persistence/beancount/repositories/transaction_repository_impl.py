@@ -5,18 +5,23 @@
 from pathlib import Path
 from typing import Optional, List, Dict
 from decimal import Decimal
-from datetime import date, datetime
+from datetime import date
+import logging
 import uuid
 
 from beancount.core.data import Transaction as BeancountTransaction, Posting as BeancountPosting
 from beancount.core import amount
-from beancount.parser import printer
-from sqlalchemy.orm import Session
+from beancount.parser import parser, printer
+from sqlalchemy.orm import Session, selectinload
 
 from backend.domain.transaction.entities import Transaction, Posting, TransactionType, TransactionFlag
 from backend.domain.transaction.repositories import TransactionRepository
 from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
-from backend.infrastructure.persistence.db.models import TransactionMetadata
+from backend.infrastructure.persistence.db.models import LedgerTransaction
+from backend.infrastructure.persistence.ledger_projection import LedgerProjectionService
+
+
+logger = logging.getLogger(__name__)
 
 
 class TransactionRepositoryImpl(TransactionRepository):
@@ -28,7 +33,13 @@ class TransactionRepositoryImpl(TransactionRepository):
     - 确保两者的一致性
     """
     
-    def __init__(self, beancount_service: BeancountService, db_session: Session):
+    def __init__(
+        self,
+        beancount_service: BeancountService,
+        db_session: Session,
+        projection_service: Optional[LedgerProjectionService] = None,
+        load_transactions: bool = True,
+    ):
         """
         初始化交易仓储
         
@@ -38,8 +49,11 @@ class TransactionRepositoryImpl(TransactionRepository):
         """
         self.beancount_service = beancount_service
         self.db_session = db_session
+        self.projection_service = projection_service
         self._transactions_cache: Dict[str, Transaction] = {}
-        self._load_transactions()
+        self._cache_loaded = False
+        if load_transactions:
+            self._load_transactions()
     
     def _load_transactions(self):
         """从 Beancount 加载所有交易"""
@@ -49,6 +63,11 @@ class TransactionRepositoryImpl(TransactionRepository):
             if isinstance(entry, BeancountTransaction):
                 transaction = self._beancount_to_domain(entry)
                 self._transactions_cache[transaction.id] = transaction
+        self._cache_loaded = True
+
+    def _ensure_cache(self) -> None:
+        if not self._cache_loaded:
+            self._load_transactions()
     
     def _beancount_to_domain(self, entry: BeancountTransaction) -> Transaction:
         """
@@ -213,26 +232,101 @@ class TransactionRepositoryImpl(TransactionRepository):
         """重新加载交易数据"""
         self.beancount_service.reload()
         self._load_transactions()
+
+    def _refresh_projection(self, *files: Path | str) -> None:
+        """写后刷新派生投影；失败不回滚已经成功的 Beancount 写入。"""
+        if not self.projection_service:
+            return
+        for file in dict.fromkeys(str(Path(item).resolve()) for item in files):
+            try:
+                self.projection_service.refresh_file(file)
+            except Exception as exc:
+                logger.exception("Beancount 写入成功，但投影刷新失败: %s", file)
+                self.projection_service.mark_dirty(file, exc)
+                break
     
     def find_by_id(self, transaction_id: str) -> Optional[Transaction]:
         """根据 ID 查找交易"""
-        return self._transactions_cache.get(transaction_id)
+        cached = self._transactions_cache.get(transaction_id)
+        if cached:
+            return cached
+        if self.projection_service:
+            row = (
+                self.db_session.query(LedgerTransaction)
+                .options(
+                    selectinload(LedgerTransaction.postings),
+                    selectinload(LedgerTransaction.tags),
+                )
+                .filter(LedgerTransaction.id == transaction_id)
+                .first()
+            )
+            if row:
+                source_entries, source_errors, _ = parser.parse_file(row.source_file)
+                if source_errors:
+                    raise ValueError(
+                        f"无法解析交易源文件，拒绝可能丢失元数据的写操作: {row.source_file}"
+                    )
+                source_entry = next(
+                    (
+                        entry
+                        for entry in source_entries
+                        if isinstance(entry, BeancountTransaction)
+                        and entry.meta.get("lineno") == row.source_lineno
+                    ),
+                    None,
+                )
+                if source_entry is None:
+                    raise ValueError(
+                        f"无法在源位置找到交易: {row.source_file}:{row.source_lineno}"
+                    )
+                transaction = Transaction(
+                    id=row.id,
+                    date=row.date,
+                    description=row.narration,
+                    payee=row.payee,
+                    flag=(
+                        TransactionFlag.CLEARED
+                        if row.flag == "*"
+                        else TransactionFlag.PENDING
+                    ),
+                    postings=[
+                        Posting(
+                            account=posting.account,
+                            amount=Decimal(posting.amount_text),
+                            currency=posting.currency,
+                            cost=Decimal(posting.cost_text) if posting.cost_text else None,
+                            cost_currency=posting.cost_currency,
+                            price=Decimal(posting.price_text) if posting.price_text else None,
+                            price_currency=posting.price_currency,
+                            flag=posting.flag,
+                            meta=(
+                                source_entry.postings[index].meta or {}
+                                if index < len(source_entry.postings)
+                                else {}
+                            ),
+                        )
+                        for index, posting in enumerate(row.postings)
+                    ],
+                    tags=set(source_entry.tags or []),
+                    links=set(source_entry.links or []),
+                    meta=dict(source_entry.meta or {}),
+                )
+                self._transactions_cache[transaction_id] = transaction
+                return transaction
+        return None
     
     def find_all(
         self,
-        user_id: Optional[str] = None,
         limit: Optional[int] = None,
-        offset: Optional[int] = None
     ) -> List[Transaction]:
         """查找所有交易（支持分页）"""
+        self._ensure_cache()
         transactions = list(self._transactions_cache.values())
         
         # 按日期倒序排列
         transactions.sort(key=lambda t: t.date, reverse=True)
         
         # 分页
-        if offset:
-            transactions = transactions[offset:]
         if limit:
             transactions = transactions[:limit]
         
@@ -242,9 +336,9 @@ class TransactionRepositoryImpl(TransactionRepository):
         self,
         start_date: date,
         end_date: date,
-        user_id: Optional[str] = None
     ) -> List[Transaction]:
         """查找指定日期范围内的交易"""
+        self._ensure_cache()
         return [
             t for t in self._transactions_cache.values()
             if start_date <= t.date <= end_date
@@ -257,6 +351,7 @@ class TransactionRepositoryImpl(TransactionRepository):
         end_date: Optional[date] = None
     ) -> List[Transaction]:
         """查找涉及指定账户的交易"""
+        self._ensure_cache()
         transactions = [
             t for t in self._transactions_cache.values()
             if account_name in t.get_accounts()
@@ -277,6 +372,7 @@ class TransactionRepositoryImpl(TransactionRepository):
         end_date: Optional[date] = None
     ) -> List[Transaction]:
         """查找指定类型的交易"""
+        self._ensure_cache()
         transactions = [
             t for t in self._transactions_cache.values()
             if t.detect_transaction_type() == transaction_type
@@ -296,6 +392,7 @@ class TransactionRepositoryImpl(TransactionRepository):
         match_all: bool = False
     ) -> List[Transaction]:
         """根据标签查找交易"""
+        self._ensure_cache()
         if match_all:
             # AND 逻辑：必须包含所有标签
             return [
@@ -315,6 +412,7 @@ class TransactionRepositoryImpl(TransactionRepository):
         case_sensitive: bool = False
     ) -> List[Transaction]:
         """根据描述关键词搜索交易"""
+        self._ensure_cache()
         if case_sensitive:
             return [
                 t for t in self._transactions_cache.values()
@@ -333,6 +431,7 @@ class TransactionRepositoryImpl(TransactionRepository):
         case_sensitive: bool = False
     ) -> List[Transaction]:
         """根据关键词搜索交易（同时搜索描述和付款方）"""
+        self._ensure_cache()
         if case_sensitive:
             return [
                 t for t in self._transactions_cache.values()
@@ -346,7 +445,7 @@ class TransactionRepositoryImpl(TransactionRepository):
                    (t.payee and keyword_lower in t.payee.lower())
             ]
     
-    def create(self, transaction: Transaction, user_id: Optional[str] = None) -> Transaction:
+    def create(self, transaction: Transaction) -> Transaction:
         """
         创建新交易
         
@@ -355,18 +454,14 @@ class TransactionRepositoryImpl(TransactionRepository):
         """
         # 生成 ID（如果没有）
         if not transaction.id:
-            transaction.id = self._generate_transaction_id(
-                transaction.date, 
-                transaction.description,
-                transaction.payee,
-                transaction.postings
-            )
+            transaction.id = uuid.uuid4().hex
         
         # 转换为 Beancount 格式
         beancount_txn = self._domain_to_beancount(transaction)
         
         # 根据交易日期获取对应年份的文件，并确保文件存在
         year = transaction.date.year
+        year_file_existed = self.beancount_service.get_year_file_path(year).exists()
         year_file = self.beancount_service.ensure_year_file(year)
         
         # 写入到对应年份的 Beancount 文件
@@ -375,21 +470,11 @@ class TransactionRepositoryImpl(TransactionRepository):
             f.write(printer.format_entry(beancount_txn))
             f.write("\n")
         
-        # 保存元数据到 SQLite
-        if user_id:
-            metadata = TransactionMetadata(
-                user_id=user_id,
-                beancount_id=transaction.id,
-                sync_at=datetime.now(),
-                notes=transaction.meta.get("notes", "")
-            )
-            self.db_session.add(metadata)
-            self.db_session.commit()
-        
-        # 重新加载
-        self.reload()
-        
-        return self._transactions_cache.get(transaction.id, transaction)
+        self._transactions_cache[transaction.id] = transaction
+        self._refresh_projection(
+            year_file if year_file_existed else self.beancount_service.ledger_path
+        )
+        return transaction
 
     
     def update(self, transaction: Transaction) -> Transaction:
@@ -420,12 +505,6 @@ class TransactionRepositoryImpl(TransactionRepository):
         filename = transaction.meta['filename']
         lineno = transaction.meta['lineno']
         
-        # 获取关联的用户ID（从DB元数据）
-        metadata = self.db_session.query(TransactionMetadata).filter_by(
-            beancount_id=transaction.id
-        ).first()
-        user_id = metadata.user_id if metadata else None
-
         # 检查是否需要移动文件（例如年份改变）
         # 计算新交易应该所在的年份文件
         year = transaction.date.year
@@ -443,11 +522,9 @@ class TransactionRepositoryImpl(TransactionRepository):
             if not self._replace_transaction_in_file(filename, lineno, new_content):
                  raise RuntimeError(f"无法在文件中原地更新交易: {filename}:{lineno}")
             
-            # 重新加载
-            self.reload()
-            
-            # 直接使用原 ID 获取，因为我们的策略保证了 ID 不变（要么哈希一致，要么写入了 meta id）
-            return self._transactions_cache.get(transaction.id, transaction)
+            self._transactions_cache[transaction.id] = transaction
+            self._refresh_projection(current_file_path)
+            return transaction
             
         else:
             # 文件不同（跨年修改），走原有的“删除旧的 -> 创建新的”逻辑
@@ -456,14 +533,12 @@ class TransactionRepositoryImpl(TransactionRepository):
             if not self._remove_transaction_from_file(filename, lineno):
                  raise ValueError(f"无法从文件中删除原交易: {filename}:{lineno}")
                  
-            # 2. 删除旧的元数据
-            if metadata:
-                self.db_session.delete(metadata)
-                self.db_session.flush()
-                
+            # 2. 先移除旧年份投影，避免同一稳定 UUID 在新年份插入时冲突。
+            self._refresh_projection(current_file_path)
+
             # 3. 创建新交易
             try:
-                return self.create(transaction, user_id)
+                return self.create(transaction)
             except Exception as e:
                 raise RuntimeError(f"更新交易失败（旧数据已删除，新数据写入失败）: {e}")
 
@@ -589,130 +664,20 @@ class TransactionRepositoryImpl(TransactionRepository):
             return False
     
     def delete(self, transaction_id: str) -> bool:
-        """
-        删除交易
-        
-        从 Beancount 文件和 SQLite 数据库中删除交易。
-        """
+        """按解析得到的源位置删除交易，并增量刷新投影。"""
         if not self.exists(transaction_id):
             return False
-        
-        # 获取交易实体
+
         transaction = self._transactions_cache[transaction_id]
-        
-        # 根据交易日期确定年份文件
-        year = transaction.date.year
-        year_file = self.beancount_service.get_year_file_path(year)
-        
-        if not year_file.exists():
-            # 文件不存在，可能在主文件中
-            year_file = self.beancount_service.ledger_path
-        
-        # 读取文件内容
-        with open(year_file, "r", encoding="utf-8") as f:
-            content = f.read()
-        
-        # 查找并删除交易块
-        # 交易格式类似于:
-        # 2025-12-23 * "Payee" "Description"
-        #   Account:One  100 CNY
-        #   Account:Two  -100 CNY
-        
-        lines = content.split("\n")
-        new_lines = []
-        skip_until_next_entry = False
-        found = False
-        
-        i = 0
-        while i < len(lines):
-            line = lines[i]
-            
-            # 检查是否是交易行的开始（日期开头）
-            if line and len(line) >= 10 and line[0].isdigit():
-                # 可能是一个新的 entry（交易、余额等）
-                # 检查是否是我们要删除的交易
-                if self._is_target_transaction(lines, i, transaction):
-                    # 跳过这个交易块
-                    skip_until_next_entry = True
-                    found = True
-                    i += 1
-                    continue
-            
-            if skip_until_next_entry:
-                # 检查是否到达下一个 entry
-                if line and len(line) >= 10 and line[0].isdigit():
-                    # 这是一个新的 entry，停止跳过
-                    skip_until_next_entry = False
-                    new_lines.append(line)
-                elif line.strip() == "" and i + 1 < len(lines):
-                    # 空行，检查下一行是否是新 entry
-                    next_line = lines[i + 1]
-                    if next_line and len(next_line) >= 10 and next_line[0].isdigit():
-                        skip_until_next_entry = False
-                        # 不加入这个空行，让下一个 entry 保持正常间距
-                # 如果仍在跳过中，不添加此行
-            else:
-                new_lines.append(line)
-            
-            i += 1
-        
-        if not found:
-            # 尝试在主文件中查找
-            if year_file != self.beancount_service.ledger_path:
-                main_file = self.beancount_service.ledger_path
-                with open(main_file, "r", encoding="utf-8") as f:
-                    content = f.read()
-                
-                lines = content.split("\n")
-                new_lines = []
-                skip_until_next_entry = False
-                
-                i = 0
-                while i < len(lines):
-                    line = lines[i]
-                    
-                    if line and len(line) >= 10 and line[0].isdigit():
-                        if self._is_target_transaction(lines, i, transaction):
-                            skip_until_next_entry = True
-                            found = True
-                            i += 1
-                            continue
-                    
-                    if skip_until_next_entry:
-                        if line and len(line) >= 10 and line[0].isdigit():
-                            skip_until_next_entry = False
-                            new_lines.append(line)
-                        elif line.strip() == "" and i + 1 < len(lines):
-                            next_line = lines[i + 1]
-                            if next_line and len(next_line) >= 10 and next_line[0].isdigit():
-                                skip_until_next_entry = False
-                    else:
-                        new_lines.append(line)
-                    
-                    i += 1
-                
-                if found:
-                    year_file = main_file
-        
-        if found:
-            # 写回文件
-            with open(year_file, "w", encoding="utf-8") as f:
-                f.write("\n".join(new_lines))
-        
-        # 从缓存中删除
+        filename = transaction.meta.get("filename") if transaction.meta else None
+        lineno = transaction.meta.get("lineno") if transaction.meta else None
+        if not filename or not lineno:
+            raise ValueError("无法定位原始交易文件位置，删除失败")
+        if not self._remove_transaction_from_file(filename, int(lineno)):
+            raise RuntimeError(f"无法从文件中删除交易: {filename}:{lineno}")
+
         del self._transactions_cache[transaction_id]
-        
-        # 删除 SQLite 元数据
-        metadata = self.db_session.query(TransactionMetadata).filter_by(
-            beancount_id=transaction_id
-        ).first()
-        if metadata:
-            self.db_session.delete(metadata)
-            self.db_session.commit()
-        
-        # 重新加载
-        self.reload()
-        
+        self._refresh_projection(filename)
         return True
     
     def _is_target_transaction(self, lines: list, start_index: int, transaction: Transaction) -> bool:
@@ -780,15 +745,15 @@ class TransactionRepositoryImpl(TransactionRepository):
     
     def exists(self, transaction_id: str) -> bool:
         """检查交易是否存在"""
-        return transaction_id in self._transactions_cache
+        return self.find_by_id(transaction_id) is not None
     
     def count(
         self,
-        user_id: Optional[str] = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None
     ) -> int:
         """统计交易数量"""
+        self._ensure_cache()
         if start_date or end_date:
             transactions = self.find_by_date_range(
                 start_date or date.min,
@@ -802,9 +767,9 @@ class TransactionRepositoryImpl(TransactionRepository):
         self,
         start_date: date,
         end_date: date,
-        user_id: Optional[str] = None
     ) -> Dict[str, any]:
         """获取交易统计信息"""
+        self._ensure_cache()
         transactions = self.find_by_date_range(start_date, end_date)
         
         # 按类型统计
@@ -862,6 +827,17 @@ class TransactionRepositoryImpl(TransactionRepository):
 
     def get_all_payees(self) -> List[str]:
         """获取所有历史交易方（Payee）"""
+        if self.projection_service:
+            return [
+                row[0]
+                for row in self.db_session.query(LedgerTransaction.payee)
+                .filter(LedgerTransaction.payee.isnot(None))
+                .filter(LedgerTransaction.payee != "")
+                .distinct()
+                .order_by(LedgerTransaction.payee)
+                .all()
+            ]
+        self._ensure_cache()
         payees = set()
         for t in self._transactions_cache.values():
             if t.payee:

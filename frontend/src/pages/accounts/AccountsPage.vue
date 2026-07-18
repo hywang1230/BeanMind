@@ -1,576 +1,379 @@
 <template>
-  <f7-page name="accounts">
-    <f7-navbar>
-      <f7-nav-left>
-        <f7-link @click="goBack">
-          <f7-icon ios="f7:chevron_left" md="material:arrow_back" />
-        </f7-link>
-      </f7-nav-left>
-      <f7-nav-title>账户管理</f7-nav-title>
-      <f7-nav-right>
-        <f7-link @click="showCreateModal = true">
-          <f7-icon ios="f7:plus" md="material:add" />
-        </f7-link>
-      </f7-nav-right>
-    </f7-navbar>
-
-    <!-- 加载状态 -->
-    <div v-if="loading && accountTree.length === 0" class="loading-container">
-      <f7-preloader></f7-preloader>
-    </div>
-
-    <!-- 空状态 -->
-    <div v-else-if="accountTree.length === 0" class="empty-state">
-      <div class="empty-icon">💰</div>
-      <div class="empty-text">暂无账户</div>
-      <f7-button fill round @click="showCreateModal = true">
-        创建账户
-      </f7-button>
-    </div>
-
-    <!-- 账户树 -->
-    <div v-else class="accounts-content">
-      <template v-for="type in accountTypes" :key="type.value">
-        <template v-if="getAccountsByType(type.value).length > 0">
-          <f7-block-title>{{ type.label }}</f7-block-title>
-          <f7-list strong-ios dividers-ios inset class="account-list">
-            <template v-for="account in getAccountsByType(type.value)" :key="account.name">
-              <account-tree-item :account="account" :expanded-accounts="expandedAccounts" :depth="0"
-                @toggle="toggleExpand" @select="handleAccountSelect" />
-            </template>
-          </f7-list>
-        </template>
+  <section class="page secondary-page accounts-page">
+    <van-nav-bar title="账户" left-arrow @click-left="router.back()">
+      <template #right>
+        <van-button size="small" type="primary" plain @click="openCreate">新建</van-button>
       </template>
+    </van-nav-bar>
+
+    <div v-if="loading" class="state-card"><van-loading /></div>
+    <van-empty v-else-if="error" image="error" :description="error"><van-button @click="load">重试</van-button></van-empty>
+    <van-empty v-else-if="!treeNodes.length" description="暂无账户" />
+
+    <div v-else class="account-groups">
+      <article v-for="root in treeNodes" :key="root.name" class="account-group" :class="`type-${root.name}`">
+        <button
+          type="button"
+          class="group-header"
+          :aria-label="isExpanded(root.name) ? `收起${root.name}` : `展开${root.name}`"
+          @click="toggle(root.name)"
+        >
+          <span class="group-mark">{{ accountTypeMeta(root.name).mark }}</span>
+          <span class="group-title">
+            <strong>{{ accountTypeMeta(root.name).title }}</strong>
+            <small>{{ selectableCount(root) }} 个账户</small>
+          </span>
+          <van-icon class="group-arrow" :name="isExpanded(root.name) ? 'arrow-down' : 'arrow'" />
+        </button>
+
+        <div v-show="isExpanded(root.name)" class="group-body">
+          <button
+            v-if="root.selectable"
+            type="button"
+            class="account-row account-row--root"
+            @click="openDetail(root.name)"
+          >
+            <span class="row-icon row-icon--leaf"><van-icon name="description-o" /></span>
+            <span class="row-main">
+              <span class="row-name">{{ root.label }}</span>
+              <span class="row-path">{{ root.name }}</span>
+            </span>
+            <span class="row-tags">
+              <van-tag v-if="root.account.is_active === false" plain type="warning">已关闭</van-tag>
+              <van-tag v-for="currency in root.account.currencies" :key="currency" plain>{{ currency }}</van-tag>
+            </span>
+            <van-icon class="row-arrow" name="arrow" />
+          </button>
+
+          <button
+            v-for="node in visibleChildren(root)"
+            :key="node.name"
+            type="button"
+            class="account-row"
+            :class="{ 'account-row--group': node.hasChildren || !node.selectable, 'account-row--leaf': node.selectable && !node.hasChildren }"
+            :style="{ '--level': String(Math.max(node.level - 1, 0)) }"
+            :aria-label="node.hasChildren ? (isExpanded(node.name) ? `收起${node.name}` : `展开${node.name}`) : node.name"
+            :aria-disabled="!node.selectable && !node.hasChildren"
+            @click="handleNodeClick(node)"
+          >
+            <span class="tree-line" aria-hidden="true" />
+            <span class="row-icon" :class="node.hasChildren ? 'row-icon--group' : 'row-icon--leaf'">
+              <van-icon v-if="node.hasChildren" :name="isExpanded(node.name) ? 'arrow-down' : 'arrow'" />
+              <van-icon v-else name="description-o" />
+            </span>
+            <span class="row-main">
+              <span class="row-name">{{ node.label }}</span>
+              <span class="row-path">{{ node.name }}</span>
+            </span>
+            <span class="row-tags">
+              <van-tag v-if="node.hasChildren" plain type="primary">分组</van-tag>
+              <van-tag v-if="node.account.is_active === false" plain type="warning">已关闭</van-tag>
+              <van-tag v-for="currency in node.account.currencies" :key="currency" plain>{{ currency }}</van-tag>
+            </span>
+            <van-icon v-if="node.selectable && !node.hasChildren" class="row-arrow" name="arrow" />
+          </button>
+        </div>
+      </article>
     </div>
 
-    <!-- 创建账户模态框 -->
-    <f7-popup :opened="showCreateModal" @popup:closed="showCreateModal = false">
-      <f7-page>
-        <f7-navbar>
-          <f7-nav-left>
-            <f7-link popup-close>
-              <f7-icon ios="f7:chevron_left" md="material:arrow_back" />
-            </f7-link>
-          </f7-nav-left>
-          <f7-nav-title>创建账户</f7-nav-title>
-          <f7-nav-right>
-            <f7-link @click="handleCreateAccount" :style="{ opacity: (!newAccount.name || creatingAccount) ? 0.5 : 1 }">
-              {{ creatingAccount ? '保存中' : '保存' }}
-            </f7-link>
-          </f7-nav-right>
-        </f7-navbar>
-
-        <f7-list strong-ios dividers-ios inset>
-          <f7-list-input label="账户类型" type="select" :value="newAccount.type"
-            @input="newAccount.type = $event.target.value">
-            <option v-for="type in accountTypes" :key="type.value" :value="type.value">
-              {{ type.label }}
-            </option>
-          </f7-list-input>
-
-          <f7-list-input label="账户名称" type="text" :placeholder="getAccountPlaceholder()" :value="newAccount.name"
-            @input="newAccount.name = $event.target.value" required>
-            <template #info>
-              <span class="account-prefix">{{ newAccount.type }}:</span>
-            </template>
-          </f7-list-input>
-
-          <f7-list-input label="支持币种" type="text" placeholder="例如: CNY,USD（逗号分隔）" :value="newAccount.currencies"
-            @input="newAccount.currencies = $event.target.value"></f7-list-input>
-        </f7-list>
-
-        <f7-block v-if="createError" class="error-block">
-          <p>{{ createError }}</p>
-        </f7-block>
-      </f7-page>
-    </f7-popup>
-  </f7-page>
+    <van-popup v-model:show="showCreate" position="bottom" round :style="{ minHeight: '50%' }">
+      <div class="create-panel">
+        <header class="create-header">
+          <strong>新建账户</strong>
+          <button type="button" class="header-action" @click="showCreate = false">关闭</button>
+        </header>
+        <van-form @submit="createAccount">
+          <van-cell-group inset>
+            <van-field name="type" label="类型">
+              <template #input>
+                <van-radio-group v-model="createForm.account_type" direction="horizontal">
+                  <van-radio name="Assets">资产</van-radio>
+                  <van-radio name="Liabilities">负债</van-radio>
+                  <van-radio name="Equity">权益</van-radio>
+                  <van-radio name="Income">收入</van-radio>
+                  <van-radio name="Expenses">支出</van-radio>
+                </van-radio-group>
+              </template>
+            </van-field>
+            <van-field
+              v-model="createForm.nameSuffix"
+              label="账户名"
+              :placeholder="`如 Bank:Checking`"
+              required
+            >
+              <template #label>
+                <span>账户名</span>
+              </template>
+              <template #input>
+                <div class="name-input-row">
+                  <span class="name-prefix">{{ namePrefix }}</span>
+                  <input
+                    v-model="createForm.nameSuffix"
+                    class="name-suffix-input"
+                    type="text"
+                    :placeholder="nameSuffixPlaceholder"
+                    required
+                  >
+                </div>
+              </template>
+            </van-field>
+            <van-field name="currencies" label="币种" required :error-message="currencyLoadError || (!currencyOptions.length ? '暂无可用币种' : '')">
+              <template #input>
+                <van-checkbox-group v-model="createForm.currencies" direction="horizontal" class="currency-checks">
+                  <van-checkbox
+                    v-for="currency in currencyOptions"
+                    :key="currency"
+                    :name="currency"
+                    shape="square"
+                  >{{ currency }}</van-checkbox>
+                </van-checkbox-group>
+              </template>
+            </van-field>
+            <DatePickerField v-model="createForm.open_date" label="开户日期" />
+          </van-cell-group>
+          <div class="create-actions">
+            <van-button block type="primary" native-type="submit" :loading="creating">创建</van-button>
+          </div>
+          <van-notice-bar v-if="currencyLoadError" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ currencyLoadError }}</van-notice-bar>
+          <van-notice-bar v-if="createError" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ createError }}</van-notice-bar>
+        </van-form>
+      </div>
+    </van-popup>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, defineComponent, h } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { showToast } from 'vant'
 import { useRouter } from 'vue-router'
 import { accountsApi, type Account } from '../../api/accounts'
-import { f7, f7ListItem, f7Icon } from 'framework7-vue'
+import type { ApiError } from '../../api/client'
+import DatePickerField from '../../components/DatePickerField.vue'
+import { currenciesApi } from '../../api/currencies'
+import {
+  buildAccountTree,
+  visibleAccountNodes,
+  type AccountTreeNode,
+  type VisibleAccountNode,
+} from '../../utils/accountTree'
 
 const router = useRouter()
-
-const accountTypes = [
-  { value: 'Assets', label: '资产' },
-  { value: 'Liabilities', label: '负债' },
-  { value: 'Income', label: '收入' },
-  { value: 'Expenses', label: '支出' },
-  { value: 'Equity', label: '权益' }
-]
-
-const loading = ref(false)
 const accounts = ref<Account[]>([])
-const accountTree = ref<AccountNode[]>([])
-const expandedAccounts = ref<Set<string>>(new Set())
-
-const showCreateModal = ref(false)
-const newAccount = ref({
-  name: '',
-  type: 'Assets',
-  currencies: 'CNY'
-})
-const creatingAccount = ref(false)
+const loading = ref(false)
+const error = ref('')
+const expandedNames = ref<Set<string>>(new Set())
+const treeNodes = computed(() => sortNodes(buildAccountTree(accounts.value)))
+const showCreate = ref(false)
+const creating = ref(false)
 const createError = ref('')
+const createForm = reactive({
+  nameSuffix: '',
+  account_type: 'Assets',
+  currencies: ['CNY'] as string[],
+  open_date: new Date().toISOString().slice(0, 10),
+})
 
-// 账户节点类型（带子账户）
-interface AccountNode extends Account {
-  children: AccountNode[]
-  isLeaf: boolean
-}
+const namePrefix = computed(() => `${createForm.account_type}:`)
+const nameSuffixPlaceholder = computed(() => {
+  if (createForm.account_type === 'Assets') return 'Bank:Checking'
+  if (createForm.account_type === 'Liabilities') return 'CreditCard:CMB'
+  if (createForm.account_type === 'Equity') return 'OpeningBalances'
+  if (createForm.account_type === 'Income') return 'Salary'
+  return 'Food:Lunch'
+})
 
-// 构建账户树
-function buildAccountTree(accounts: Account[]): AccountNode[] {
-  const accountMap = new Map<string, AccountNode>()
-  const rootNodes: AccountNode[] = []
+const enabledCurrencies = ref<string[]>([])
+const currencyLoadError = ref('')
+const currencyOptions = computed(() => [...enabledCurrencies.value])
 
-  // 辅助函数:确保节点存在,如果不存在则创建虚拟节点
-  function ensureNode(name: string, accountType: string): AccountNode {
-    if (!accountMap.has(name)) {
-      accountMap.set(name, {
-        name,
-        account_type: accountType as any,
-        currencies: [],
-        children: [],
-        isLeaf: true
-      })
-    }
-    return accountMap.get(name)!
-  }
-
-  // 首先创建所有实际账户节点
-  accounts.forEach(acc => {
-    const node = ensureNode(acc.name, acc.account_type)
-    node.currencies = acc.currencies
-  })
-
-  // 为每个账户创建完整的祖先路径
-  accounts.forEach(acc => {
-    const parts = acc.name.split(':')
-    let currentPath = ''
-
-    for (let i = 0; i < parts.length - 1; i++) {
-      currentPath = currentPath ? `${currentPath}:${parts[i]!}` : parts[i]!
-      ensureNode(currentPath, acc.account_type)
-    }
-  })
-
-  // 建立父子关系
-  accountMap.forEach((node, name) => {
-    const parts = name.split(':')
-    if (parts.length > 1) {
-      const parentName = parts.slice(0, -1).join(':')
-      const parent = accountMap.get(parentName)
-      if (parent) {
-        // 检查是否已经添加过
-        if (!parent.children.find(c => c.name === name)) {
-          parent.children.push(node)
-        }
-        parent.isLeaf = false
-      }
-    }
-  })
-
-  // 找出根节点(只有一级的账户)
-  accountMap.forEach((node, name) => {
-    const parts = name.split(':')
-    if (parts.length === 1) {
-      rootNodes.push(node)
-    }
-  })
-
-  // 对子账户排序
-  function sortChildren(node: AccountNode) {
-    node.children.sort((a, b) => a.name.localeCompare(b.name))
-    node.children.forEach(sortChildren)
-  }
-  rootNodes.forEach(sortChildren)
-  rootNodes.sort((a, b) => a.name.localeCompare(b.name))
-
-  return rootNodes
-}
-
-function getAccountsByType(type: string): AccountNode[] {
-  return accountTree.value.filter(acc => acc.account_type === type)
-}
-
-function toggleExpand(accountName: string) {
-  if (expandedAccounts.value.has(accountName)) {
-    expandedAccounts.value.delete(accountName)
-  } else {
-    expandedAccounts.value.add(accountName)
-  }
-  // 保存展开状态到 sessionStorage
-  saveExpandedState()
-}
-
-function handleAccountSelect(account: AccountNode) {
-  if (account.isLeaf) {
-    // 保存滚动位置
-    saveScrollPosition()
-    router.push(`/accounts/${encodeURIComponent(account.name)}`)
-  }
-}
-
-function saveExpandedState() {
-  sessionStorage.setItem('accountsExpandedState', JSON.stringify([...expandedAccounts.value]))
-}
-
-function loadExpandedState() {
-  const saved = sessionStorage.getItem('accountsExpandedState')
-  if (saved) {
-    try {
-      expandedAccounts.value = new Set(JSON.parse(saved))
-    } catch (e) {
-      console.error('Failed to load expanded state:', e)
-    }
-  }
-}
-
-function saveScrollPosition() {
-  const page = document.querySelector('.page-content')
-  if (page) {
-    sessionStorage.setItem('accountsScrollPosition', String(page.scrollTop))
-  }
-}
-
-function restoreScrollPosition() {
-  const saved = sessionStorage.getItem('accountsScrollPosition')
-  if (saved) {
-    setTimeout(() => {
-      const page = document.querySelector('.page-content')
-      if (page) {
-        page.scrollTop = parseInt(saved)
-      }
-    }, 100)
-  }
-}
-
-async function loadAccounts() {
-  loading.value = true
+async function loadCurrencies() {
+  currencyLoadError.value = ''
   try {
-    accounts.value = await accountsApi.getAccounts()
-    accountTree.value = buildAccountTree(accounts.value)
-  } catch (error) {
-    console.error('Failed to load accounts:', error)
-    f7.toast.create({
-      text: '加载账户失败',
-      position: 'center',
-      closeTimeout: 2000
-    }).open()
+    enabledCurrencies.value = await currenciesApi.listEnabledCodes()
+    if (!createForm.currencies.length || !createForm.currencies.every((c) => enabledCurrencies.value.includes(c))) {
+      createForm.currencies = enabledCurrencies.value.includes('CNY')
+        ? ['CNY']
+        : (enabledCurrencies.value[0] ? [enabledCurrencies.value[0]] : [])
+    }
+  } catch (reason) {
+    enabledCurrencies.value = []
+    currencyLoadError.value = (reason as ApiError).message || '币种目录加载失败'
+  }
+}
+
+
+async function load() {
+  loading.value = true
+  error.value = ''
+  try {
+    const loaded = await accountsApi.getAccounts()
+    accounts.value = loaded
+    expandedNames.value = new Set(buildAccountTree(loaded).map((node) => node.name))
+  } catch (reason) {
+    error.value = (reason as ApiError).message
   } finally {
     loading.value = false
   }
 }
 
-function getAccountPlaceholder(): string {
-  const placeholders: Record<string, string> = {
-    'Assets': '例如: Bank:ICBC 或 现金:钱包',
-    'Liabilities': '例如: 信用卡:工行 或 借款:朋友',
-    'Income': '例如: 工资 或 兼职:咨询',
-    'Expenses': '例如: 餐饮 或 出行:公交',
-    'Equity': '例如: 期初余额'
-  }
-  return placeholders[newAccount.value.type] || '例如: 子账户:详细分类'
+function openCreate() {
+  createError.value = ''
+  createForm.nameSuffix = ''
+  createForm.account_type = 'Assets'
+  createForm.currencies = ['CNY']
+  createForm.open_date = new Date().toISOString().slice(0, 10)
+  showCreate.value = true
 }
 
-async function handleCreateAccount() {
-  if (!newAccount.value.name || !newAccount.value.type) {
-    createError.value = '请填写所有必填字段'
+async function createAccount() {
+  creating.value = true
+  createError.value = ''
+  try {
+    const suffix = createForm.nameSuffix.trim().replace(/^:+/, '').replace(/:+$/, '')
+    if (!suffix) {
+      createError.value = '请填写账户名'
+      return
+    }
+    const currencies = createForm.currencies.filter(Boolean)
+    if (!currencies.length) {
+      createError.value = '请至少选择一个币种'
+      return
+    }
+    await accountsApi.createAccount({
+      name: `${createForm.account_type}:${suffix}`,
+      account_type: createForm.account_type,
+      currencies,
+      open_date: createForm.open_date,
+    })
+    showToast('账户已创建')
+    showCreate.value = false
+    createForm.nameSuffix = ''
+    await load()
+  } catch (reason) {
+    createError.value = (reason as ApiError).message || '创建失败'
+  } finally {
+    creating.value = false
+  }
+}
+
+function visibleChildren(root: AccountTreeNode): VisibleAccountNode[] {
+  return visibleAccountNodes(root.children, expandedNames.value)
+}
+
+function handleNodeClick(node: VisibleAccountNode) {
+  if (node.hasChildren) {
+    toggle(node.name)
     return
   }
-
-  creatingAccount.value = true
-  createError.value = ''
-
-  try {
-    const currencies = newAccount.value.currencies
-      .split(',')
-      .map(c => c.trim())
-      .filter(c => c)
-
-    // 将账户类型拼接到用户输入的账户名之前
-    const fullAccountName = `${newAccount.value.type}:${newAccount.value.name}`
-
-    await accountsApi.createAccount({
-      name: fullAccountName,
-      account_type: newAccount.value.type,
-      currencies: currencies.length > 0 ? currencies : undefined
-    })
-
-    await loadAccounts()
-
-    f7.toast.create({
-      text: '账户创建成功',
-      position: 'center',
-      closeTimeout: 2000
-    }).open()
-
-    showCreateModal.value = false
-    newAccount.value = {
-      name: '',
-      type: 'Assets',
-      currencies: 'CNY'
-    }
-  } catch (err: any) {
-    createError.value = err.message || '创建失败，请重试'
-  } finally {
-    creatingAccount.value = false
-  }
+  if (node.selectable) openDetail(node.name)
 }
 
-function goBack() {
-  router.back()
+function openDetail(name: string) {
+  router.push(`/accounts/${encodeURIComponent(name)}`)
 }
 
-// 账户树项组件
-const AccountTreeItem = defineComponent({
-  name: 'AccountTreeItem',
-  props: {
-    account: { type: Object as () => AccountNode, required: true },
-    expandedAccounts: { type: Object as () => Set<string>, required: true },
-    depth: { type: Number, default: 0 }
-  },
-  emits: ['toggle', 'select'],
-  setup(props, { emit }) {
-    const isExpanded = () => props.expandedAccounts.has(props.account.name)
-    const hasChildren = () => props.account.children && props.account.children.length > 0
+function toggle(name: string) {
+  const next = new Set(expandedNames.value)
+  if (next.has(name)) next.delete(name)
+  else next.add(name)
+  expandedNames.value = next
+}
 
-    const getShortName = (fullName: string) => {
-      const parts = fullName.split(':')
-      return parts[parts.length - 1]
-    }
+function isExpanded(name: string) {
+  return expandedNames.value.has(name)
+}
 
-    const getIconClass = () => {
-      const type = props.account.account_type
-      if (type === 'Assets') return 'assets-icon'
-      if (type === 'Liabilities') return 'liabilities-icon'
-      if (type === 'Income') return 'income-icon'
-      if (type === 'Expenses') return 'expenses-icon'
-      if (type === 'Equity') return 'equity-icon'
-      return ''
-    }
+function selectableCount(node: AccountTreeNode): number {
+  let count = node.selectable ? 1 : 0
+  for (const child of node.children) count += selectableCount(child)
+  return count
+}
 
-    const getAccountIcon = () => {
-      if (hasChildren()) {
-        return isExpanded() ? 'f7:folder_open' : 'f7:folder_fill'
-      }
-      const type = props.account.account_type
-      if (type === 'Assets') return 'f7:creditcard_fill'
-      if (type === 'Liabilities') return 'f7:doc_text_fill'
-      if (type === 'Income') return 'f7:arrow_down_circle_fill'
-      if (type === 'Expenses') return 'f7:arrow_up_circle_fill'
-      if (type === 'Equity') return 'f7:chart_pie_fill'
-      return 'f7:doc_fill'
-    }
+function sortNodes(nodes: AccountTreeNode[]): AccountTreeNode[] {
+  const order = ['Assets', 'Liabilities', 'Equity', 'Income', 'Expenses']
+  return [...nodes].sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name))
+}
 
-    const handleClick = (e: Event) => {
-      e.stopPropagation()
-      if (hasChildren()) {
-        emit('toggle', props.account.name)
-      } else {
-        emit('select', props.account)
-      }
-    }
-
-    return () => {
-      const children: any[] = []
-
-      // 主项
-      children.push(
-        h(f7ListItem, {
-          title: getShortName(props.account.name),
-          subtitle: hasChildren() ? `${props.account.children.length} 个子账户` : props.account.currencies.join(', '),
-          link: props.account.isLeaf ? '#' : undefined,
-          class: `tree-item depth-${props.depth}`,
-          style: { paddingLeft: `${props.depth * 16}px` },
-          onClick: handleClick
-        }, {
-          media: () => h('div', { class: ['account-icon', getIconClass()] }, [
-            h(f7Icon, { ios: getAccountIcon(), size: 18 })
-          ]),
-          after: () => hasChildren() ? h(f7Icon, {
-            ios: isExpanded() ? 'f7:chevron_down' : 'f7:chevron_right',
-            size: 14,
-            class: 'expand-icon'
-          }) : null
-        })
-      )
-
-      // 子项（如果展开）
-      if (hasChildren() && isExpanded()) {
-        props.account.children.forEach(child => {
-          children.push(
-            h(AccountTreeItem, {
-              account: child,
-              expandedAccounts: props.expandedAccounts,
-              depth: props.depth + 1,
-              onToggle: (name: string) => emit('toggle', name),
-              onSelect: (acc: AccountNode) => emit('select', acc)
-            })
-          )
-        })
-      }
-
-      return children
-    }
+function accountTypeMeta(name: string) {
+  const map: Record<string, { title: string; mark: string }> = {
+    Assets: { title: '资产账户', mark: '资' },
+    Liabilities: { title: '负债账户', mark: '债' },
+    Equity: { title: '权益账户', mark: '益' },
+    Income: { title: '收入账户', mark: '收' },
+    Expenses: { title: '支出账户', mark: '支' },
   }
-})
+  return map[name] || { title: name, mark: name.slice(0, 1) }
+}
 
-onMounted(() => {
-  loadExpandedState()
-  loadAccounts().then(() => {
-    restoreScrollPosition()
-  })
-})
+onMounted(async () => { await loadCurrencies(); await load() })
 </script>
 
 <style scoped>
-/* 加载状态 */
-.loading-container {
+.account-groups { display: grid; gap: 12px; padding-bottom: 8px; }
+.account-group {
+  background: var(--bm-surface);
+  border: 1px solid var(--bm-border);
+  border-radius: var(--bm-radius);
+  overflow: hidden;
+  box-shadow: var(--bm-card-shadow);
+  color: var(--bm-text);
+}
+.group-header {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 14px 14px; border: 0; background: transparent; text-align: left; color: inherit;
+}
+.group-mark {
+  width: 28px; height: 28px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bm-primary-soft); color: var(--bm-primary); font-size: 13px; font-weight: 700;
+}
+.group-title { flex: 1; display: flex; flex-direction: column; }
+.group-title strong { color: var(--bm-text); font-size: 15px; }
+.group-title small { color: var(--bm-muted); }
+.group-arrow { color: var(--bm-muted); }
+.account-row {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px; border: 0; border-top: 1px solid var(--bm-border); background: transparent; text-align: left;
+  padding-left: calc(14px + var(--level, 0) * 16px);
+  color: inherit;
+}
+.row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.row-name { color: var(--bm-text); font-weight: 600; }
+.row-path { color: var(--bm-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-tags { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 120px; }
+.row-icon { width: 20px; display: inline-flex; justify-content: center; color: var(--bm-muted); }
+.row-arrow { color: var(--bm-faint); }
+.create-panel { padding-bottom: 24px; color: var(--bm-text); }
+.create-header { display: flex; justify-content: space-between; align-items: center; padding: 16px; color: var(--bm-text); }
+.header-action { border: 0; background: transparent; color: var(--bm-primary); }
+.create-actions { margin: 16px; }
+.name-input-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 60px 0;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
 }
-
-/* 空状态 */
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-}
-
-.empty-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-
-.empty-text {
-  font-size: 16px;
-  color: var(--text-primary);
-  opacity: 0.6;
-  margin-bottom: 24px;
-}
-
-/* 账户内容 */
-.accounts-content {
-  padding-bottom: 80px;
-}
-
-/* 账户列表样式覆盖 */
-.account-list {
-  margin-top: 0;
-  --f7-list-bg-color: var(--bg-secondary);
-  --f7-list-item-title-text-color: var(--text-primary);
-  --f7-list-item-after-text-color: #8e8e93;
-  --f7-list-item-border-color: var(--separator);
-}
-
-:deep(.list .item-content) {
-  background-color: var(--bg-secondary);
-}
-
-:deep(.list strong) {
-  background-color: var(--bg-secondary);
-}
-
-:deep(.item-title) {
-  color: var(--text-primary);
-}
-
-:deep(.item-subtitle) {
-  color: #8e8e93;
-}
-
-/* 树项缩进 */
-:deep(.tree-item) {
-  transition: background-color 0.2s;
-}
-
-:deep(.depth-0) {
-  --f7-list-item-padding-horizontal: 16px;
-}
-
-:deep(.depth-1) {
-  --f7-list-item-padding-horizontal: 32px;
-}
-
-:deep(.depth-2) {
-  --f7-list-item-padding-horizontal: 48px;
-}
-
-:deep(.depth-3) {
-  --f7-list-item-padding-horizontal: 64px;
-}
-
-:deep(.depth-4) {
-  --f7-list-item-padding-horizontal: 80px;
-}
-
-/* 账户图标 */
-.account-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.account-icon.assets-icon {
-  background: rgba(0, 122, 255, 0.12);
-  color: var(--ios-blue);
-}
-
-.account-icon.liabilities-icon {
-  background: rgba(175, 82, 222, 0.12);
-  color: var(--ios-purple);
-}
-
-.account-icon.income-icon {
-  background: rgba(52, 199, 89, 0.12);
-  color: var(--ios-green);
-}
-
-.account-icon.expenses-icon {
-  background: rgba(255, 59, 48, 0.12);
-  color: var(--ios-red);
-}
-
-.account-icon.equity-icon {
-  background: rgba(255, 149, 0, 0.12);
-  color: var(--ios-orange);
-}
-
-/* 展开图标 */
-:deep(.expand-icon) {
-  color: #999;
-  transition: transform 0.2s;
-}
-
-/* 错误块 */
-.error-block {
-  background: rgba(255, 59, 48, 0.12);
-  color: var(--ios-red);
-  padding: 16px;
-  border-radius: 8px;
-  margin: 16px;
-}
-
-.error-block p {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-}
-
-/* 账户前缀 */
-.account-prefix {
-  color: var(--f7-theme-color);
+.name-prefix {
+  flex: 0 0 auto;
+  color: var(--bm-primary);
   font-weight: 600;
-  font-size: 12px;
+  white-space: nowrap;
+}
+.name-suffix-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--bm-text);
+  font: inherit;
+}
+.currency-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.currency-checks :deep(.van-checkbox) {
+  margin-right: 0;
 }
 </style>

@@ -222,7 +222,7 @@ class AccountRepositoryImpl(AccountRepository):
         
         return account
     
-    def delete(self, account_name: str) -> bool:
+    def delete(self, account_name: str, close_date=None) -> bool:
         """
         删除账户（关闭账户）
         
@@ -237,10 +237,18 @@ class AccountRepositoryImpl(AccountRepository):
             # 账户已经关闭
             return True
         
+        # datetime is a subclass of date; always normalize to date for Beancount.
+        if close_date is None:
+            close_day = datetime.now().date()
+        elif isinstance(close_date, datetime):
+            close_day = close_date.date()
+        else:
+            close_day = close_date
+
         # 构建 Close 指令
         close_entry = Close(
             meta={},
-            date=datetime.now().date(),
+            date=close_day,
             account=account_name
         )
         

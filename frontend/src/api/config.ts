@@ -1,13 +1,15 @@
 import apiClient from './client'
 
-export interface AppConfig {
-    auth_mode: 'none' | 'single_user' | 'multi_user'
-    backup_provider: string
+export type PublicConfig = {
+  single_machine: boolean
+  backup_managed_externally: boolean
+  recurring_enabled: boolean
+  llm_enabled: boolean
+  llm_model: string | null
 }
 
 export const configApi = {
-    async getConfig(): Promise<AppConfig> {
-        // apiClient 响应拦截器已经返回 response.data，所以这里直接返回即可
-        return apiClient.get<AppConfig>('/api/config') as any as AppConfig
-    }
+  get(): Promise<PublicConfig> {
+    return apiClient.get('/api/config')
+  },
 }

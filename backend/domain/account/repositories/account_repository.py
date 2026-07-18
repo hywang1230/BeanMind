@@ -169,7 +169,7 @@ class AccountRepository(ABC):
         pass
     
     @abstractmethod
-    def delete(self, account_name: str) -> bool:
+    def delete(self, account_name: str, close_date=None) -> bool:
         """
         删除账户（通常是关闭账户）
         

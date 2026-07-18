@@ -3,9 +3,12 @@
 提供交易管理相关的 HTTP 接口。
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session
 from typing import Optional, List
 
 from backend.config import settings, get_db
+from backend.interfaces.errors import ApiError
+from backend.services.currency_catalog import CurrencyCatalogError, CurrencyCatalogService
 from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.repositories import TransactionRepositoryImpl, AccountRepositoryImpl
 from backend.application.services import TransactionApplicationService
@@ -17,19 +20,26 @@ from backend.interfaces.dto.request.transaction import (
 )
 from backend.interfaces.dto.response.transaction import (
     TransactionResponse,
+    TransactionCursorPageResponse,
     TransactionListResponse,
     TransactionStatisticsResponse,
     ValidationResultResponse,
     CategoryResponse
 )
-from backend.interfaces.dto.response.auth import MessageResponse, ErrorResponse
+from backend.interfaces.dto.common import MessageResponse, ErrorResponse
+from backend.infrastructure.persistence.ledger_projection import (
+    InvalidTransactionCursorError,
+    LedgerProjectionDirtyError,
+    LedgerProjectionService,
+    TransactionQueryService,
+)
 
 
 # 创建路由
 router = APIRouter(prefix="/api/transactions", tags=["交易管理"])
 
 
-def get_transaction_service() -> TransactionApplicationService:
+def get_transaction_service(db: Session = Depends(get_db)) -> TransactionApplicationService:
     """
     获取交易应用服务
     
@@ -39,11 +49,32 @@ def get_transaction_service() -> TransactionApplicationService:
     beancount_service = BeancountServiceProvider.get_service(settings.LEDGER_FILE)
     
     # 创建仓储
-    transaction_repo = TransactionRepositoryImpl(beancount_service, next(get_db()))
+    projection_service = LedgerProjectionService(db, settings.LEDGER_FILE)
+    transaction_repo = TransactionRepositoryImpl(
+        beancount_service, db, projection_service, load_transactions=False
+    )
     account_repo = AccountRepositoryImpl(beancount_service)
     
     # 创建应用服务
     return TransactionApplicationService(transaction_repo, account_repo)
+
+
+def get_transaction_query_service(db: Session = Depends(get_db)) -> TransactionQueryService:
+    """获取只读交易查询服务，不加载整本 Beancount。"""
+    return TransactionQueryService(db, settings.LEDGER_FILE)
+
+
+def get_projection_service(db: Session = Depends(get_db)) -> LedgerProjectionService:
+    return LedgerProjectionService(db, settings.LEDGER_FILE)
+
+
+def _require_posting_currencies(db: Session, postings: list[dict]) -> None:
+    catalog = CurrencyCatalogService(db)
+    for posting in postings:
+        currency = posting.get("currency")
+        if currency:
+            catalog.require_enabled(str(currency))
+
 
 
 @router.post(
@@ -59,7 +90,8 @@ def get_transaction_service() -> TransactionApplicationService:
 )
 def create_transaction(
     request: CreateTransactionRequest,
-    transaction_service: TransactionApplicationService = Depends(get_transaction_service)
+    transaction_service: TransactionApplicationService = Depends(get_transaction_service),
+    db: Session = Depends(get_db),
 ):
     """
     创建新交易
@@ -69,7 +101,8 @@ def create_transaction(
     try:
         # 转换 DTO
         postings = [posting.model_dump() for posting in request.postings]
-        
+        _require_posting_currencies(db, postings)
+
         transaction_dto = transaction_service.create_transaction(
             txn_date=request.date,
             description=request.description,
@@ -79,6 +112,8 @@ def create_transaction(
             links=request.links
         )
         return transaction_dto
+    except CurrencyCatalogError as e:
+        raise ApiError(400, e.code, str(e), e.details) from e
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -132,11 +167,13 @@ def get_exchange_rates():
 
 @router.get(
     "",
-    response_model=TransactionListResponse,
+    response_model=TransactionCursorPageResponse,
     summary="获取交易列表",
     description="获取所有交易或按条件筛选",
     responses={
-        200: {"description": "获取成功", "model": TransactionListResponse},
+        200: {"description": "获取成功", "model": TransactionCursorPageResponse},
+        400: {"description": "游标或筛选条件无效", "model": ErrorResponse},
+        503: {"description": "账本查询投影不可用", "model": ErrorResponse},
     }
 )
 def list_transactions(
@@ -146,9 +183,9 @@ def list_transactions(
     transaction_type: Optional[str] = Query(None, description="交易类型（expense/income/transfer/opening/other）"),
     tags: Optional[str] = Query(None, description="标签过滤（逗号分隔）"),
     description: Optional[str] = Query(None, description="描述关键词搜索"),
-    limit: Optional[int] = Query(20, ge=1, le=1000, description="限制返回数量（1-1000）"),
-    offset: Optional[int] = Query(0, ge=0, description="偏移量"),
-    transaction_service: TransactionApplicationService = Depends(get_transaction_service)
+    limit: int = Query(20, ge=1, le=100, description="限制返回数量（1-100）"),
+    cursor: Optional[str] = Query(None, description="下一页不透明游标"),
+    query_service: TransactionQueryService = Depends(get_transaction_query_service),
 ):
     """
     获取交易列表
@@ -156,34 +193,81 @@ def list_transactions(
     支持按日期范围、账户、类型、标签等筛选，支持分页。
     """
     try:
-        # 解析标签
-        tag_list = tags.split(",") if tags else None
-        
-        # 先获取所有符合条件的交易（不分页），用于计算 total
-        all_transactions = transaction_service.get_transactions(
+        if transaction_type and transaction_type not in {
+            "expense", "income", "transfer", "opening", "other"
+        }:
+            raise ValueError("不支持的交易类型")
+        tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()] if tags else None
+        return query_service.list_transactions(
             start_date=start_date,
             end_date=end_date,
             account=account,
             transaction_type=transaction_type,
             tags=tag_list,
             description=description,
-            limit=None,  # 不限制
-            offset=None  # 不偏移
+            limit=limit,
+            cursor=cursor,
         )
-        
-        total = len(all_transactions)
-        
-        # 应用分页
-        paginated = all_transactions[offset:offset + limit] if limit else all_transactions[offset:]
-        
-        return {
-            "transactions": paginated,
-            "total": total
-        }
+    except LedgerProjectionDirtyError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": e.code, "message": str(e)},
+        )
+    except InvalidTransactionCursorError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": e.code, "message": str(e)},
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
+            detail={"code": "INVALID_TRANSACTION_QUERY", "message": str(e)},
+        )
+
+
+@router.get("/projection/status", summary="获取账本查询投影状态")
+def get_projection_status(
+    projection_service: LedgerProjectionService = Depends(get_projection_service),
+):
+    return projection_service.status()
+
+
+@router.post("/projection/rebuild", summary="全量重建账本查询投影")
+def rebuild_projection(
+    projection_service: LedgerProjectionService = Depends(get_projection_service),
+):
+    try:
+        return projection_service.full_rebuild()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "LEDGER_PROJECTION_REBUILD_FAILED", "message": str(exc)},
+        )
+
+
+@router.post("/projection/refresh", summary="检查并刷新账本查询投影")
+def refresh_projection(
+    projection_service: LedgerProjectionService = Depends(get_projection_service),
+):
+    try:
+        return projection_service.ensure_current()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "LEDGER_PROJECTION_REFRESH_FAILED", "message": str(exc)},
+        )
+
+
+@router.post("/projection/check", summary="核对账本查询投影一致性")
+def check_projection(
+    projection_service: LedgerProjectionService = Depends(get_projection_service),
+):
+    try:
+        return projection_service.check_consistency()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": "LEDGER_PROJECTION_INCONSISTENT", "message": str(exc)},
         )
 
 
@@ -260,7 +344,8 @@ def get_transaction(
 def update_transaction(
     transaction_id: str,
     request: UpdateTransactionRequest,
-    transaction_service: TransactionApplicationService = Depends(get_transaction_service)
+    transaction_service: TransactionApplicationService = Depends(get_transaction_service),
+    db: Session = Depends(get_db),
 ):
     """
     更新交易
@@ -272,7 +357,8 @@ def update_transaction(
         postings = None
         if request.postings:
             postings = [posting.model_dump() for posting in request.postings]
-        
+            _require_posting_currencies(db, postings)
+
         transaction_dto = transaction_service.update_transaction(
             transaction_id=transaction_id,
             txn_date=request.date,
@@ -283,6 +369,8 @@ def update_transaction(
             links=request.links
         )
         return transaction_dto
+    except CurrencyCatalogError as e:
+        raise ApiError(400, e.code, str(e), e.details) from e
     except ValueError as e:
         if "不存在" in str(e):
             raise HTTPException(

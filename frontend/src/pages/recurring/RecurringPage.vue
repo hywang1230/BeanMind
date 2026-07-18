@@ -1,807 +1,427 @@
 <template>
-  <div class="recurring-page">
-    <div class="page-header">
-      <h1>周期任务</h1>
-      <button @click="showCreateModal = true" class="create-btn">+ 新建规则</button>
-    </div>
+  <section class="page recurring-page">
+    <van-nav-bar title="周期记账" left-arrow @click-left="router.back()">
+      <template #right><van-button size="small" type="primary" @click="openCreate">新建规则</van-button></template>
+    </van-nav-bar>
+    <h2 class="section-title">自动记账规则</h2>
 
-    <div v-if="loading && rules.length === 0" class="loading">
-      加载中...
-    </div>
-
-    <div v-else-if="rules.length === 0" class="empty-state">
-      <div class="empty-icon">🔄</div>
-      <div class="empty-text">暂无周期任务</div>
-      <button @click="showCreateModal = true" class="empty-action-btn">
-        创建规则
-      </button>
-    </div>
-
-    <div v-else class="rules-container">
-      <div v-for="rule in rules" :key="rule.id" class="rule-card" :class="{ inactive: !rule.is_active }">
-        <div class="rule-header">
-          <div class="rule-info">
-            <h3 class="rule-name">{{ rule.name }}</h3>
-            <span class="rule-frequency">{{ formatFrequency(rule.frequency) }}</span>
-            <span v-if="!rule.is_active" class="inactive-badge">已停用</span>
+    <div v-if="loading && !rules.length" class="state-card"><van-loading>加载中</van-loading></div>
+    <van-empty v-else-if="error && !rules.length" image="error" :description="error">
+      <van-button size="small" type="primary" @click="loadRules">重试</van-button>
+    </van-empty>
+    <van-empty v-else-if="!rules.length" description="暂无周期任务">
+      <van-button size="small" type="primary" @click="openCreate">创建规则</van-button>
+    </van-empty>
+    <van-cell-group v-else inset class="page-section rule-list">
+      <div v-for="rule in rules" :key="rule.id" class="rule-card">
+        <div class="rule-card-main">
+          <div class="rule-card-title-row">
+            <strong class="rule-card-name">{{ rule.name }}</strong>
+            <van-tag :type="rule.is_active ? 'success' : 'default'">{{ rule.is_active ? '启用' : '停用' }}</van-tag>
           </div>
-          <div class="rule-actions">
-            <button @click.stop="toggleRule(rule)" class="toggle-btn">
-              {{ rule.is_active ? '停用' : '启用' }}
-            </button>
-            <button @click.stop="executeRule(rule)" class="execute-btn">
-              立即执行
-            </button>
-          </div>
+          <p class="rule-card-meta">{{ frequencyText(rule) }}</p>
+          <p class="rule-card-meta">{{ rule.transaction_template.description }} · {{ rule.start_date }}{{ rule.end_date ? ` 至 ${rule.end_date}` : '' }}</p>
         </div>
-
-        <div class="rule-details">
-          <div class="detail-item">
-            <span class="detail-label">频率配置:</span>
-            <span class="detail-value">{{ formatFrequencyConfig(rule) }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">交易模板:</span>
-            <span class="detail-value">{{ rule.transaction_template.description }}</span>
-          </div>
-          <div class="detail-item">
-            <span class="detail-label">开始日期:</span>
-            <span class="detail-value">{{ formatDate(rule.start_date) }}</span>
-          </div>
-          <div v-if="rule.end_date" class="detail-item">
-            <span class="detail-label">结束日期:</span>
-            <span class="detail-value">{{ formatDate(rule.end_date) }}</span>
-          </div>
-        </div>
-
-        <div class="rule-template">
-          <div class="template-header">交易明细:</div>
-          <div v-for="(posting, index) in rule.transaction_template.postings" :key="index" class="posting-item">
-            <span class="posting-account">{{ posting.account }}</span>
-            <span class="posting-amount">
-              {{ posting.amount > 0 ? '+' : '' }}{{ posting.currency }} {{ posting.amount }}
-            </span>
-          </div>
+        <div class="rule-actions">
+          <van-button size="mini" @click="openEdit(rule)">编辑</van-button>
+          <van-button size="mini" @click="toggleRule(rule)">{{ rule.is_active ? '停用' : '启用' }}</van-button>
+          <van-button size="mini" type="primary" @click="executeRule(rule)">立即执行</van-button>
         </div>
       </div>
-    </div>
+    </van-cell-group>
+    <van-notice-bar v-if="error && rules.length" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ error }}</van-notice-bar>
 
-    <!-- 创建规则模态框 -->
-    <div v-if="showCreateModal" class="modal" @click.self="showCreateModal = false">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>创建周期规则</h3>
-          <button @click="showCreateModal = false" class="close-btn">×</button>
-        </div>
+    <van-popup v-model:show="showEditor" position="bottom" round :style="{ height: '88%' }">
+      <div class="popup-page">
+        <van-nav-bar :title="editingId ? '编辑周期规则' : '创建周期规则'" left-text="取消" @click-left="showEditor = false" />
+        <van-form @submit="saveRule">
+          <van-cell-group inset>
+            <van-field v-model="draft.name" label="规则名称" placeholder="例如：每月房租" :rules="[{ required: true, message: '请输入规则名称' }]" />
+            <SelectPickerField v-model="draft.frequency" label="频率" :options="frequencyOptions" />
+            <van-field
+              v-if="draft.frequency === 'weekly' || draft.frequency === 'biweekly'"
+              :model-value="weekdaysDisplay"
+              label="星期"
+              placeholder="请选择"
+              readonly
+              is-link
+              :rules="[{ validator: () => selectedWeekdays.length > 0 || '请选择星期' }]"
+              @click="openWeekdayPicker"
+            />
+            <van-field
+              v-if="draft.frequency === 'monthly'"
+              :model-value="monthDaysDisplay"
+              label="每月日期"
+              placeholder="请选择"
+              readonly
+              is-link
+              :rules="[{ validator: () => selectedMonthDays.length > 0 || '请选择每月日期' }]"
+              @click="openMonthDayPicker"
+            />
+            <DatePickerField v-model="draft.start_date" label="开始日期" :rules="[{ required: true, message: '请选择开始日期' }]" />
+            <DatePickerField v-model="draft.end_date" label="结束日期" />
+            <van-field v-model="draft.transaction_template.description" label="交易描述" :rules="[{ required: true, message: '请输入交易描述' }]" />
+          </van-cell-group>
 
-        <form @submit.prevent="handleCreateRule" class="create-form">
-          <div class="form-group">
-            <label>规则名称</label>
-            <input v-model="newRule.name" type="text" placeholder="例如: 每月房租" required />
-          </div>
-
-          <div class="form-group">
-            <label>频率类型</label>
-            <select v-model="newRule.frequency" required>
-              <option value="daily">每日</option>
-              <option value="weekly">每周</option>
-              <option value="biweekly">双周</option>
-              <option value="monthly">每月</option>
-              <option value="yearly">每年</option>
-            </select>
-          </div>
-
-          <!-- 按周配置 -->
-          <div v-if="newRule.frequency === 'weekly' || newRule.frequency === 'biweekly'" class="form-group">
-            <label>选择星期几（可多选）</label>
-            <div class="weekday-selector">
-              <label v-for="day in weekdays" :key="day.value" class="weekday-option">
-                <input type="checkbox" :value="day.value" v-model="newRule.frequency_config.weekdays" />
-                <span>{{ day.label }}</span>
-              </label>
+          <van-cell-group inset class="page-section">
+            <van-cell title="交易分录" :value="`${draft.transaction_template.postings.length} 条`" />
+            <div v-for="(posting, index) in draft.transaction_template.postings" :key="index" class="posting-editor">
+              <AccountPicker v-model="posting.account" :accounts="accounts" :label="`账户 ${index + 1}`" clearable :error="accountError" />
+              <van-field v-model="posting.amount" label="金额" inputmode="decimal" placeholder="正负金额" />
+              <SelectPickerField
+                v-model="posting.currency"
+                label="币种"
+                :options="currencyOptionsFor(posting.currency)"
+                placeholder="请选择币种"
+              />
+              <van-button v-if="draft.transaction_template.postings.length > 2" size="mini" type="danger" @click="removePosting(index)">删除分录</van-button>
             </div>
-          </div>
-
-          <!-- 按月配置 -->
-          <div v-if="newRule.frequency === 'monthly'" class="form-group">
-            <label>选择日期（可多选，-1表示月末）</label>
-            <div class="monthday-selector">
-              <label v-for="day in 31" :key="day" class="monthday-option">
-                <input type="checkbox" :value="day" v-model="newRule.frequency_config.month_days" />
-                <span>{{ day }}</span>
-              </label>
-              <label class="monthday-option">
-                <input type="checkbox" :value="-1" v-model="newRule.frequency_config.month_days" />
-                <span>月末</span>
-              </label>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>开始日期</label>
-            <input v-model="newRule.start_date" type="date" required />
-          </div>
-
-          <div class="form-group">
-            <label>结束日期（可选）</label>
-            <input v-model="newRule.end_date" type="date" />
-          </div>
-
-          <div class="form-group">
-            <label>交易描述</label>
-            <input v-model="newRule.transaction_template.description" type="text" placeholder="例如: 房租支付" required />
-          </div>
-
-          <div class="form-group">
-            <label>交易明细</label>
-            <div class="postings">
-              <div v-for="(posting, index) in newRule.transaction_template.postings" :key="index" class="posting-row">
-                <input v-model="posting.account" type="text" placeholder="账户" class="posting-account-input" />
-                <input v-model.number="posting.amount" type="number" placeholder="金额" step="0.01"
-                  class="posting-amount-input" />
-                <select v-model="posting.currency" class="posting-currency-select">
-                  <option value="CNY">CNY</option>
-                  <option value="USD">USD</option>
-                </select>
-                <button type="button" @click="removePosting(index)" class="remove-posting-btn">
-                  ×
-                </button>
-              </div>
-            </div>
-            <button type="button" @click="addPosting" class="add-posting-btn">
-              + 添加明细
-            </button>
-          </div>
-
-          <div v-if="createError" class="error-message">
-            {{ createError }}
-          </div>
-
-          <div class="form-actions">
-            <button type="button" @click="showCreateModal = false" class="cancel-btn">
-              取消
-            </button>
-            <button type="submit" :disabled="creatingRule" class="submit-btn">
-              {{ creatingRule ? '创建中...' : '创建' }}
-            </button>
-          </div>
-        </form>
+            <van-button block plain type="primary" @click="addPosting">添加分录</van-button>
+          </van-cell-group>
+          <van-notice-bar v-if="currencyCatalogError" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ currencyCatalogError }}</van-notice-bar>
+          <van-notice-bar v-if="editorError" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ editorError }}</van-notice-bar>
+          <div style="margin:16px"><van-button block round type="primary" native-type="submit" :loading="saving">{{ editingId ? '保存' : '创建' }}</van-button></div>
+        </van-form>
       </div>
-    </div>
-  </div>
+    </van-popup>
+
+    <van-popup v-model:show="showWeekdayPicker" position="bottom" round>
+      <div class="multi-picker">
+        <van-nav-bar title="选择星期" left-text="取消" right-text="确定" @click-left="showWeekdayPicker = false" @click-right="confirmWeekdays" />
+        <van-checkbox-group v-model="weekdayDraft" class="multi-picker-list">
+          <van-cell
+            v-for="option in weekdayOptions"
+            :key="option.value"
+            clickable
+            :title="option.text"
+            @click="toggleWeekdayDraft(option.value)"
+          >
+            <template #right-icon>
+              <van-checkbox :name="option.value" @click.stop />
+            </template>
+          </van-cell>
+        </van-checkbox-group>
+      </div>
+    </van-popup>
+
+    <van-popup v-model:show="showMonthDayPicker" position="bottom" round :style="{ height: '70%' }">
+      <div class="multi-picker multi-picker-scroll">
+        <van-nav-bar title="选择每月日期" left-text="取消" right-text="确定" @click-left="showMonthDayPicker = false" @click-right="confirmMonthDays" />
+        <van-checkbox-group v-model="monthDayDraft" class="multi-picker-list multi-picker-grid">
+          <van-cell
+            v-for="option in monthDayOptions"
+            :key="option.value"
+            clickable
+            :title="option.text"
+            @click="toggleMonthDayDraft(option.value)"
+          >
+            <template #right-icon>
+              <van-checkbox :name="option.value" @click.stop />
+            </template>
+          </van-cell>
+        </van-checkbox-group>
+      </div>
+    </van-popup>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { recurringApi, type RecurringRule, type CreateRecurringRuleRequest } from '../../api/recurring'
+import { computed, onMounted, ref } from 'vue'
+import { showFailToast, showSuccessToast } from 'vant'
+import { useRouter } from 'vue-router'
+import { accountsApi, type Account } from '../../api/accounts'
+import type { ApiError } from '../../api/client'
+import { recurringApi, type CreateRecurringRuleRequest, type RecurringRule } from '../../api/recurring'
+import AccountPicker from '../../components/AccountPicker.vue'
+import DatePickerField from '../../components/DatePickerField.vue'
+import SelectPickerField from '../../components/SelectPickerField.vue'
+import { currenciesApi } from '../../api/currencies'
 
-const loading = ref(false)
+const router = useRouter()
 const rules = ref<RecurringRule[]>([])
+const accounts = ref<Account[]>([])
+const loading = ref(false)
+const error = ref('')
+const accountError = ref('')
+const showEditor = ref(false)
+const saving = ref(false)
+const editorError = ref('')
+const editingId = ref<string | number | null>(null)
+const selectedWeekdays = ref<number[]>([1])
+const selectedMonthDays = ref<number[]>([1])
+const weekdayDraft = ref<number[]>([1])
+const monthDayDraft = ref<number[]>([1])
+const showWeekdayPicker = ref(false)
+const showMonthDayPicker = ref(false)
 
-const showCreateModal = ref(false)
-const newRule = ref<CreateRecurringRuleRequest>({
-  name: '',
-  frequency: 'monthly',
-  frequency_config: {
-    weekdays: [],
-    month_days: []
-  },
-  transaction_template: {
-    description: '',
-    postings: [
-      { account: '', amount: 0, currency: 'CNY' },
-      { account: '', amount: 0, currency: 'CNY' }
-    ]
-  },
-  start_date: new Date().toISOString().split('T')[0] ?? '',
-  end_date: '',
-  is_active: true
-})
-const creatingRule = ref(false)
-const createError = ref('')
-
-const weekdays = [
-  { value: 1, label: '周一' },
-  { value: 2, label: '周二' },
-  { value: 3, label: '周三' },
-  { value: 4, label: '周四' },
-  { value: 5, label: '周五' },
-  { value: 6, label: '周六' },
-  { value: 7, label: '周日' }
+const frequencyOptions = [
+  { text: '每日', value: 'daily' }, { text: '每周', value: 'weekly' },
+  { text: '双周', value: 'biweekly' }, { text: '每月', value: 'monthly' },
+  { text: '每年', value: 'yearly' },
 ]
 
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+// 币种选项来自统一目录（启用）；编辑存量时若当前码不在目录中则仍展示以便识别。
+const catalogCurrencies = ref<string[]>([])
+const currencyCatalogError = ref('')
+
+function currencyOptionsFor(current: string) {
+  const base = catalogCurrencies.value
+  const values = current && !base.includes(current) ? [...base, current] : [...base]
+  return values.map((currency) => ({ text: currency, value: currency }))
 }
 
-function formatFrequency(frequency: string): string {
-  const frequencies: Record<string, string> = {
-    daily: '每日',
-    weekly: '每周',
-    biweekly: '双周',
-    monthly: '每月',
-    yearly: '每年'
-  }
-  return frequencies[frequency] || frequency
-}
-
-function formatFrequencyConfig(rule: RecurringRule): string {
-  if (rule.frequency === 'daily') {
-    return '每天'
-  } else if (rule.frequency === 'weekly' || rule.frequency === 'biweekly') {
-    if (!rule.frequency_config.weekdays || rule.frequency_config.weekdays.length === 0) {
-      return '未配置'
-    }
-    const days = rule.frequency_config.weekdays.map(d => {
-      const day = weekdays.find(w => w.value === d)
-      return day ? day.label : d
-    })
-    return days.join(', ')
-  } else if (rule.frequency === 'monthly') {
-    if (!rule.frequency_config.month_days || rule.frequency_config.month_days.length === 0) {
-      return '未配置'
-    }
-    const days = rule.frequency_config.month_days.map(d => d === -1 ? '月末' : `${d}日`)
-    return days.join(', ')
-  } else if (rule.frequency === 'yearly') {
-    return '每年一次'
-  }
-  return '未配置'
-}
-
-async function loadRules() {
-  loading.value = true
+async function loadCurrencyCatalog() {
+  currencyCatalogError.value = ''
   try {
-    rules.value = await recurringApi.getRules()
-  } catch (error) {
-    console.error('Failed to load recurring rules:', error)
-  } finally {
-    loading.value = false
+    catalogCurrencies.value = await currenciesApi.listEnabledCodes()
+  } catch (reason) {
+    catalogCurrencies.value = []
+    currencyCatalogError.value = (reason as ApiError).message || '币种目录加载失败'
   }
 }
+const weekdayOptions = [
+  { text: '周一', value: 1 }, { text: '周二', value: 2 }, { text: '周三', value: 3 },
+  { text: '周四', value: 4 }, { text: '周五', value: 5 }, { text: '周六', value: 6 }, { text: '周日', value: 7 },
+]
+const monthDayOptions = [
+  ...Array.from({ length: 31 }, (_, index) => ({ text: `${index + 1}日`, value: index + 1 })),
+  { text: '月末', value: -1 },
+]
 
-async function toggleRule(rule: RecurringRule) {
-  try {
-    await recurringApi.updateRule(rule.id, {
-      is_active: !rule.is_active
-    })
-    rule.is_active = !rule.is_active
-  } catch (error) {
-    console.error('Failed to toggle rule:', error)
+function initialDraft(): CreateRecurringRuleRequest {
+  return {
+    name: '', frequency: 'monthly', frequency_config: { month_days: [1] },
+    transaction_template: {
+      description: '',
+      postings: [{ account: '', amount: '0', currency: 'CNY' }, { account: '', amount: '0', currency: 'CNY' }],
+    },
+    start_date: new Date().toISOString().slice(0, 10), end_date: '', is_active: true,
   }
 }
+const draft = ref(initialDraft())
 
-async function executeRule(rule: RecurringRule) {
-  try {
-    const today = new Date().toISOString().split('T')[0] ?? ''
-    await recurringApi.executeRule(rule.id, today)
-    alert(`规则 "${rule.name}" 已执行`)
-  } catch (error: any) {
-    alert(`执行失败: ${error.message}`)
-  }
-}
+const weekdaysDisplay = computed(() => formatWeekdays(selectedWeekdays.value))
+const monthDaysDisplay = computed(() => formatMonthDays(selectedMonthDays.value))
 
-function addPosting() {
-  newRule.value.transaction_template.postings.push({
-    account: '',
-    amount: 0,
-    currency: 'CNY'
+function sortUnique(values: number[]): number[] {
+  return [...new Set(values)].sort((a, b) => {
+    if (a === -1) return 1
+    if (b === -1) return -1
+    return a - b
   })
 }
 
-function removePosting(index: number) {
-  newRule.value.transaction_template.postings.splice(index, 1)
+function formatWeekdays(values: number[]): string {
+  if (!values.length) return ''
+  const labels = new Map(weekdayOptions.map(option => [option.value, option.text]))
+  return sortUnique(values).map(value => labels.get(value) || String(value)).join('、')
 }
 
-async function handleCreateRule() {
-  if (!newRule.value.name || !newRule.value.start_date) {
-    createError.value = '请填写所有必填字段'
-    return
-  }
-
-  if (newRule.value.transaction_template.postings.length < 2) {
-    createError.value = '至少需要两条交易明细'
-    return
-  }
-
-  creatingRule.value = true
-  createError.value = ''
-
-  try {
-    await recurringApi.createRule({
-      ...newRule.value,
-      end_date: newRule.value.end_date || undefined
-    })
-
-    // Reload rules
-    await loadRules()
-
-    // Close modal and reset form
-    showCreateModal.value = false
-    resetForm()
-  } catch (err: any) {
-    createError.value = err.message || '创建失败，请重试'
-  } finally {
-    creatingRule.value = false
-  }
+function formatMonthDays(values: number[]): string {
+  if (!values.length) return ''
+  return sortUnique(values).map(value => value === -1 ? '月末' : `${value}日`).join('、')
 }
 
-function resetForm() {
-  newRule.value = {
-    name: '',
-    frequency: 'monthly',
+function toggleDraft(target: typeof weekdayDraft, value: number) {
+  const next = new Set(target.value)
+  if (next.has(value)) next.delete(value)
+  else next.add(value)
+  target.value = sortUnique([...next])
+}
+function toggleWeekdayDraft(value: number) { toggleDraft(weekdayDraft, value) }
+function toggleMonthDayDraft(value: number) { toggleDraft(monthDayDraft, value) }
+
+function openWeekdayPicker() {
+  weekdayDraft.value = sortUnique([...selectedWeekdays.value])
+  showWeekdayPicker.value = true
+}
+
+function openMonthDayPicker() {
+  monthDayDraft.value = sortUnique([...selectedMonthDays.value])
+  showMonthDayPicker.value = true
+}
+
+function confirmWeekdays() {
+  if (!weekdayDraft.value.length) {
+    showFailToast('请至少选择一个星期')
+    return
+  }
+  selectedWeekdays.value = sortUnique([...weekdayDraft.value])
+  showWeekdayPicker.value = false
+}
+
+function confirmMonthDays() {
+  if (!monthDayDraft.value.length) {
+    showFailToast('请至少选择一个日期')
+    return
+  }
+  selectedMonthDays.value = sortUnique([...monthDayDraft.value])
+  showMonthDayPicker.value = false
+}
+
+function frequencyText(rule: RecurringRule): string {
+  const names = { daily: '每日', weekly: '每周', biweekly: '双周', monthly: '每月', yearly: '每年' }
+  if (rule.frequency === 'weekly' || rule.frequency === 'biweekly') {
+    return `${names[rule.frequency]}：${formatWeekdays(rule.frequency_config.weekdays || []) || '未配置'}`
+  }
+  if (rule.frequency === 'monthly') {
+    return `每月：${formatMonthDays(rule.frequency_config.month_days || []) || '未配置'}`
+  }
+  return names[rule.frequency]
+}
+async function loadRules() {
+  loading.value = true; error.value = ''
+  try { rules.value = await recurringApi.getRules() }
+  catch (reason) { error.value = (reason as ApiError).message }
+  finally { loading.value = false }
+}
+async function loadAccounts() {
+  accountError.value = ''
+  try { accounts.value = await accountsApi.getAccounts() }
+  catch (reason) { accountError.value = (reason as ApiError).message }
+}
+function resetFrequencySelection(weekdays: number[] = [1], monthDays: number[] = [1]) {
+  selectedWeekdays.value = sortUnique(weekdays.length ? weekdays : [1])
+  selectedMonthDays.value = sortUnique(monthDays.length ? monthDays : [1])
+}
+function openCreate() {
+  editingId.value = null
+  draft.value = initialDraft()
+  resetFrequencySelection([1], [1])
+  editorError.value = ''
+  showEditor.value = true
+}
+function openEdit(rule: RecurringRule) {
+  editingId.value = rule.id
+  const postings = (rule.transaction_template.postings || []).map(posting => ({
+    account: posting.account || '',
+    amount: String(posting.amount ?? '0'),
+    currency: posting.currency || 'CNY',
+  }))
+  while (postings.length < 2) {
+    postings.push({ account: '', amount: '0', currency: 'CNY' })
+  }
+  draft.value = {
+    name: rule.name,
+    frequency: rule.frequency,
     frequency_config: {
-      weekdays: [],
-      month_days: []
+      weekdays: rule.frequency_config.weekdays ? [...rule.frequency_config.weekdays] : undefined,
+      month_days: rule.frequency_config.month_days ? [...rule.frequency_config.month_days] : undefined,
+      interval_days: rule.frequency_config.interval_days,
     },
     transaction_template: {
-      description: '',
-      postings: [
-        { account: '', amount: 0, currency: 'CNY' },
-        { account: '', amount: 0, currency: 'CNY' }
-      ]
+      description: rule.transaction_template.description || '',
+      payee: rule.transaction_template.payee,
+      tags: rule.transaction_template.tags ? [...rule.transaction_template.tags] : undefined,
+      postings,
     },
-    start_date: new Date().toISOString().split('T')[0] ?? '',
-    end_date: '',
-    is_active: true
+    start_date: rule.start_date,
+    end_date: rule.end_date || '',
+    is_active: rule.is_active,
   }
+  resetFrequencySelection(rule.frequency_config.weekdays || [1], rule.frequency_config.month_days || [1])
+  editorError.value = ''
+  showEditor.value = true
 }
-
-onMounted(() => {
+function addPosting() { draft.value.transaction_template.postings.push({ account: '', amount: '0', currency: 'CNY' }) }
+function removePosting(index: number) { draft.value.transaction_template.postings.splice(index, 1) }
+async function saveRule() {
+  const postings = draft.value.transaction_template.postings
+  if (postings.length < 2 || postings.some(posting => !posting.account || !/^-?\d+(?:\.\d+)?$/.test(posting.amount))) {
+    editorError.value = '至少需要两条账户和金额有效的分录'; return
+  }
+  const frequencyConfig = draft.value.frequency === 'monthly'
+    ? { month_days: sortUnique(selectedMonthDays.value) }
+    : draft.value.frequency === 'weekly' || draft.value.frequency === 'biweekly'
+      ? { weekdays: sortUnique(selectedWeekdays.value) } : {}
+  if ((draft.value.frequency === 'monthly' && !frequencyConfig.month_days?.length)
+    || ((draft.value.frequency === 'weekly' || draft.value.frequency === 'biweekly') && !frequencyConfig.weekdays?.length)) {
+    editorError.value = '请选择频率对应的日期'
+    return
+  }
+  const payload = {
+    ...draft.value,
+    frequency_config: frequencyConfig,
+    end_date: draft.value.end_date || undefined,
+  }
+  saving.value = true; editorError.value = ''
+  try {
+    if (editingId.value != null) {
+      await recurringApi.updateRule(editingId.value, payload)
+      showSuccessToast('周期规则已更新')
+    } else {
+      await recurringApi.createRule(payload)
+      showSuccessToast('周期规则已创建')
+    }
+    showEditor.value = false
+    editingId.value = null
+    await loadRules()
+  } catch (reason) { editorError.value = (reason as ApiError).message }
+  finally { saving.value = false }
+}
+async function toggleRule(rule: RecurringRule) {
+  error.value = ''
+  try { const updated = await recurringApi.updateRule(rule.id, { is_active: !rule.is_active }); rule.is_active = updated.is_active }
+  catch (reason) { error.value = (reason as ApiError).message }
+}
+async function executeRule(rule: RecurringRule) {
+  try { await recurringApi.executeRule(rule.id, new Date().toISOString().slice(0, 10)); showSuccessToast('执行成功') }
+  catch (reason) { showFailToast((reason as ApiError).message) }
+}
+onMounted(async () => {
+  await loadCurrencyCatalog()
   loadRules()
+  loadAccounts()
 })
 </script>
 
 <style scoped>
-.recurring-page {
-  padding: 20px;
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.page-header h1 {
-  font-size: 28px;
-  font-weight: 700;
-  color: #333;
-  margin: 0;
-}
-
-.create-btn {
-  padding: 10px 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.create-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.loading {
-  text-align: center;
-  padding: 40px 20px;
-  color: #999;
-  font-size: 16px;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 60px 20px;
-}
-
-.empty-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
-}
-
-.empty-text {
-  font-size: 16px;
-  color: #999;
-  margin-bottom: 24px;
-}
-
-.empty-action-btn {
-  padding: 12px 24px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.empty-action-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.rules-container {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.rule-card {
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 12px;
-  padding: 20px;
-  transition: all 0.2s;
-}
-
-.rule-card.inactive {
-  opacity: 0.6;
-}
-
-.rule-card:not(.inactive):hover {
-  border-color: #667eea;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
-}
-
-.rule-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
-}
-
-.rule-info {
-  flex: 1;
-}
-
-.rule-name {
-  font-size: 18px;
-  font-weight: 600;
-  color: #333;
-  margin: 0 0 8px 0;
-}
-
-.rule-frequency {
-  display: inline-block;
-  padding: 4px 8px;
-  background: #e3f2fd;
-  color: #1976d2;
-  border-radius: 4px;
-  font-size: 12px;
-  margin-right: 8px;
-}
-
-.inactive-badge {
-  display: inline-block;
-  padding: 4px 8px;
-  background: #ffebee;
-  color: #f44336;
-  border-radius: 4px;
-  font-size: 12px;
-}
-
-.rule-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.toggle-btn,
-.execute-btn {
-  padding: 6px 12px;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.toggle-btn {
-  background: #f5f5f5;
-  color: #666;
-}
-
-.toggle-btn:hover {
-  background: #e0e0e0;
-}
-
-.execute-btn {
-  background: #667eea;
-  color: white;
-}
-
-.execute-btn:hover {
-  background: #5568d3;
-}
-
-.rule-details {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.detail-item {
-  display: flex;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.detail-label {
-  color: #999;
-  min-width: 80px;
-}
-
-.detail-value {
-  color: #333;
-  font-weight: 500;
-}
-
-.rule-template {
-  background: #f9f9f9;
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.template-header {
-  font-size: 13px;
-  font-weight: 600;
-  color: #666;
-  margin-bottom: 8px;
-}
-
-.posting-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid #f0f0f0;
-  font-size: 13px;
-}
-
-.posting-item:last-child {
-  border-bottom: none;
-}
-
-.posting-account {
-  color: #333;
-}
-
-.posting-amount {
-  font-weight: 600;
-  color: #667eea;
-}
-
-/* Modal styles */
-.modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-}
-
-.modal-content {
-  background: white;
-  border-radius: 12px;
-  width: 100%;
-  max-width: 600px;
-  max-height: 90vh;
-  overflow-y: auto;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.modal-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #333;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 32px;
-  color: #999;
-  cursor: pointer;
-  line-height: 1;
-  padding: 0;
-}
-
-.close-btn:hover {
-  color: #333;
-}
-
-.create-form {
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.form-group label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
-}
-
-.form-group input,
-.form-group select {
-  padding: 10px 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  font-size: 14px;
-}
-
-.form-group input:focus,
-.form-group select:focus {
-  outline: none;
-  border-color: #667eea;
-}
-
-.weekday-selector,
-.monthday-selector {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.weekday-option,
-.monthday-option {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.weekday-option:hover,
-.monthday-option:hover {
-  background: #f5f5f5;
-}
-
-.weekday-option input:checked+span,
-.monthday-option input:checked+span {
-  font-weight: 600;
-  color: #667eea;
-}
-
-.postings {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.posting-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr 80px 40px;
-  gap: 8px;
-  align-items: center;
-}
-
-.posting-account-input,
-.posting-amount-input,
-.posting-currency-select {
-  padding: 8px;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  font-size: 13px;
-}
-
-.remove-posting-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  background: #ffebee;
-  color: #f44336;
-  border: none;
-  border-radius: 6px;
-  font-size: 20px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.remove-posting-btn:hover {
-  background: #f44336;
-  color: white;
-}
-
-.add-posting-btn {
-  padding: 8px 16px;
-  background: #f5f5f5;
-  border: 1px dashed #e0e0e0;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.add-posting-btn:hover {
-  background: #e0e0e0;
-}
-
-.error-message {
-  padding: 12px 16px;
-  background: #fee;
-  color: #c33;
-  border-radius: 8px;
-  font-size: 14px;
-  text-align: center;
-}
-
-.form-actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.cancel-btn,
-.submit-btn {
-  flex: 1;
-  padding: 12px 24px;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.cancel-btn {
-  background: #f5f5f5;
-  color: #666;
-}
-
-.cancel-btn:hover {
-  background: #e0e0e0;
-}
-
-.submit-btn {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.submit-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
-
-.submit-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.rule-list{padding:4px 0}
+.rule-card{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  padding:14px 16px;
+  border-bottom:1px solid var(--app-border, var(--van-border-color));
+}
+.rule-card:last-child{border-bottom:none}
+.rule-card-main{min-width:0}
+.rule-card-title-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin-bottom:6px;
+}
+.rule-card-name{
+  min-width:0;
+  flex:1;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:16px;
+  font-weight:600;
+  color:var(--van-text-color);
+}
+.rule-card-meta{
+  margin:0;
+  color:var(--bm-muted, var(--van-text-color-2));
+  font-size:13px;
+  line-height:1.45;
+  word-break:break-word;
+  overflow-wrap:anywhere;
+}
+.rule-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+}
+.popup-page{height:100%;overflow:auto}
+.posting-editor{padding:8px 0 12px;border-bottom:1px solid var(--app-border);margin-bottom:8px}
+.posting-editor>.van-button{margin-left:16px}
+.multi-picker{display:flex;flex-direction:column;max-height:70vh}
+.multi-picker-scroll{height:100%}
+.multi-picker-list{overflow:auto;padding-bottom:12px}
+.multi-picker-grid{max-height:calc(70vh - 46px)}
 </style>

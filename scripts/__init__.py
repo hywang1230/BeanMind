@@ -1,0 +1,1 @@
+"""BeanMind maintenance scripts."""

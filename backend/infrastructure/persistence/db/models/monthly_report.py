@@ -1,30 +1,22 @@
-"""月报 ORM 模型"""
-from datetime import datetime
+"""OpenAI-compatible 月度复盘状态。"""
 
-from sqlalchemy import Column, String, Text, Index, DateTime
+from sqlalchemy import Column, DateTime, Index, String, Text
 
 from .base import BaseModel
 
 
-class MonthlyReport(BaseModel):
-    """月报快照表"""
+class MonthlyReview(BaseModel):
+    __tablename__ = "monthly_reviews"
 
-    __tablename__ = "monthly_reports"
+    report_month = Column(String(7), nullable=False, unique=True)
+    generation_status = Column(String(20), nullable=False, default="DISABLED")
+    model_name = Column(String(100), nullable=True)
+    facts_json = Column(Text, nullable=False, default="{}")
+    pending_facts_json = Column(Text, nullable=False, default="{}")
+    summary_text = Column(Text, nullable=False, default="")
+    suggestions_json = Column(Text, nullable=False, default="[]")
+    last_error = Column(Text, nullable=True)
+    requested_at = Column(DateTime, nullable=True)
+    last_success_at = Column(DateTime, nullable=True)
 
-    user_id = Column(String(36), nullable=False, default="default")
-    report_month = Column(String(7), nullable=False, unique=True, comment="月份，格式 YYYY-MM")
-    status = Column(String(20), nullable=False, default="READY", comment="READY/FAILED")
-    model_provider = Column(String(50), nullable=True, comment="模型提供方")
-    model_name = Column(String(100), nullable=True, comment="模型名称")
-    summary_text = Column(Text, nullable=False, default="", comment="本月总结文本")
-    report_json = Column(Text, nullable=False, default="{}", comment="完整月报 JSON")
-    facts_json = Column(Text, nullable=False, default="{}", comment="结构化事实 JSON")
-    generated_at = Column(DateTime, nullable=False, default=datetime.now)
-
-    __table_args__ = (
-        Index("idx_monthly_reports_month", "report_month"),
-        Index("idx_monthly_reports_user_month", "user_id", "report_month"),
-    )
-
-    def __repr__(self) -> str:
-        return f"<MonthlyReport(report_month={self.report_month}, status={self.status})>"
+    __table_args__ = (Index("idx_monthly_reviews_month", "report_month"),)

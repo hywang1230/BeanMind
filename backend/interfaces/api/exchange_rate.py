@@ -6,10 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
-from backend.config import settings
+from backend.config import settings, get_db
+from sqlalchemy.orm import Session
 from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.repositories import ExchangeRateRepositoryImpl
 from backend.application.services.exchange_rate_service import ExchangeRateApplicationService
+from backend.interfaces.errors import ApiError
+from backend.services.currency_catalog import CurrencyCatalogError, CurrencyCatalogService
 
 
 # 创建路由
@@ -108,7 +111,8 @@ def get_exchange_rate_service() -> ExchangeRateApplicationService:
 )
 def create_exchange_rate(
     request: CreateExchangeRateRequest,
-    exchange_rate_service: ExchangeRateApplicationService = Depends(get_exchange_rate_service)
+    exchange_rate_service: ExchangeRateApplicationService = Depends(get_exchange_rate_service),
+    db: Session = Depends(get_db),
 ):
     """
     创建汇率
@@ -117,6 +121,9 @@ def create_exchange_rate(
     表示 1 USD = 7.13 CNY
     """
     try:
+        catalog = CurrencyCatalogService(db)
+        catalog.require_enabled(request.currency)
+        catalog.require_enabled(request.quote_currency)
         exchange_rate = exchange_rate_service.create_exchange_rate(
             currency=request.currency.upper(),
             rate=request.rate,
@@ -124,6 +131,8 @@ def create_exchange_rate(
             effective_date=request.effective_date
         )
         return exchange_rate
+    except CurrencyCatalogError as e:
+        raise ApiError(400, e.code, str(e), e.details) from e
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -166,12 +175,11 @@ def list_exchange_rates(
     }
 )
 def get_common_currencies(
-    exchange_rate_service: ExchangeRateApplicationService = Depends(get_exchange_rate_service)
+    db: Session = Depends(get_db),
 ):
-    """
-    获取常用货币代码列表
-    """
-    currencies = exchange_rate_service.get_common_currencies()
+    """兼容旧路径：返回统一币种目录中的启用币种代码。"""
+    catalog = CurrencyCatalogService(db)
+    currencies = [item["code"] for item in catalog.list_currencies(enabled_only=True)]
     return {
         "currencies": currencies,
         "total": len(currencies)

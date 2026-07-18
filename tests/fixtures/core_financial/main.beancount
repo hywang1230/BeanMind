@@ -1,0 +1,6 @@
+option "title" "BeanMind core financial fixture"
+option "operating_currency" "CNY"
+
+include "accounts.beancount"
+include "prices.beancount"
+include "transactions.beancount"

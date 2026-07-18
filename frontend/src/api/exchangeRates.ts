@@ -120,19 +120,19 @@ export const exchangeRatesApi = {
     },
 
     /**
-     * 获取常用货币代码列表
+     * @deprecated 请使用 currenciesApi.listEnabledCodes；保留仅为兼容，内部走统一目录。
      */
     async getCommonCurrencies(): Promise<string[]> {
-        const response: CurrencyListResponse = await apiClient.get('/api/exchange-rates/currencies/common')
-        return response.currencies
+        const { currenciesApi } = await import('./currencies')
+        return currenciesApi.listEnabledCodes()
     },
 
     /**
-     * 获取所有已定义汇率的货币代码
+     * @deprecated 请使用 currenciesApi.listEnabledCodes；保留仅为兼容，内部走统一目录。
      */
     async getAvailableCurrencies(): Promise<string[]> {
-        const response: CurrencyListResponse = await apiClient.get('/api/exchange-rates/currencies/available')
-        return response.currencies
+        const { currenciesApi } = await import('./currencies')
+        return currenciesApi.listEnabledCodes()
     },
 
     /**

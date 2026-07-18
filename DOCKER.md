@@ -1,222 +1,330 @@
 # Docker 部署指南
 
-本文档介绍如何使用 Docker 部署 BeanMind 应用。
+本文档对应仓库内当前 Docker 文件：`Dockerfile`、`docker-compose.yml`、`docker-entrypoint.sh`。
+
+BeanMind 为**单机、单账本、单写者**部署：不提供登录、权限、远端同步或应用内备份中心。备份由 NAS 或部署环境负责。
 
 ## 前置要求
 
 - Docker 20.10+
 - Docker Compose v2+
 
+## 镜像内容
+
+多阶段构建的一体化镜像：
+
+1. **前端**：`node:20-alpine` 构建 Vue 3 + Vite，产物复制到 `frontend/dist`
+2. **后端**：`python:3.11-slim`，用 `uv` 按 `pyproject.toml` / `uv.lock` 安装依赖
+3. **运行**：同一进程内用 FastAPI 提供 API，并托管前端静态资源
+
+| 项 | 值 |
+|----|-----|
+| 镜像名 | `pionnerwang/beanmind` |
+| 默认标签 | `latest` |
+| 容器工作目录 | `/home/app/project` |
+| 对外端口 | `8000` |
+| 启动命令 | `uvicorn backend.main:app --host 0.0.0.0 --port 8000` |
+| 健康检查 | `GET /health` → `{"status":"ok"}` |
+
+镜像内 `VITE_API_BASE_URL` 为空，前端使用相对路径访问同源 API。
+
 ## 快速开始
 
-### 方式一：使用 Docker Compose（推荐）
+### 方式一：Docker Compose（推荐）
 
-1. **复制环境变量配置文件**
+1. **准备环境变量**
+
    ```bash
    cp .env.example .env
    ```
 
-2. **编辑 `.env` 文件**，修改必要的配置：
-   ```bash
-   # 必须修改的配置
-   JWT_SECRET_KEY=your-super-secret-key   # 修改为安全的密钥
-   SINGLE_USER_PASSWORD=your-password     # 修改为安全的密码
-   ```
+   按需编辑 `.env`（见下方环境变量表）。compose 会读取同目录 `.env`。
 
-3. **启动服务**
+2. **启动**
+
    ```bash
+   # 使用已发布镜像
    docker compose up -d
+
+   # 或本地构建后启动
+   docker compose up -d --build
    ```
 
-4. **访问应用**
-   - 应用地址: http://localhost:8000
-   - API 文档: http://localhost:8000/docs
+3. **访问**
 
-### 方式二：使用 Docker Run
+   - 应用：http://localhost:8000
+   - API 文档：http://localhost:8000/docs
+   - 健康检查：http://localhost:8000/health
+
+### 方式二：Docker Run
 
 ```bash
 docker run -d \
   --name beanmind \
   -p 8000:8000 \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/logs:/app/logs \
-  -e AUTH_MODE=single_user \
-  -e SINGLE_USER_USERNAME=admin \
-  -e SINGLE_USER_PASSWORD=your-password \
-  -e JWT_SECRET_KEY=your-super-secret-key \
+  -v "$(pwd)/data:/home/app/project/data" \
+  -v "$(pwd)/logs:/home/app/project/logs" \
+  -e DATA_DIR=/home/app/project/data \
+  -e LEDGER_FILE=/home/app/project/data/ledger/main.beancount \
+  -e DATABASE_FILE=/home/app/project/data/beanmind.db \
+  -e LOG_DIR=/home/app/project/logs \
+  -e CORS_ORIGINS='*' \
+  -e DEBUG=false \
   pionnerwang/beanmind:latest
 ```
 
+启用可选 AI 月度复盘时再传入 `LLM_*` 变量（见下表）。
+
 ## 数据持久化
 
-应用数据存储在以下目录：
+容器内路径以 **`/home/app/project`** 为根（不是历史文档中的 `/app`）。
 
 | 容器路径 | 说明 |
 |---------|------|
-| `/app/data/ledger/` | Beancount 账本文件 |
-| `/app/data/beanmind.db` | SQLite 数据库 |
-| `/app/logs/` | 应用日志 |
+| `/home/app/project/data/ledger/` | Beancount 账本（真值） |
+| `/home/app/project/data/beanmind.db` | SQLite（应用数据 + 可重建查询投影） |
+| `/home/app/project/logs/` | 应用日志 |
 
-确保挂载这些目录以持久化数据：
+`docker-compose.yml` 默认挂载：
 
 ```yaml
 volumes:
-  - ./data:/app/data
-  - ./logs:/app/logs
+  - ./data:/home/app/project/data
+  - ./logs:/home/app/project/logs
 ```
+
+约定：
+
+- Beancount 是账户与交易唯一真值；SQLite 投影可删后重建。
+- 禁止从 SQLite 反向覆盖 Beancount。
+- 投影异常时系统会标记 `DIRTY`，不返回可能错误的预算/统计结果。
+- 需要全量重建投影时：
+
+  ```bash
+  curl -X POST http://localhost:8000/api/transactions/projection/rebuild
+  ```
+
+### 从 `main` 升级到 3.0.0
+
+升级必须在旧容器停止后进行，避免 SQLite WAL 或周期调度器继续写入：
+
+```bash
+docker compose down
+cp ./data/beanmind.db /外部备份目录/beanmind-before-v3.db
+cp -R ./data/ledger /外部备份目录/ledger-before-v3
+```
+
+先在同一版本代码目录执行只读预览：
+
+```bash
+uv run python scripts/migrate_v3.py ./data/beanmind.db \
+  --ledger ./data/ledger/main.beancount
+```
+
+确认以下内容后再应用：
+
+- `ledger.errors` 为空，交易数和分录数符合账本实际情况；
+- `recurring.orphan_rule_ids` 为空，周期规则数和执行数正确；
+- `drop_budgets` 是允许永久丢弃的旧预算数据；
+- `--backup` 指向停机后生成、与源数据库 SHA-256 完全一致的外部备份。
+- `database_sidecars.-wal` 不存在或为空；非空 WAL 说明仍有未合并写入，迁移会拒绝执行。
+
+```bash
+uv run python scripts/migrate_v3.py ./data/beanmind.db \
+  --ledger ./data/ledger/main.beancount \
+  --apply \
+  --backup /外部备份目录/beanmind-before-v3.db \
+  --confirm-drop-budgets
+docker compose up -d
+```
+
+迁移脚本不会修改 Beancount。成功报告必须显示流水投影核对通过、周期规则和执行记录数量不变、当前月度预算表为空。结构事务失败会自动回滚；若提交后投影或启动核对失败，停止容器并用外部备份恢复 `beanmind.db`，不要用 SQLite 覆盖账本。
+
+`main` 到 3.0.0 的数据库覆盖关系如下：
+
+| `main` / 中间版本数据 | 3.0.0 处理方式 | 核对标准 |
+|---|---|---|
+| Beancount 流水 | 原文件只读保留；删除旧 `transaction_metadata` 和投影后重建 | 文件指纹不变，交易数、分录数和 Decimal 汇总一致，投影 `READY` |
+| `recurring_rules` | 仅移除 `user_id`，其余字段按原 ID 复制 | 规则数量与 ID 集合不变 |
+| `recurring_executions` | 原表原记录保留 | 执行数量、ID、`rule_id` 关联不变，无孤儿外键 |
+| `budgets` / `budget_items` / `budget_cycles` | 删除，不转换 | 预览列出删除数量 |
+| 中间版本 `monthly_budgets` / `monthly_budget_items` | 删除并创建当前空结构 | 两张当前表存在且均为 0 条 |
+| 用户、同步、备份、旧配置、旧 AI、旧月报 | 删除 | 迁移后废弃表不存在 |
+| 币种、月度复盘等 3.0.0 新表 | 由当前 SQLAlchemy 模型创建 | 当前应用可启动并正常查询 |
 
 ## 自动初始化
 
-容器首次启动时会**自动完成以下初始化**：
+入口脚本 `docker-entrypoint.sh` 在启动 uvicorn 前执行：
 
-1. **创建数据库**：如果 `/app/data/beanmind.db` 不存在，会自动创建并初始化表结构
-2. **创建账本文件**：如果 `/app/data/ledger/main.beancount` 不存在，会创建初始账本模板
+1. **数据库**：若 `DATABASE_FILE` 不存在，运行  
+   `python -m backend.infrastructure.persistence.init_db --db-path ...`
+2. **账本**：若 `LEDGER_FILE` 不存在，运行  
+   `python -m backend.infrastructure.persistence.beancount.init_ledger --ledger-path ...`
+3. **应用**：执行镜像默认 CMD（uvicorn）
 
-这意味着你无需手动运行任何初始化脚本，只需启动容器即可！
+应用启动生命周期内还会再次确保数据库表与账本查询投影就绪（投影失败记日志并标记 DIRTY，不阻断容器进程）。
 
-### 查看初始化日志
+### 查看启动日志
 
 ```bash
-docker-compose logs beanmind
+docker compose logs -f beanmind
 ```
 
-首次启动时会看到：
+首次启动大致输出：
 
-```
+```text
 ==========================================
 🚀 BeanMind 容器启动中...
 ==========================================
 
 [1/3] 检查数据库...
-📦 数据库不存在，正在初始化...
-✅ 数据库初始化完成
-
+...
 [2/3] 检查账本文件...
-📄 账本文件不存在，正在创建...
-✅ 账本文件创建完成
-
+...
 [3/3] 启动应用...
 ==========================================
 🎉 初始化完成，正在启动服务...
 ==========================================
 ```
 
-### 重新初始化
-
-如果需要重置数据，可以删除数据文件后重启容器：
+### 重新初始化（会清空数据）
 
 ```bash
-# 停止容器
-docker-compose down
-
-# 删除数据（谨慎操作！会丢失所有数据）
-rm -rf ./data/
-
-# 重新启动（会自动初始化）
-docker-compose up -d
+docker compose down
+rm -rf ./data/   # 谨慎：删除账本与数据库
+docker compose up -d
 ```
-
-详细信息请参阅：[Docker 初始化文档](docs/docker-init.md)
 
 ## 环境变量
 
+配置源：`.env.example`、`backend/config/settings.py`。未知变量会被忽略（`extra="ignore"`）。
+
+### 数据路径
+
+| 变量名 | 容器内建议值 | 说明 |
+|--------|--------------|------|
+| `DATA_DIR` | `/home/app/project/data` | 数据根目录 |
+| `LEDGER_FILE` | `/home/app/project/data/ledger/main.beancount` | Beancount 入口账本 |
+| `DATABASE_FILE` | `/home/app/project/data/beanmind.db` | SQLite 路径 |
+| `LOG_DIR` | `/home/app/project/logs` | 日志目录 |
+
+相对路径会相对于项目根解析；容器内请使用上表绝对路径（compose 已写好）。
+
+### 周期记账调度
+
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `AUTH_MODE` | `single_user` | 认证模式：`none`、`single_user`、`multi_user` |
-| `SINGLE_USER_USERNAME` | `admin` | 单用户模式用户名 |
-| `SINGLE_USER_PASSWORD` | `changeme` | 单用户模式密码 |
-| `JWT_SECRET_KEY` | - | JWT 密钥（**必须修改**） |
-| `JWT_EXPIRATION_HOURS` | `24` | JWT 过期时间（小时） |
-| `DEBUG` | `false` | 调试模式 |
+| `SCHEDULER_ENABLED` | `true` | 是否启用周期记账调度 |
+| `SCHEDULER_HOUR` | `12` | 每日执行小时 |
+| `SCHEDULER_MINUTE` | `0` | 每日执行分钟 |
+| `SCHEDULER_TIMEZONE` | `Asia/Shanghai` | 调度时区 |
+
+### 可选 LLM（月度复盘）
+
+默认关闭。仅用于生成月度总结与建议；金额/预算/趋势由确定性代码计算。失败不影响记账与查询。
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `LLM_ENABLED` | `false` | 是否启用 |
+| `LLM_BASE_URL` | 空 | OpenAI-compatible 接口 base URL |
+| `LLM_API_KEY` | 空 | API Key |
+| `LLM_MODEL` | `gpt-4o-mini` | 模型名 |
+| `LLM_TIMEOUT_SECONDS` | `30` | 超时秒数 |
+
+### 服务
+
+| 变量名 | 默认值 | 说明 |
+|--------|--------|------|
+| `API_HOST` | `0.0.0.0` | 监听地址（镜像内 uvicorn 已固定 0.0.0.0） |
+| `API_PORT` | `8000` | 端口（容器内） |
+| `DEBUG` | 本地示例为 `true`；生产建议 `false` | 调试模式 |
+| `CORS_ORIGINS` | 本地开发多源；compose 默认可为 `*` | 逗号分隔的 CORS 源 |
+| `LOG_LEVEL` | `INFO` | 日志级别 |
+
+### 已移除、勿再配置
+
+以下能力已从当前单机架构删除；写入环境变量也不会生效：
+
+- `AUTH_MODE` / `SINGLE_USER_*` / `JWT_*`（无登录鉴权）
+
+> 说明：环境变量以 `backend/config/settings.py` 与 `.env.example` 为准；`docker-compose.yml` 会为容器内数据/日志路径写入绝对路径。
 
 ## 本地构建
 
-如果需要本地构建镜像：
-
 ```bash
-# 构建镜像
 docker compose build
-
-# 或直接构建后运行
 docker compose up -d --build
 ```
 
-说明：
+构建要点：
 
-- Docker 镜像中的 Python 依赖已改为使用 `uv` 基于 `pyproject.toml` 和 `uv.lock` 安装。
-- 本地如果要运行后端，也应优先使用 `uv sync` 和 `uv run`，不要再使用 `pip install -r requirements.txt`。
+- 前端：`npm ci` + `npm run build`（`VITE_API_BASE_URL=""`）
+- 后端：`uv sync --frozen --no-dev --no-install-project`
+- 本地非 Docker 开发优先 `uv sync` / `uv run`，不要再使用 `requirements.txt` + pip
 
 ## 常用命令
 
 ```bash
-# 查看服务状态
+# 状态
 docker compose ps
 
-# 查看日志
-docker compose logs -f
+# 日志
+docker compose logs -f beanmind
 
-# 停止服务
+# 停止
 docker compose down
 
-# 重新构建并启动
+# 重建并启动
 docker compose up -d --build
 
 # 进入容器
 docker compose exec beanmind /bin/bash
+
+# 健康检查
+curl -f http://localhost:8000/health
 ```
-
-## 健康检查
-
-应用提供健康检查端点：
-
-```bash
-curl http://localhost:8000/health
-# 返回: {"status": "ok"}
-```
-
-## GitHub Actions CI/CD
-
-项目配置了 GitHub Actions 自动构建流程：
-
-- **触发条件**: 推送到 `main` 分支
-- **构建内容**: 自动构建 Docker 镜像并推送到 Docker Hub
-
-### 配置 GitHub Secrets
-
-在 GitHub 仓库设置中添加以下 Secrets：
-
-| Secret 名称 | 说明 |
-|-------------|------|
-| `DOCKERHUB_USERNAME` | Docker Hub 用户名 |
-| `DOCKERHUB_TOKEN` | Docker Hub Access Token |
-
-### 获取 Docker Hub Token
-
-1. 登录 [Docker Hub](https://hub.docker.com/)
-2. 进入 Account Settings → Security
-3. 点击 "New Access Token"
-4. 创建一个具有 Read & Write 权限的 Token
 
 ## 故障排除
 
 ### 容器无法启动
 
-检查日志：
 ```bash
 docker compose logs beanmind
 ```
 
-### 数据目录权限问题
+常见原因：入口脚本初始化失败、挂载目录权限、端口占用、镜像构建时前端/依赖失败。
 
-确保数据目录有正确的权限：
-```bash
-sudo chown -R 1000:1000 ./data ./logs
-```
+### 数据目录权限
+
+镜像以 root 运行（便于开发环境写挂载卷）。若宿主机目录权限异常，可调整宿主机 `./data`、`./logs` 的所有者或权限，确保容器可写。
 
 ### 端口冲突
 
-如果 8000 端口被占用，修改 `docker-compose.yml` 中的端口映射：
+修改 `docker-compose.yml`：
+
 ```yaml
 ports:
-  - "8080:8000"  # 改为其他端口
+  - "8080:8000"
 ```
+
+### 投影 / 统计异常
+
+```bash
+curl -X POST http://localhost:8000/api/transactions/projection/rebuild
+```
+
+仍异常时优先检查 Beancount 账本语法与挂载路径是否指向正确文件，不要用手工改 SQLite 去“对齐”账本。
+
+### 前端空白或 404
+
+确认镜像构建包含 `frontend/dist`（完整 `docker compose build`），且访问的是容器 `8000` 端口而不是本地 Vite 开发端口。
+
+## 相关文件
+
+| 文件 | 作用 |
+|------|------|
+| `Dockerfile` | 多阶段构建 |
+| `docker-compose.yml` | 本地/部署编排与卷挂载 |
+| `docker-entrypoint.sh` | 首次启动初始化 DB/账本 |
+| `.dockerignore` | 构建上下文忽略项 |
+| `.env.example` | 环境变量模板 |

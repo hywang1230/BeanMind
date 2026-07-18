@@ -1,598 +1,259 @@
 <template>
-  <f7-page name="transaction-distribute">
-    <f7-navbar>
-      <f7-nav-left>
-        <f7-link @click="goBack">
-          <f7-icon ios="f7:chevron_left" md="material:arrow_back" />
-        </f7-link>
-      </f7-nav-left>
-      <f7-nav-title>{{ pageTitle }}</f7-nav-title>
-      <f7-nav-right>
-        <f7-link @click="handleNext" :class="{ disabled: loading }" :style="{ opacity: (!isValid || loading) ? 0.5 : 1 }">
-          {{ isLastStep ? (loading ? '保存中' : '保存') : '下一步' }}
-        </f7-link>
-      </f7-nav-right>
-    </f7-navbar>
+  <section class="page secondary-page distribute-page">
+    <van-nav-bar :title="pageTitle" left-arrow @click-left="goBack">
+      <template #right>
+        <van-button size="small" type="primary" plain :disabled="!isValid || saving" :loading="saving" @click="handleNext">
+          {{ isLastStep ? '保存' : '下一步' }}
+        </van-button>
+      </template>
+    </van-nav-bar>
 
-    <f7-block class="margin-vertical">
-      <div class="display-flex justify-content-space-between align-items-center">
-        <span class="text-color-gray">总金额</span>
-        <span class="text-size-large font-weight-bold">{{ draft?.currency }} {{ formatNumber(totalAmount) }}</span>
-      </div>
-      <div class="display-flex justify-content-space-between align-items-center margin-top-half">
-        <span class="text-color-gray">剩余未分配</span>
-        <span :class="remaining === 0 ? 'text-color-green' : 'text-color-red'" class="font-weight-bold">
-          {{ formatNumber(remaining) }}
-        </span>
-      </div>
-    </f7-block>
+    <van-empty v-if="!draft" description="没有可分配的草稿，请返回重新填写">
+      <van-button type="primary" @click="router.replace('/transactions/new')">去记账</van-button>
+    </van-empty>
 
-    <f7-list strong-ios dividers-ios inset-ios form>
-      <f7-list-item 
-        v-for="item in items" 
-        :key="item" 
-        :title="formatName(item)"
-        link="#"
-        @click="startEditing(item)"
-      >
-        <template #after>
-            <div class="item-input-wrap display-flex align-items-center justify-content-flex-end" style="min-width: 100px;">
-                <span :class="{ 'text-color-primary': currentEditingItem === item }">
-                    {{ formatItemValue(item) }}
-                </span>
-                <span v-if="currentEditingItem === item && isKeypadOpen" class="cursor">|</span>
-            </div>
-        </template>
-      </f7-list-item>
-    </f7-list>
-    
-    <f7-block-footer class="text-align-center">
-        <!-- Error message if any -->
-    </f7-block-footer>
+    <template v-else>
+      <van-cell-group inset class="summary-card">
+        <van-cell title="总金额" :value="`${draft.currency} ${formatAmountDisplay(draft.amount)}`" />
+        <van-cell title="剩余未分配">
+          <template #value>
+            <span :class="isZero(remaining) ? 'ok' : 'bad'">{{ formatAmountDisplay(remaining) }}</span>
+          </template>
+        </van-cell>
+      </van-cell-group>
 
-    <!-- Keypad Sheet -->
-    <f7-sheet
-      class="amount-keypad-sheet"
-      :opened="isKeypadOpen"
-      @sheet:closed="onSheetClosed"
-      style="height: auto;"
-      backdrop
-      close-by-backdrop-click
-      swipe-to-close
-    >
-        <div class="keypad-grid">
-            <button class="key-btn number-key" @click="append('1')">1</button>
-            <button class="key-btn number-key" @click="append('2')">2</button>
-            <button class="key-btn number-key" @click="append('3')">3</button>
-            <button class="key-btn action-key" @click="handleDelete">
-                 <i class="f7-icons">delete_left</i>
-            </button>
+      <van-cell-group inset class="lines-card">
+        <van-field
+          v-for="account in accounts"
+          :key="account"
+          :label="shortName(account)"
+          :model-value="amounts[account] || ''"
+          type="text"
+          inputmode="decimal"
+          placeholder="0.00"
+          :error-message="fieldError(account)"
+          @update:model-value="onAmountInput(account, $event)"
+        >
+          <template #extra>
+            <span class="account-path">{{ account }}</span>
+          </template>
+        </van-field>
+      </van-cell-group>
 
-            <button class="key-btn number-key" @click="append('4')">4</button>
-            <button class="key-btn number-key" @click="append('5')">5</button>
-            <button class="key-btn number-key" @click="append('6')">6</button>
-            <button class="key-btn op-key" @click="append('+')">+</button>
-
-            <button class="key-btn number-key" @click="append('7')">7</button>
-            <button class="key-btn number-key" @click="append('8')">8</button>
-            <button class="key-btn number-key" @click="append('9')">9</button>
-            <button class="key-btn op-key" @click="append('-')">-</button>
-
-            <button class="key-btn number-key" @click="append('.')">.</button>
-            <button class="key-btn number-key" @click="append('0')">0</button>
-            <button class="key-btn action-key highlight" style="grid-column: span 2" @click="handleOK">
-                确定
-            </button>
-        </div>
-    </f7-sheet>
-  </f7-page>
+      <van-notice-bar v-if="error" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ error }}</van-notice-bar>
+    </template>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useTransactionStore } from '../../stores/transaction'
-import { useUIStore } from '../../stores/ui'
-import type { CreateTransactionRequest, Posting } from '../../api/transactions'
-import { f7 } from 'framework7-vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { accountShortLabel } from '../../utils/accountTree'
+import { showSuccessToast } from 'vant'
+import { useRoute, useRouter } from 'vue-router'
+import type { ApiError } from '../../api/client'
+import { transactionsApi } from '../../api/transactions'
+import {
+  sideIsBalanced,
+  sideRemaining,
+  toCreateRequest,
+  useTransactionDraftStore,
+  type DistributeSide,
+  type DraftLine,
+} from '../../stores/transactionDraft'
+import { formatAmountDisplay, isZero, normalizeAmountInput } from '../../utils/decimal'
 
-const router = useRouter()
 const route = useRoute()
-const transactionStore = useTransactionStore()
-const uiStore = useUIStore()
-const draft = transactionStore.transactionDraft
+const router = useRouter()
+const draftStore = useTransactionDraftStore()
+const draft = computed(() => draftStore.draft)
+const saving = ref(false)
+const error = ref('')
+const amounts = reactive<Record<string, string>>({})
+const submitted = ref(false)
 
-// Keypad State
-const isKeypadOpen = ref(false)
-const currentEditingItem = ref<string | null>(null)
-const currentExpression = ref('')
+const side = computed<DistributeSide>(() => (route.query.side === 'from' ? 'from' : 'to'))
 
-const type = computed(() => route.query.type as 'category' | 'account') // 'category' or 'account'
-const currentDepth = computed(() => Number(route.query.depth) || 1)
-const loading = ref(false)
-
-// 检测是否为编辑模式
-const isEditMode = computed(() => route.query.mode === 'edit')
-const editTransactionId = ref<string | null>(null)
-
-// Init check
-onMounted(() => {
-    // 从 sessionStorage 读取编辑的交易 ID
-    const storedId = sessionStorage.getItem('editTransactionId')
-    if (storedId) {
-        editTransactionId.value = storedId
-    }
-    
-    // 初始化分配
-    initDistributions()
+const accounts = computed(() => {
+  if (!draft.value) return [] as string[]
+  return side.value === 'from' ? draft.value.fromAccounts : draft.value.toAccounts
 })
-
-if (!draft) {
-    router.replace('/transactions/add')
-}
-
-const totalAmount = computed(() => draft?.amount || 0)
-const items = computed(() => {
-    if (!draft) return []
-    if (type.value === 'category') return draft.category || []
-    
-    // type === 'account'
-    const side = route.query.side as 'from' | 'to' | undefined
-    if (side === 'to') return draft.toAccount || []
-    return draft.fromAccount || []
-})
-
-const distributions = ref<Record<string, number | string>>({})
-
-function initDistributions() {
-    distributions.value = {} // Clear previous
-    if (!draft) return
-    
-    // Load existing if any, or init default
-    let existing: Record<string, number> | undefined
-    if (type.value === 'category') existing = draft.categoryDistributions
-    else {
-        existing = draft.accountDistributions
-    }
-    
-    const targets: string[] = items.value
-    if (existing && Object.keys(existing).length > 0) {
-        targets.forEach((t: string) => {
-            if (existing && existing[t] !== undefined) {
-                distributions.value[t] = existing[t]
-            }
-        })
-    }
-    
-    // Check coverage
-    const hasAll = targets.every((t: string) => distributions.value[t] !== undefined)
-    
-    if (!hasAll) {
-        // Auto split evenly
-        const count = targets.length
-        if (count > 0 && draft.amount) {
-            const perItem = parseFloat((draft.amount / count).toFixed(2))
-            let sum = 0
-            targets.forEach((t: string, i: number) => {
-                if (i === count - 1) {
-                    distributions.value[t] = parseFloat((draft.amount! - sum).toFixed(2))
-                } else {
-                    distributions.value[t] = perItem
-                    sum += perItem
-                }
-            })
-        }
-    }
-}
-
-watch(() => route.query, () => {
-    initDistributions()
-})
-
-const currentSum = computed(() => {
-    return Object.values(distributions.value).reduce<number>((sum, val) => sum + (Number(val) || 0), 0)
-})
-
-const remaining = computed(() => {
-    return Number((totalAmount.value - (currentSum.value || 0)).toFixed(2))
-})
-
-const isValid = computed(() => Math.abs(remaining.value) < 0.01)
 
 const pageTitle = computed(() => {
-    if (type.value === 'category') return '分配分类金额'
-    if (route.query.side === 'to') return '分配转入账户'
-    return '分配账户金额'
+  if (!draft.value) return '分配金额'
+  if (side.value === 'to') {
+    return draft.value.type === 'transfer' ? '分配转入账户' : '分配分类金额'
+  }
+  return draft.value.type === 'transfer' ? '分配转出账户' : '分配资金账户'
 })
 
-// Navigation Logic
+const lines = computed<DraftLine[]>(() =>
+  accounts.value.map((account) => ({ account, amount: amounts[account] || '0' })),
+)
+
+const remaining = computed(() => {
+  if (!draft.value) return '0'
+  return sideRemaining(draft.value.amount, lines.value)
+})
+
+const isValid = computed(() => {
+  if (!draft.value) return false
+  return sideIsBalanced(draft.value.amount, lines.value, accounts.value)
+})
+
 const isLastStep = computed(() => {
-    if (!draft) return true
-    // Logic: 
-    // If current is Category: check if Account needs split.
-    // If current is Account (From): check if Account (To) needs split? (For transfer).
-    
-    if (type.value === 'category') {
-        // Check Next: Account Multi?
-        if (draft.type === 'transfer') {
-             if (draft.fromAccount.length > 1) return false
-             if (draft.toAccount.length > 1) return false
-        } else {
-             // Expense/Income
-             if (draft.fromAccount.length > 1) return false
-        }
-        return true
+  if (!draft.value) return true
+  if (side.value === 'to' && draft.value.fromAccounts.length > 1) return false
+  if (side.value === 'from' && draft.value.toAccounts.length > 1 && route.query.from !== 'to') {
+    // if we started from from-side and to still multi and not yet done — after from, need to
+  }
+  if (side.value === 'from') {
+    // when finishing from side, check if to still needs distribute and wasn't done
+    if (draft.value.toAccounts.length > 1) {
+      const toOk = sideIsBalanced(draft.value.amount, draft.value.toLines, draft.value.toAccounts)
+      return toOk
     }
-    
-    if (type.value === 'account') {
-        const side = route.query.side
-        if (draft.type === 'transfer' && side === 'from') {
-             if (draft.toAccount.length > 1) return false
-        }
-        return true
+  }
+  if (side.value === 'to') {
+    if (draft.value.fromAccounts.length > 1) {
+      const fromOk = sideIsBalanced(draft.value.amount, draft.value.fromLines, draft.value.fromAccounts)
+      return fromOk
     }
-    
-    return true
+  }
+  return true
 })
 
-function formatName(name: string) {
-    return name.split(':').pop()
+function shortName(name: string) {
+  return accountShortLabel(name, accounts.value)
 }
 
-function formatNumber(num: number) {
-    return num.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+function fieldError(account: string) {
+  if (!submitted.value) return ''
+  if (!amounts[account]) return '请输入金额'
+  return ''
+}
+
+function onAmountInput(account: string, value: string) {
+  amounts[account] = normalizeAmountInput(value)
+}
+
+function initAmounts() {
+  if (!draft.value) return
+  const existing = side.value === 'from' ? draft.value.fromLines : draft.value.toLines
+  const total = draft.value.amount
+  const list = accounts.value
+  for (const key of Object.keys(amounts)) delete amounts[key]
+
+  const hasAll = list.length > 0 && list.every((a) => existing.some((l) => l.account === a && l.amount))
+  if (hasAll) {
+    for (const line of existing) amounts[line.account] = line.amount
+    return
+  }
+
+  // Equal split with last residual via string math
+  if (list.length === 1) {
+    const only = list[0]
+    if (only) amounts[only] = total
+    return
+  }
+  // simple equal: divide by count using integer cents if possible, else leave empty for user
+  // Use equal integer division on scaled digits when total looks like decimal with <= 2 places
+  try {
+    const n = list.length
+    // fallback equal split via repeated sub for residual on last
+    // approximate: use floor of (total * 100 / n) / 100 when 2dp
+    const scaled = total.includes('.') ? total : `${total}.00`
+    const [intPart, frac = ''] = scaled.replace(/^-/, '').split('.')
+    const scale = Math.max(frac.length, 2)
+    const digits = `${intPart}${frac.padEnd(scale, '0')}`
+    const totalInt = BigInt(digits)
+    const base = totalInt / BigInt(n)
+    let used = 0n
+    list.forEach((account, index) => {
+      let share = base
+      if (index === n - 1) share = totalInt - used
+      used += share
+      const neg = total.startsWith('-')
+      const raw = fromScaled(share, scale)
+      amounts[account] = neg ? `-${raw}` : raw
+    })
+  } catch {
+    for (const account of list) amounts[account] = ''
+  }
+}
+
+function fromScaled(value: bigint, scale: number): string {
+  let digits = value.toString()
+  if (scale === 0) return digits
+  if (digits.length <= scale) digits = digits.padStart(scale + 1, '0')
+  const cut = digits.length - scale
+  const frac = digits.slice(cut).replace(/0+$/, '')
+  return frac ? `${digits.slice(0, cut)}.${frac}` : digits.slice(0, cut)
+}
+
+function persistSide() {
+  if (!draft.value) return
+  draftStore.setSideLines(side.value, lines.value)
 }
 
 function goBack() {
-    router.back()
-}
-
-function formatItemValue(item: string) {
-    if (currentEditingItem.value === item && isKeypadOpen.value) {
-        return currentExpression.value
-    }
-    const val = distributions.value[item]
-    if (val === undefined || val === '') return '0.00'
-    return Number(val).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-// Keypad Logic
-function startEditing(item: string) {
-    currentEditingItem.value = item
-    const val = distributions.value[item]
-    currentExpression.value = (val !== undefined && val !== '') ? val.toString() : ''
-    isKeypadOpen.value = true
-}
-
-function closeKeypad() {
-    calculate()
-    isKeypadOpen.value = false
-    currentEditingItem.value = null
-}
-
-function onSheetClosed() {
-    calculate()
-    isKeypadOpen.value = false
-    currentEditingItem.value = null
-}
-
-function handleOK() {
-    closeKeypad()
-}
-
-function append(char: string) {
-    // Prevent multiple dots
-    if (char === '.') {
-        // Find last number segment
-        const parts = currentExpression.value.split(/[\+\-]/)
-        const currentNum = parts[parts.length - 1]
-        if (currentNum && currentNum.includes('.')) return
-    }
-    
-    // Prevent multiple operators
-    if (['+', '-'].includes(char)) {
-        const lastChar = currentExpression.value.slice(-1)
-        if (['+', '-'].includes(lastChar)) {
-            currentExpression.value = currentExpression.value.slice(0, -1) + char
-            return
-        }
-        if (currentExpression.value === '' && char === '+') return // Don't start with +
-    }
-
-    currentExpression.value += char
-}
-
-function handleDelete() {
-    if (currentExpression.value.length > 0) {
-        currentExpression.value = currentExpression.value.slice(0, -1)
-    }
-}
-
-function calculate() {
-    if (!currentEditingItem.value) return
-    try {
-        let result = 0
-        if (currentExpression.value) {
-            let sanitized = currentExpression.value.replace(/[^0-9\+\-\.]/g, '')
-            if (['+', '-'].includes(sanitized.slice(-1))) {
-                sanitized = sanitized.slice(0, -1)
-            }
-            if (sanitized) {
-                result = Function('"use strict";return (' + sanitized + ')')()
-                result = Math.round(result * 100) / 100
-            }
-        }
-        
-        // Update current
-        distributions.value[currentEditingItem.value] = result
-        currentExpression.value = result.toString()
-
-        // Distribute remaining to subsequent items
-        redistribute(currentEditingItem.value)
-    } catch (e) {
-        // ignore
-    }
-}
-
-function redistribute(changedItem: string) {
-    const list: string[] = items.value
-    const idx = list.indexOf(changedItem)
-    if (idx === -1 || idx === list.length - 1) return
-
-    // Calculate sum of items up to including changedItem (locked)
-    let lockedSum = 0
-    for (let i = 0; i <= idx; i++) {
-        const item = list[i]
-        if (item) {
-            lockedSum += Number(distributions.value[item] || 0)
-        }
-    }
-
-    const remaining = totalAmount.value - lockedSum
-    const subsequentCount = list.length - 1 - idx
-    
-    // Distribute remaining evenly
-    const perItem = Math.floor((remaining / subsequentCount) * 100) / 100
-    let distributedSum = 0
-
-    for (let i = idx + 1; i < list.length; i++) {
-        const item = list[i]
-        if (!item) continue
-        
-        if (i === list.length - 1) {
-            // Last item takes dust
-            // Total remaining exactly
-             distributions.value[item] = Number((remaining - distributedSum).toFixed(2))
-        } else {
-            distributions.value[item] = perItem
-            distributedSum += perItem
-        }
-    }
+  router.back()
 }
 
 async function handleNext() {
-    if (!isValid.value) {
-        f7.toast.show({ text: '请分配所有金额', position: 'center', closeTimeout: 2000 })
-        return
-    }
-    
-    // Save to draft
-    if (!draft) return
-    
-    // Convert strings to numbers
-    const finalDist: Record<string, number> = {}
-    for (const [k, v] of Object.entries(distributions.value)) {
-        finalDist[k] = Number(v)
-    }
-    
-    if (type.value === 'category') {
-        draft.categoryDistributions = { ...draft.categoryDistributions, ...finalDist }
+  submitted.value = true
+  error.value = ''
+  if (!draft.value || !isValid.value) return
+  persistSide()
+
+  if (!isLastStep.value) {
+    const nextSide: DistributeSide = side.value === 'to' ? 'from' : 'to'
+    await router.replace({ path: '/transactions/distribute', query: { side: nextSide, from: side.value } })
+    return
+  }
+
+  // Ensure single sides get lines
+  const d = draftStore.draft!
+  if (d.fromAccounts.length === 1 && !d.fromLines.length) {
+    const fromAccount = d.fromAccounts[0]
+    if (fromAccount) draftStore.setSideLines('from', [{ account: fromAccount, amount: d.amount }])
+  }
+  if (d.toAccounts.length === 1 && !d.toLines.length) {
+    const toAccount = d.toAccounts[0]
+    if (toAccount) draftStore.setSideLines('to', [{ account: toAccount, amount: d.amount }])
+  }
+
+  const payload = toCreateRequest(draftStore.draft!)
+  saving.value = true
+  try {
+    if (d.mode.startsWith('edit:')) {
+      const id = d.mode.slice('edit:'.length)
+      await transactionsApi.updateTransaction(id, payload)
+      draftStore.clear()
+      await router.replace(`/transactions/${id}`)
     } else {
-        draft.accountDistributions = { ...draft.accountDistributions, ...finalDist }
+      await transactionsApi.createTransaction(payload)
+      draftStore.clear()
+      showSuccessToast('已保存，可继续记账')
+      await router.replace('/transactions/new')
     }
-    
-    transactionStore.setTransactionDraft(draft)
-    
-    if (isLastStep.value) {
-        await submitTransaction()
-    } else {
-        // Navigate to next, 保持编辑模式
-        const modeQuery = isEditMode.value ? { mode: 'edit' } : {}
-        if (type.value === 'category') {
-             // Next is Account. Which side?
-             if (draft.type === 'transfer') {
-                  if (draft.fromAccount.length > 1) {
-                      router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', ...modeQuery, depth: currentDepth.value + 1 } })
-                  } else {
-                      router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', ...modeQuery, depth: currentDepth.value + 1 } })
-                  }
-             } else {
-                  router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'from', ...modeQuery, depth: currentDepth.value + 1 } }) // Expense/Income uses fromAccount
-             }
-        } else if (type.value === 'account') {
-             if (route.query.side === 'from' && draft.type === 'transfer' && draft.toAccount.length > 1) {
-                  router.push({ path: '/transactions/distribute', query: { type: 'account', side: 'to', ...modeQuery, depth: currentDepth.value + 1 } })
-             }
-        }
-    }
+  } catch (reason) {
+    // keep draft for retry
+    error.value = (reason as ApiError).message || '保存失败'
+  } finally {
+    saving.value = false
+  }
 }
 
-function buildFinalPostings(): Posting[] {
-    if (!draft) return []
-    const posts: Posting[] = []
-    const currency = draft.currency
-    const totalAmount = draft.amount || 0
-    
-    // Helper to get amount for an item
-    // 如果分配记录存在，使用分配的金额
-    // 如果只有单个项目且没有分配记录，使用总金额
-    const getAmt = (item: string, distMap: Record<string, number> | undefined, itemList: string[], sign: number = 1) => {
-        if (distMap && distMap[item] !== undefined) {
-             return distMap[item] * sign
-        }
-        // 单项目情况：使用总金额
-        if (itemList.length === 1) {
-            return totalAmount * sign
-        }
-        // Fallback: 不应该发生
-        return 0
-    }
-
-    if (draft.type === 'expense') {
-        // Expense: 
-        // Category -> Same sign as distribution (Total Amount)
-        // Account -> Opposite sign to distribution (e.g. Expense 100 -> Account -100)
-        draft.category.forEach(cat => {
-            posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, draft.category, 1).toFixed(2), currency })
-        })
-        draft.fromAccount.forEach(acc => {
-            posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, draft.fromAccount, -1).toFixed(2), currency })
-        })
-    } else if (draft.type === 'income') {
-        // Income:
-        // Asset (FromAccount) -> Same sign as distribution (Total Amount) e.g. 100 -> Asset 100
-        // Income (Category) -> Opposite sign (e.g. 100 -> Income -100)
-        draft.fromAccount.forEach(acc => {
-             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, draft.fromAccount, 1).toFixed(2), currency })
-        })
-        draft.category.forEach(cat => {
-             posts.push({ account: cat, amount: getAmt(cat, draft.categoryDistributions, draft.category, -1).toFixed(2), currency })
-        })
-    } else if (draft.type === 'transfer') {
-        // Transfer: 
-        // From -> Opposite (100 -> -100)
-        // To -> Same (100 -> 100)
-         draft.fromAccount.forEach(acc => {
-             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, draft.fromAccount, -1).toFixed(2), currency })
-        })
-        draft.toAccount.forEach(acc => {
-             posts.push({ account: acc, amount: getAmt(acc, draft.accountDistributions, draft.toAccount, 1).toFixed(2), currency })
-        })
-    }
-    
-    return posts
-}
-
-async function submitTransaction() {
-    loading.value = true
-    try {
-        if (!draft) throw new Error("No draft")
-        
-        const tags = draft.tagString
-            .split(' ')
-            .map(t => t.trim())
-            .filter(t => t.length > 0)
-
-        const request: CreateTransactionRequest = {
-            date: draft.date,
-            description: draft.description || undefined,
-            payee: draft.payee || undefined,
-            postings: buildFinalPostings(),
-            tags: tags.length > 0 ? tags : undefined
-        }
-
-        if (isEditMode.value && editTransactionId.value) {
-            // 编辑模式：更新交易
-            await transactionStore.updateTransaction(editTransactionId.value, request)
-            f7.toast.show({ text: '交易已更新', position: 'center', closeTimeout: 2000 })
-        } else {
-            // 新建模式：创建交易
-            await transactionStore.createTransaction(request)
-        }
-        
-        transactionStore.clearTransactionDraft()
-        // 清除 sessionStorage 中的编辑 ID
-        sessionStorage.removeItem('editTransactionId')
-
-        // 标记交易列表需要刷新
-        uiStore.markTransactionsNeedsRefresh()
-
-        if (isEditMode.value) {
-          // 编辑模式：返回到详情页
-          router.go(-currentDepth.value)
-        } else {
-          // 新增模式：返回记账页面，方便继续记账
-          f7.toast.show({ text: '记账成功', position: 'center', closeTimeout: 1500 })
-          // 返回到记账页面（去掉所有分配页面的历史）
-          router.replace('/transactions/add')
-        }
-    } catch (err: any) {
-        console.error(err)
-        f7.toast.show({ text: err.message || '保存失败', position: 'center', closeTimeout: 2000 })
-    } finally {
-        loading.value = false
-    }
-}
+watch(
+  () => [draft.value?.mode, side.value, accounts.value.join('|')],
+  () => initAmounts(),
+  { immediate: true },
+)
 </script>
 
 <style scoped>
-.margin-vertical {
-    margin-top: 16px;
-    margin-bottom: 16px;
-}
-.text-size-large {
-    font-size: 24px;
-}
-.disabled {
-    opacity: 0.5;
-    pointer-events: none;
-}
-
-/* Keypad Styles */
-.cursor {
-    margin-left: 2px;
-    animation: blink 1s infinite;
-    font-weight: 300;
-    color: var(--f7-theme-color);
-}
-@keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
-}
-
-.keypad-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-    padding: 8px;
-    background: #f0f0f5;
-    padding-bottom: calc(8px + var(--f7-safe-area-bottom));
-}
-
-.key-btn {
-    appearance: none;
-    border: none;
-    background: white;
-    border-radius: 5px;
-    font-size: 20px;
-    font-weight: 500;
-    color: #000;
-    padding: 15px 0;
-    box-shadow: 0 1px 1px rgba(0,0,0,0.2);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.key-btn:active {
-    background: #e5e5e5;
-}
-
-.action-key {
-    background: #e4e4e9;
-}
-
-.highlight {
-    background: var(--f7-theme-color);
-    color: white;
-}
-.highlight:active {
-    opacity: 0.8;
-}
-
-.op-key {
-    background: #f4d03f;
-    color: black;
-}
+.summary-card, .lines-card { margin-top: 12px; }
+.ok { color: var(--van-success-color, #07c160); font-weight: 700; }
+.bad { color: var(--bm-expense, #ee0a24); font-weight: 700; }
+.account-path { display: none; }
 </style>

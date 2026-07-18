@@ -1,139 +1,96 @@
 # BeanMind
 
-基于 Beancount 的个人财务管理系统
+BeanMind 是基于 Beancount 的单机个人财务系统，固定为单部署、单账本、单写者。
 
-## 项目概述
+- Beancount 是账户、交易、分录和汇率的唯一真值。
+- SQLite 保存应用数据和可从 Beancount 重建的查询投影。
+- 后端使用 FastAPI、同步 SQLAlchemy；前端使用 Vue 3、TypeScript、Vue Router、Vant 4 和 Vite。
+- 可选 AI 月度复盘通过 OpenAI-compatible Chat Completions 调用模型。
+- 不提供登录、权限、远端同步或应用内备份；备份由 NAS 或部署环境负责。
 
-BeanMind 是一个功能完整的个人记账软件，提供：
-- ✅ 灵活的鉴权系统（单用户/无用户模式）
-- 📝 完整的记账功能（收入/支出/转账）
-- 💰 智能预算管理
-- 🔄 周期任务自动化
-- 📊 数据分析与可视化
-- 💾 可插拔的数据备份
+## 启动
 
-## 技术栈
-
-**后端**：
-- Python 3.10+
-- FastAPI
-- Beancount
-- SQLite
-- SQLAlchemy
-
-**前端**：
-- Vue 3
-- Framework7-Vue
-- Pinia
-- Vite
-
-## 项目结构
-
-```
-BeanMind/
-├── backend/                 # 后端代码
-│   ├── main.py             # 应用入口
-│   ├── config/             # 配置管理
-│   ├── interfaces/         # 接口层（API、DTO）
-│   ├── application/        # 应用层（服务、编排）
-│   ├── domain/             # 领域层（实体、服务、仓储接口）
-│   └── infrastructure/     # 基础设施层（数据库、Beancount、备份）
-├── frontend/               # 前端代码
-│   └── src/
-├── scripts/                # 工具脚本
-│   └── sync_beancount.py  # 账本数据同步脚本
-├── data/                   # 数据目录
-│   ├── ledger/            # Beancount 账本文件
-│   └── beanmind.db        # SQLite 数据库
-└── design/                 # 设计文档
-```
-
-## 快速开始
-
-### 方式一：一键启动（推荐）
+需要 Python 3.10+、uv，以及 Node.js 20.19+ 或 22.12+。
 
 ```bash
-# 首次使用前，先安装 uv
-# https://docs.astral.sh/uv/
-
-# 首次运行会自动：
-# - 检查并创建虚拟环境
-# - 安装后端依赖
-# - 安装前端依赖
-# - 初始化数据文件
-# - 同时启动后端和前端服务
+cp .env.example .env
 ./start.sh
 ```
 
-启动成功后：
-- 🌐 前端应用：http://localhost:5173
-- 🔌 后端 API：http://localhost:8000
-- 📚 API 文档：http://localhost:8000/docs
+启动后访问：
 
-### 数据同步（针对已有账本）
-
-如果你有现有的 Beancount 账本文件，可以使用同步脚本将其导入数据库：
-
-```bash
-# 查看同步摘要
-uv run python scripts/sync_beancount.py --summary-only
-
-# 执行同步（首次或清除后重新同步）
-uv run python scripts/sync_beancount.py --clear
-
-# 增量同步（不清除现有数据）
-uv run python scripts/sync_beancount.py
-```
-
-同步脚本会读取 `data/ledger/main.beancount` 中的账本数据，并将交易元数据写入 SQLite 数据库。
+- 前端：<http://localhost:5173>
+- API：<http://localhost:8000>
+- API 文档：<http://localhost:8000/docs>
 
 停止服务：
+
 ```bash
-# 按 Ctrl+C 停止，或使用停止脚本
 ./stop.sh
 ```
 
-### 方式二：手动启动
-
-**后端**：
+也可以分别启动：
 
 ```bash
-# 安装 uv 后同步依赖
-uv sync --dev
-
-# 启动服务
-uv run uvicorn backend.main:app --reload
+~/.local/bin/uv sync --dev
+~/.local/bin/uv run uvicorn backend.main:app --reload
+cd frontend && npm install && npm run dev
 ```
 
-说明：
+## 数据与恢复
 
-- Python 依赖以 `pyproject.toml` 和 `uv.lock` 为准。
-- 不再使用 `requirements.txt`。
+默认账本入口是 `data/ledger/main.beancount`，数据库是 `data/beanmind.db`。流水、预算执行和报表查询依赖 SQLite 投影；投影异常会进入 `DIRTY` 状态并拒绝返回可能错误的财务结果。
 
-**前端**：
+投影可通过以下接口从 Beancount 重建：
 
 ```bash
-cd frontend
-npm install
-npm run dev
+curl -X POST http://localhost:8000/api/transactions/projection/rebuild
 ```
 
-## 环境变量
+迁移或性能测试应先使用真实账本副本或匿名化数据。SQLite 投影不得反向覆盖 Beancount。
 
-复制 `.env.example` 为 `.env` 并配置：
+### 从 `main` 升级到 3.0.0
+
+升级前先停止服务，分别备份完整 `data/ledger/` 和停机后的 `data/beanmind.db`。3.0.0 只保留一个迁移入口，默认命令只读预览：
 
 ```bash
-# 鉴权模式
-AUTH_MODE=single_user
-SINGLE_USER_USERNAME=admin
-SINGLE_USER_PASSWORD=your-password
+cp data/beanmind.db /外部备份目录/beanmind-before-v3.db
+uv run python scripts/migrate_v3.py data/beanmind.db \
+  --ledger data/ledger/main.beancount
+```
 
-# JWT 配置
-JWT_SECRET_KEY=your-secret-key
-JWT_EXPIRATION_HOURS=24
+核对预览中的账本交易/分录数、周期规则/执行数和待删除预算数后，明确放弃旧预算并执行：
 
-# 数据路径
-DATA_DIR=./data
+```bash
+uv run python scripts/migrate_v3.py data/beanmind.db \
+  --ledger data/ledger/main.beancount \
+  --apply \
+  --backup /外部备份目录/beanmind-before-v3.db \
+  --confirm-drop-budgets
+```
+
+脚本会完整保留周期记账，删除旧预算和废弃元数据，并只从 Beancount 重建流水投影。备份与源数据库不是完全相同的停机副本、存在未 checkpoint 的非空 SQLite WAL、账本无法解析或周期执行存在孤儿关联时，迁移会拒绝开始。迁移后应确认报告中投影为 `READY`、流水数量一致、周期规则与执行数一致、月度预算为空；如需回退，先停止服务，再恢复已校验的 SQLite 外部备份，账本无需由 SQLite 回写。
+
+## LLM 配置
+
+默认关闭。启用时在 `.env` 配置：
+
+```dotenv
+LLM_ENABLED=true
+LLM_BASE_URL=https://example.com/v1
+LLM_API_KEY=your-api-key
+LLM_MODEL=your-model
+LLM_TIMEOUT_SECONDS=30
+```
+
+模型只生成月度总结和建议，金额、预算和趋势由确定性代码计算。模型失败不影响记账、查询和预算。
+
+## 验证
+
+```bash
+~/.local/bin/uv run pytest tests/ -v
+cd frontend && npm run test:run && npm run build
+openspec validate complete-beanmind-core-reform --type change --strict --no-interactive
 ```
 
 

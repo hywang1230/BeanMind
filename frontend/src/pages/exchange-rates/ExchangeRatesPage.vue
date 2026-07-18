@@ -1,799 +1,553 @@
 <template>
-    <f7-page name="exchange-rates">
-        <f7-navbar>
-            <f7-nav-left>
-                <f7-link @click="goBack">
-                    <f7-icon ios="f7:chevron_left" md="material:arrow_back" />
-                </f7-link>
-            </f7-nav-left>
-            <f7-nav-title>汇率管理</f7-nav-title>
-            <f7-nav-right>
-                <f7-link @click="showCreateModal = true">
-                    <f7-icon ios="f7:plus" md="material:add" />
-                </f7-link>
-            </f7-nav-right>
-        </f7-navbar>
+  <section class="page secondary-page exchange-rates-page">
+    <van-nav-bar title="汇率" left-arrow @click-left="router.back()">
+      <template #right>
+        <van-button size="small" type="primary" plain @click="openCreate()">添加</van-button>
+      </template>
+    </van-nav-bar>
 
-        <!-- 主货币提示 -->
-        <f7-block class="quote-currency-info">
-            <div class="info-icon">💱</div>
-            <div class="info-text">
-                <strong>主货币：{{ quoteCurrency }}</strong>
-                <p>以下汇率均表示对主货币的比率<br>例如：1 USD = {{ getDisplayRate('USD') }} CNY</p>
-            </div>
-        </f7-block>
+    <article class="quote-card">
+      <div class="quote-card__title">主货币：{{ quoteCurrency }}</div>
+      <p class="quote-card__desc">
+        汇率来自币种目录中已启用的外币，表示 1 单位源货币可兑换的主货币数量。
+        例如：1 {{ exampleCurrency }} = {{ exampleRate }} {{ quoteCurrency }}
+      </p>
+    </article>
 
-        <!-- 加载状态 -->
-        <div v-if="loading && exchangeRates.length === 0" class="loading-container">
-            <f7-preloader></f7-preloader>
+    <div v-if="loading && !rates.length" class="state-card"><van-loading /></div>
+    <van-empty v-else-if="error && !rates.length" image="error" :description="error">
+      <van-button @click="load">重试</van-button>
+    </van-empty>
+    <van-empty v-else-if="!rates.length" description="账本中暂无汇率">
+      <van-button type="primary" size="small" @click="openCreate()">添加汇率</van-button>
+    </van-empty>
+
+    <van-cell-group v-else inset class="rate-list">
+      <van-cell
+        v-for="rate in rates"
+        :key="`${rate.currency}-${rate.effective_date}`"
+        is-link
+        :title="rate.currency_pair || `${rate.currency}/${rate.quote_currency}`"
+        :value="rate.rate"
+        :label="`生效日期：${rate.effective_date}`"
+        @click="openDetail(rate)"
+      />
+    </van-cell-group>
+
+    <van-notice-bar
+      v-if="error && rates.length"
+      color="var(--bm-expense)"
+      background="var(--bm-danger-soft)"
+    >
+      {{ error }}
+    </van-notice-bar>
+
+    <!-- 详情 + 历史 -->
+    <van-popup v-model:show="showDetail" position="bottom" round :style="{ minHeight: '55%' }">
+      <div class="panel" v-if="selectedRate">
+        <header class="panel-header">
+          <strong>{{ selectedRate.currency }}/{{ quoteCurrency }} 详情</strong>
+          <button type="button" class="header-action" @click="showDetail = false">关闭</button>
+        </header>
+
+        <van-cell-group inset>
+          <van-cell title="最新汇率" :value="selectedRate.rate" />
+          <van-cell title="生效日期" :value="selectedRate.effective_date" />
+        </van-cell-group>
+
+        <div class="panel-actions">
+          <van-button size="small" type="primary" plain @click="openCreateForCurrency(selectedRate.currency)">
+            添加汇率
+          </van-button>
+          <van-button size="small" type="primary" plain @click="openEdit(selectedRate)">编辑最新</van-button>
+          <van-button size="small" type="danger" plain :loading="deleting" @click="confirmDelete(selectedRate)">
+            删除最新
+          </van-button>
         </div>
 
-        <!-- 空状态 -->
-        <div v-else-if="exchangeRates.length === 0" class="empty-state">
-            <div class="empty-icon">💰</div>
-            <div class="empty-text">暂无汇率记录</div>
-            <p class="empty-hint">点击右上角的 + 按钮添加汇率</p>
-            <f7-button fill round @click="showCreateModal = true">
-                添加汇率
-            </f7-button>
-        </div>
+        <h3 class="panel-subtitle">历史汇率</h3>
+        <div v-if="historyLoading" class="state-card"><van-loading size="24px" /></div>
+        <van-empty v-else-if="!history.length" description="暂无历史记录" />
+        <van-cell-group v-else inset>
+          <van-cell
+            v-for="item in history"
+            :key="`${item.currency}-${item.effective_date}`"
+            :title="item.effective_date"
+            :value="item.rate"
+          >
+            <template #label>
+              <div class="history-actions">
+                <button type="button" class="link-btn" @click.stop="openEdit(item)">编辑</button>
+                <button type="button" class="link-btn link-btn--danger" @click.stop="confirmDelete(item)">删除</button>
+              </div>
+            </template>
+          </van-cell>
+        </van-cell-group>
+      </div>
+    </van-popup>
 
-        <!-- 汇率列表 -->
-        <f7-list v-else strong-ios dividers-ios inset class="exchange-rate-list">
-            <f7-list-item v-for="rate in exchangeRates" :key="rate.currency" :title="rate.currency"
-                :subtitle="`生效日期: ${formatDate(rate.effective_date)}`" swipeout @click="showRateDetail(rate)">
-                <template #media>
-                    <div class="currency-icon">
-                        {{ getCurrencySymbol(rate.currency) }}
-                    </div>
-                </template>
-                <template #after>
-                    <span class="rate-value">{{ rate.rate }}</span>
-                </template>
-                <f7-swipeout-actions right>
-                    <f7-swipeout-button color="blue" @click.stop="editRate(rate)">
-                        编辑
-                    </f7-swipeout-button>
-                    <f7-swipeout-button color="red" @click.stop="confirmDeleteRate(rate)">
-                        删除
-                    </f7-swipeout-button>
-                </f7-swipeout-actions>
-            </f7-list-item>
-        </f7-list>
+    <!-- 新增 / 编辑 -->
+    <van-popup v-model:show="showForm" position="bottom" round :style="{ minHeight: '50%' }">
+      <div class="panel">
+        <header class="panel-header">
+          <strong>{{ isEditing ? '编辑汇率' : '添加汇率' }}</strong>
+          <button type="button" class="header-action" @click="showForm = false">关闭</button>
+        </header>
 
-        <!-- 创建汇率弹窗 -->
-        <f7-popup :opened="showCreateModal" @popup:closed="onCreateModalClosed">
-            <f7-page>
-                <f7-navbar>
-                    <f7-nav-left>
-                        <f7-link @click="handleCreateModalBack">
-                            <f7-icon ios="f7:chevron_left" md="material:arrow_back" />
-                        </f7-link>
-                    </f7-nav-left>
-                    <f7-nav-title>{{ isEditing ? '编辑汇率' : '添加汇率' }}</f7-nav-title>
-                    <f7-nav-right>
-                        <f7-link @click="handleSaveRate" :disabled="!canSave || saving">
-                            {{ saving ? '保存中' : '保存' }}
-                        </f7-link>
-                    </f7-nav-right>
-                </f7-navbar>
+        <van-form @submit="saveRate">
+          <van-cell-group inset>
+            <SelectPickerField
+              v-if="!isEditing"
+              v-model="form.currency"
+              label="源货币"
+              :options="sourceCurrencyOptions"
+              placeholder="请选择源货币"
+              :rules="[{ required: true, message: '请选择源货币' }]"
+              :error="currencyFieldError"
+            />
+            <van-cell v-else title="源货币" :value="sourceCurrencyLabel(form.currency)" />
 
-                <f7-list strong-ios dividers-ios inset>
-                    <!-- 编辑模式或从详情页新增：源货币只读 -->
-                    <f7-list-input v-if="isEditing || editFromDetail" label="源货币" type="text"
-                        :value="`${newRate.currency} - ${getCurrencyName(newRate.currency)}`" readonly />
+            <van-field
+              v-model="form.rate"
+              label="汇率"
+              type="text"
+              inputmode="decimal"
+              placeholder="如 7.1234"
+              required
+              :error-message="rateFieldError"
+              @update:model-value="onRateInput"
+            />
 
-                    <!-- 从列表新增：可选择货币 -->
-                    <f7-list-input v-else label="源货币" type="select" :value="newRate.currency"
-                        @input="newRate.currency = $event.target.value">
-                        <option value="" disabled>请选择货币</option>
-                        <option v-for="curr in availableCurrencies" :key="curr" :value="curr">
-                            {{ curr }} - {{ getCurrencyName(curr) }}
-                        </option>
-                    </f7-list-input>
+            <DatePickerField
+              v-if="!isEditing"
+              v-model="form.effective_date"
+              label="生效日期"
+              :rules="[{ required: true, message: '请选择生效日期' }]"
+            />
+            <van-cell v-else title="生效日期" :value="form.effective_date" />
 
-                    <f7-list-input label="汇率" type="number" step="0.0001" placeholder="请输入汇率" :value="newRate.rate"
-                        @input="newRate.rate = $event.target.value" info="表示 1 单位源货币 = 多少主货币" required />
+            <van-cell title="目标货币" :value="quoteCurrency" />
+          </van-cell-group>
 
-                    <f7-list-input label="生效日期" type="text" :value="formatDateForDisplay(newRate.effective_date)"
-                        readonly @click="openCalendar" placeholder="点击选择日期" />
+          <div class="preview-card">
+            <div class="preview-label">Beancount 预览</div>
+            <code class="preview-code">{{ beancountPreview }}</code>
+          </div>
 
-                    <f7-list-item title="目标货币（主货币）" :after="quoteCurrency" />
-                </f7-list>
-
-                <f7-block v-if="saveError" class="error-block">
-                    <p>{{ saveError }}</p>
-                </f7-block>
-
-                <!-- Beancount 格式预览 -->
-                <f7-block-title>Beancount 格式预览</f7-block-title>
-                <f7-block class="beancount-preview">
-                    <code>{{ beancountPreview }}</code>
-                </f7-block>
-            </f7-page>
-        </f7-popup>
-
-        <!-- 汇率详情弹窗 -->
-        <f7-popup :opened="showDetailModal" @popup:closed="showDetailModal = false">
-            <f7-page v-if="selectedRate">
-                <f7-navbar>
-                    <f7-nav-left>
-                        <f7-link popup-close>
-                            <f7-icon ios="f7:chevron_left" md="material:arrow_back" />
-                        </f7-link>
-                    </f7-nav-left>
-                    <f7-nav-title>{{ selectedRate.currency }}/{{ selectedRate.quote_currency }}</f7-nav-title>
-                    <f7-nav-right>
-                        <f7-link @click="addNewRateForCurrency">
-                            <f7-icon ios="f7:plus" md="material:add" />
-                        </f7-link>
-                    </f7-nav-right>
-                </f7-navbar>
-
-                <f7-block class="rate-detail-header">
-                    <div class="rate-detail-icon">{{ getCurrencySymbol(selectedRate.currency) }}</div>
-                    <div class="rate-detail-value">{{ selectedRate.rate }}</div>
-                    <div class="rate-detail-pair">{{ selectedRate.currency_pair }}</div>
-                </f7-block>
-
-                <f7-list strong-ios dividers-ios inset>
-                    <f7-list-item title="源货币" :after="selectedRate.currency" />
-                    <f7-list-item title="目标货币" :after="selectedRate.quote_currency" />
-                    <f7-list-item title="汇率" :after="selectedRate.rate" />
-                    <f7-list-item title="生效日期" :after="formatDate(selectedRate.effective_date)" />
-                </f7-list>
-
-                <!-- 历史汇率 -->
-                <f7-block-title v-if="rateHistory.length > 0">历史汇率（点击编辑，左滑删除）</f7-block-title>
-                <f7-list v-if="rateHistory.length > 0" strong-ios dividers-ios inset>
-                    <f7-list-item v-for="(rate, index) in rateHistory" :key="index"
-                        :title="formatDate(rate.effective_date)" :after="rate.rate"
-                        :class="{ 'current-rate': rate.effective_date === selectedRate?.effective_date }" link="#"
-                        swipeout @click="editHistoryRate(rate)">
-                        <f7-swipeout-actions right>
-                            <f7-swipeout-button color="red" @click.stop="confirmDeleteHistoryRate(rate)">
-                                删除
-                            </f7-swipeout-button>
-                        </f7-swipeout-actions>
-                    </f7-list-item>
-                </f7-list>
-
-                <f7-block>
-                    <f7-button fill color="red" @click="confirmDeleteRate(selectedRate)">
-                        删除此汇率
-                    </f7-button>
-                </f7-block>
-            </f7-page>
-        </f7-popup>
-    </f7-page>
+          <div class="panel-submit">
+            <van-button block type="primary" native-type="submit" :loading="saving" :disabled="saving">
+              {{ saving ? '保存中' : '保存' }}
+            </van-button>
+          </div>
+          <van-notice-bar
+            v-if="saveError"
+            color="var(--bm-expense)"
+            background="var(--bm-danger-soft)"
+          >
+            {{ saveError }}
+          </van-notice-bar>
+        </van-form>
+      </div>
+    </van-popup>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { showConfirmDialog, showToast } from 'vant'
 import { useRouter } from 'vue-router'
-import { exchangeRatesApi, type ExchangeRate } from '../../api/exchangeRates'
-import { f7 } from 'framework7-vue'
+import {
+  exchangeRatesApi,
+  type ExchangeRate,
+} from '../../api/exchangeRates'
+import { currenciesApi, type CurrencyItem } from '../../api/currencies'
+import type { ApiError } from '../../api/client'
+import DatePickerField from '../../components/DatePickerField.vue'
+import SelectPickerField from '../../components/SelectPickerField.vue'
+import { isValidAmount, normalizeAmountInput } from '../../utils/decimal'
 
 const router = useRouter()
-
-// 状态
-const loading = ref(false)
-const saving = ref(false)
-const exchangeRates = ref<ExchangeRate[]>([])
 const quoteCurrency = ref('CNY')
-const commonCurrencies = ref<string[]>([])
+const catalogCurrencies = ref<CurrencyItem[]>([])
+const rates = ref<ExchangeRate[]>([])
+const loading = ref(false)
+const error = ref('')
 
-// 弹窗状态
-const showCreateModal = ref(false)
-const showDetailModal = ref(false)
-const isEditing = ref(false)
+const showDetail = ref(false)
 const selectedRate = ref<ExchangeRate | null>(null)
-const rateHistory = ref<ExchangeRate[]>([])
+const history = ref<ExchangeRate[]>([])
+const historyLoading = ref(false)
+const deleting = ref(false)
 
-// 表单数据
-const newRate = ref({
-    currency: '',
-    rate: '',
-    effective_date: new Date().toISOString().split('T')[0]
-})
+const showForm = ref(false)
+const isEditing = ref(false)
+const saving = ref(false)
 const saveError = ref('')
+const rateFieldError = ref('')
+const currencyFieldError = ref('')
+const returnToDetailCurrency = ref('')
 
-// 可选货币列表（排除已有汇率的货币和主货币）
-const availableCurrencies = computed(() => {
-    const existingCurrencies = new Set(exchangeRates.value.map(r => r.currency))
-    existingCurrencies.add(quoteCurrency.value)
-    return commonCurrencies.value.filter(c => !existingCurrencies.has(c))
+const form = reactive({
+  currency: '',
+  rate: '',
+  effective_date: todayIso(),
 })
 
-// 是否可以保存
-const canSave = computed(() => {
-    return newRate.value.currency && newRate.value.rate && parseFloat(newRate.value.rate) > 0
+const enabledSourceCodes = computed(() => {
+  const quote = quoteCurrency.value.toUpperCase()
+  return catalogCurrencies.value
+    .filter((item) => item.enabled && item.code.toUpperCase() !== quote)
+    .map((item) => item.code.toUpperCase())
 })
 
-// Beancount 格式预览
+const sourceCurrencyOptions = computed(() =>
+  catalogCurrencies.value
+    .filter((item) => item.enabled && item.code.toUpperCase() !== quoteCurrency.value.toUpperCase())
+    .map((item) => ({
+      text: `${item.code} - ${item.name}`,
+      value: item.code.toUpperCase(),
+    })),
+)
+
+const exampleRateItem = computed(() => {
+  const preferred = rates.value.find((item) => item.currency.toUpperCase() === 'USD')
+  return preferred || rates.value[0] || null
+})
+
+const exampleCurrency = computed(() => exampleRateItem.value?.currency || 'USD')
+const exampleRate = computed(() => exampleRateItem.value?.rate || '—')
+
 const beancountPreview = computed(() => {
-    if (!newRate.value.currency || !newRate.value.rate) {
-        return '请填写完整信息'
-    }
-    const date = newRate.value.effective_date || new Date().toISOString().split('T')[0]
-    return `${date} price ${newRate.value.currency} ${newRate.value.rate} ${quoteCurrency.value}`
+  const datePart = form.effective_date || 'YYYY-MM-DD'
+  const currency = form.currency || 'CURRENCY'
+  const rate = form.rate || 'RATE'
+  return `${datePart} price ${currency} ${rate} ${quoteCurrency.value}`
 })
 
-// 货币符号映射
-const currencySymbols: Record<string, string> = {
-    CNY: '¥',
-    USD: '$',
-    EUR: '€',
-    GBP: '£',
-    JPY: '¥',
-    HKD: '$',
-    TWD: '$',
-    SGD: '$',
-    AUD: '$',
-    CAD: '$',
-    CHF: '₣',
-    KRW: '₩'
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
 }
 
-// 货币名称映射
-const currencyNames: Record<string, string> = {
-    CNY: '人民币',
-    USD: '美元',
-    EUR: '欧元',
-    GBP: '英镑',
-    JPY: '日元',
-    HKD: '港币',
-    TWD: '新台币',
-    SGD: '新加坡元',
-    AUD: '澳元',
-    CAD: '加元',
-    CHF: '瑞士法郎',
-    KRW: '韩元'
+function sourceCurrencyLabel(code: string) {
+  const upper = code.toUpperCase()
+  const item = catalogCurrencies.value.find((entry) => entry.code.toUpperCase() === upper)
+  if (!item) return upper
+  return `${item.code} - ${item.name}`
 }
 
-function getCurrencySymbol(currency: string): string {
-    return currencySymbols[currency] || currency.charAt(0)
+function defaultSourceCurrency() {
+  const options = sourceCurrencyOptions.value
+  const usd = options.find((option) => option.value === 'USD')
+  return usd?.value || options[0]?.value || ''
 }
 
-function getCurrencyName(currency: string): string {
-    return currencyNames[currency] || currency
+function onRateInput(value: string) {
+  form.rate = normalizeAmountInput(value)
+  rateFieldError.value = ''
 }
 
-function formatDate(dateStr: string): string {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
+async function load() {
+  loading.value = true
+  error.value = ''
+  try {
+    const [catalog, list] = await Promise.all([
+      currenciesApi.list(true),
+      exchangeRatesApi.getExchangeRates(quoteCurrency.value),
+    ])
+    catalogCurrencies.value = catalog
+    const quote = quoteCurrency.value.toUpperCase()
+    const enabledCodes = new Set(
+      catalog
+        .filter((item) => item.enabled && item.code.toUpperCase() !== quote)
+        .map((item) => item.code.toUpperCase()),
+    )
+    rates.value = list.filter((item) => enabledCodes.has(item.currency.toUpperCase()))
+  } catch (reason) {
+    error.value = (reason as ApiError).message || '汇率加载失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function openDetail(rate: ExchangeRate) {
+  selectedRate.value = rate
+  showDetail.value = true
+  historyLoading.value = true
+  try {
+    history.value = await exchangeRatesApi.getExchangeRateHistory(
+      rate.currency,
+      quoteCurrency.value,
+    )
+    if (history.value.length) {
+      selectedRate.value = history.value[0]!
+    }
+  } catch (reason) {
+    history.value = [rate]
+    showToast((reason as ApiError).message || '历史加载失败')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+function resetForm() {
+  form.currency = defaultSourceCurrency()
+  form.rate = ''
+  form.effective_date = todayIso()
+  isEditing.value = false
+  saveError.value = ''
+  rateFieldError.value = ''
+  currencyFieldError.value = ''
+}
+
+function openCreate() {
+  if (!sourceCurrencyOptions.value.length) {
+    showToast('暂无可用外币，请先在币种管理中启用或新增')
+    return
+  }
+  resetForm()
+  showForm.value = true
+}
+
+function openCreateForCurrency(currency: string) {
+  const code = currency.toUpperCase()
+  if (!enabledSourceCodes.value.includes(code)) {
+    showToast('该币种未在币种目录中启用')
+    return
+  }
+  returnToDetailCurrency.value = code
+  showDetail.value = false
+  resetForm()
+  form.currency = code
+  showForm.value = true
+}
+
+function openEdit(rate: ExchangeRate) {
+  const code = rate.currency.toUpperCase()
+  resetForm()
+  isEditing.value = true
+  form.currency = code
+  form.rate = rate.rate
+  form.effective_date = rate.effective_date
+  returnToDetailCurrency.value = code
+  showDetail.value = false
+  showForm.value = true
+}
+
+function validateForm(): boolean {
+  rateFieldError.value = ''
+  currencyFieldError.value = ''
+  saveError.value = ''
+
+  form.currency = (form.currency || '').toUpperCase()
+  if (!form.currency) {
+    currencyFieldError.value = '请选择源货币'
+    return false
+  }
+  if (!enabledSourceCodes.value.includes(form.currency)) {
+    currencyFieldError.value = '请选择币种目录中已启用的外币'
+    return false
+  }
+  if (!form.rate || !isValidAmount(form.rate, { allowNegative: false, allowZero: false })) {
+    rateFieldError.value = '请输入大于 0 的汇率'
+    return false
+  }
+  if (!isEditing.value && !form.effective_date) {
+    saveError.value = '请选择生效日期'
+    return false
+  }
+  return true
+}
+
+async function saveRate() {
+  if (saving.value) return
+  if (!validateForm()) return
+
+  saving.value = true
+  saveError.value = ''
+  const currencyToReturn = returnToDetailCurrency.value || form.currency
+  try {
+    if (isEditing.value) {
+      await exchangeRatesApi.updateExchangeRate(
+        form.currency,
+        form.effective_date,
+        { rate: form.rate },
+        quoteCurrency.value,
+      )
+      showToast('汇率已更新')
+    } else {
+      await exchangeRatesApi.createExchangeRate({
+        currency: form.currency,
+        rate: form.rate,
+        quote_currency: quoteCurrency.value,
+        effective_date: form.effective_date,
+      })
+      showToast('汇率已添加')
+    }
+
+    showForm.value = false
+    resetForm()
+    await load()
+
+    if (currencyToReturn) {
+      const latest = rates.value.find((item) => item.currency === currencyToReturn)
+      if (latest) {
+        await openDetail(latest)
+      }
+      returnToDetailCurrency.value = ''
+    }
+  } catch (reason) {
+    saveError.value = (reason as ApiError).message || '保存失败，请重试'
+  } finally {
+    saving.value = false
+  }
+}
+
+async function confirmDelete(rate: ExchangeRate) {
+  try {
+    await showConfirmDialog({
+      title: '确认删除',
+      message: `确定删除 ${rate.currency}/${rate.quote_currency}（${rate.effective_date}）的汇率吗？`,
     })
-}
+  } catch {
+    return
+  }
 
-function getDisplayRate(currency: string): string {
-    const rate = exchangeRates.value.find(r => r.currency === currency)
-    return rate?.rate || '?'
-}
+  deleting.value = true
+  try {
+    await exchangeRatesApi.deleteExchangeRate(
+      rate.currency,
+      rate.effective_date,
+      quoteCurrency.value,
+    )
+    showToast('汇率已删除')
+    await load()
 
-async function loadExchangeRates() {
-    loading.value = true
-    try {
-        exchangeRates.value = await exchangeRatesApi.getExchangeRates(quoteCurrency.value)
-    } catch (error) {
-        console.error('Failed to load exchange rates:', error)
-        f7.toast.create({
-            text: '加载汇率失败',
-            position: 'center',
-            closeTimeout: 2000
-        }).open()
-    } finally {
-        loading.value = false
+    if (showDetail.value && selectedRate.value) {
+      const currency = selectedRate.value.currency
+      const remaining = await exchangeRatesApi.getExchangeRateHistory(
+        currency,
+        quoteCurrency.value,
+      )
+      history.value = remaining
+      if (!remaining.length) {
+        showDetail.value = false
+        selectedRate.value = null
+      } else {
+        selectedRate.value = remaining[0]!
+      }
     }
+  } catch (reason) {
+    showToast((reason as ApiError).message || '删除失败')
+  } finally {
+    deleting.value = false
+  }
 }
 
-async function loadCommonCurrencies() {
-    try {
-        commonCurrencies.value = await exchangeRatesApi.getCommonCurrencies()
-    } catch (error) {
-        console.error('Failed to load common currencies:', error)
-        // 使用默认列表
-        commonCurrencies.value = ['USD', 'EUR', 'GBP', 'JPY', 'HKD', 'TWD', 'SGD', 'AUD', 'CAD', 'CHF', 'KRW']
-    }
-}
-
-function resetCreateForm() {
-    showCreateModal.value = false
-    isEditing.value = false
-    editFromDetail.value = false
-    editingCurrency.value = ''
-    newRate.value = {
-        currency: '',
-        rate: '',
-        effective_date: new Date().toISOString().split('T')[0]
-    }
-    saveError.value = ''
-}
-
-// 处理创建弹窗返回按钮点击
-async function handleCreateModalBack() {
-    const shouldReturnToDetail = editFromDetail.value
-    const currencyToReturn = editingCurrency.value
-
-    // 关闭创建弹窗
-    showCreateModal.value = false
-
-    // 如果是从详情页进入，返回详情页
-    if (shouldReturnToDetail && currencyToReturn) {
-        try {
-            const rates = await exchangeRatesApi.getExchangeRateHistory(
-                currencyToReturn,
-                quoteCurrency.value
-            )
-            if (rates.length > 0) {
-                selectedRate.value = rates[0]!
-                rateHistory.value = rates
-                showDetailModal.value = true
-            }
-        } catch (error) {
-            console.error('Failed to load rate history:', error)
-        }
-    }
-
-    // 重置表单状态
-    isEditing.value = false
-    editFromDetail.value = false
-    editingCurrency.value = ''
-    newRate.value = {
-        currency: '',
-        rate: '',
-        effective_date: new Date().toISOString().split('T')[0]
-    }
-    saveError.value = ''
-}
-
-// 弹窗关闭时的回调（通过其他方式关闭时）
-function onCreateModalClosed() {
-    // 只重置表单状态，不处理返回逻辑（因为可能已经通过 handleCreateModalBack 处理过了）
-    if (!showDetailModal.value) {
-        isEditing.value = false
-        editFromDetail.value = false
-        editingCurrency.value = ''
-        newRate.value = {
-            currency: '',
-            rate: '',
-            effective_date: new Date().toISOString().split('T')[0]
-        }
-        saveError.value = ''
-    }
-}
-
-async function handleSaveRate() {
-    if (!canSave.value) return
-
-    saving.value = true
-    saveError.value = ''
-
-    const currencyToReturn = editFromDetail.value ? editingCurrency.value : ''
-
-    try {
-        if (isEditing.value) {
-            const effectiveDate = newRate.value.effective_date || new Date().toISOString().split('T')[0]!
-            await exchangeRatesApi.updateExchangeRate(
-                newRate.value.currency,
-                effectiveDate,
-                { rate: newRate.value.rate },
-                quoteCurrency.value
-            )
-            f7.toast.create({
-                text: '汇率更新成功',
-                position: 'center',
-                closeTimeout: 2000
-            }).open()
-        } else {
-            await exchangeRatesApi.createExchangeRate({
-                currency: newRate.value.currency,
-                rate: newRate.value.rate,
-                quote_currency: quoteCurrency.value,
-                effective_date: newRate.value.effective_date
-            })
-            f7.toast.create({
-                text: '汇率添加成功',
-                position: 'center',
-                closeTimeout: 2000
-            }).open()
-        }
-
-        resetCreateForm()
-        await loadExchangeRates()
-
-        // 如果是从详情页编辑，返回到详情页
-        if (currencyToReturn) {
-            const latestRates = await exchangeRatesApi.getExchangeRateHistory(
-                currencyToReturn,
-                quoteCurrency.value
-            )
-            if (latestRates.length > 0) {
-                selectedRate.value = latestRates[0]!
-                rateHistory.value = latestRates
-                showDetailModal.value = true
-            }
-        }
-    } catch (err: any) {
-        saveError.value = err.message || '保存失败，请重试'
-    } finally {
-        saving.value = false
-    }
-}
-
-async function showRateDetail(rate: ExchangeRate) {
-    selectedRate.value = rate
-    showDetailModal.value = true
-
-    // 加载历史汇率
-    try {
-        rateHistory.value = await exchangeRatesApi.getExchangeRateHistory(
-            rate.currency,
-            quoteCurrency.value
-        )
-    } catch (error) {
-        console.error('Failed to load rate history:', error)
-        rateHistory.value = [rate]
-    }
-}
-
-function editRate(rate: ExchangeRate) {
-    isEditing.value = true
-    newRate.value = {
-        currency: rate.currency,
-        rate: rate.rate,
-        effective_date: rate.effective_date
-    }
-    showCreateModal.value = true
-}
-
-// 记录编辑来源，用于保存后返回正确页面
-const editFromDetail = ref(false)
-const editingCurrency = ref('')
-
-// 从详情页添加该币种的新汇率
-function addNewRateForCurrency() {
-    if (selectedRate.value) {
-        editFromDetail.value = true
-        editingCurrency.value = selectedRate.value.currency
-        isEditing.value = false
-        newRate.value = {
-            currency: selectedRate.value.currency,
-            rate: '',
-            effective_date: new Date().toISOString().split('T')[0]
-        }
-        showDetailModal.value = false
-        showCreateModal.value = true
-    }
-}
-
-// 格式化日期用于显示
-function formatDateForDisplay(dateStr: string | undefined): string {
-    if (!dateStr) return ''
-    return formatDate(dateStr)
-}
-
-// 打开日历控件
-function openCalendar() {
-    const calendarInstance = f7.calendar.create({
-        inputEl: undefined,
-        value: newRate.value.effective_date ? [new Date(newRate.value.effective_date)] : [new Date()],
-        dateFormat: 'yyyy-mm-dd',
-        closeOnSelect: true,
-        header: true,
-        headerPlaceholder: '选择生效日期',
-        toolbarCloseText: '确定',
-        monthNames: ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'],
-        monthNamesShort: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
-        dayNames: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
-        dayNamesShort: ['日', '一', '二', '三', '四', '五', '六'],
-        on: {
-            change: (_cal, value) => {
-                const dates = value as Date[]
-                if (dates && dates.length > 0) {
-                    const date = dates[0]!
-                    const year = date.getFullYear()
-                    const month = String(date.getMonth() + 1).padStart(2, '0')
-                    const day = String(date.getDate()).padStart(2, '0')
-                    newRate.value.effective_date = `${year}-${month}-${day}`
-                }
-            }
-        }
-    })
-    calendarInstance.open()
-}
-
-// 编辑历史汇率
-function editHistoryRate(rate: ExchangeRate) {
-    editFromDetail.value = true
-    editingCurrency.value = rate.currency
-    showDetailModal.value = false
-    editRate(rate)
-}
-
-// 删除历史汇率
-function confirmDeleteHistoryRate(rate: ExchangeRate) {
-    f7.dialog.create({
-        title: '确认删除',
-        text: `确定要删除 ${formatDate(rate.effective_date)} 的汇率记录吗？`,
-        buttons: [
-            {
-                text: '取消',
-                color: 'gray'
-            },
-            {
-                text: '确定',
-                onClick: async () => {
-                    try {
-                        await exchangeRatesApi.deleteExchangeRate(
-                            rate.currency,
-                            rate.effective_date,
-                            quoteCurrency.value
-                        )
-                        f7.toast.create({
-                            text: '汇率已删除',
-                            position: 'center',
-                            closeTimeout: 2000
-                        }).open()
-
-                        // 重新加载历史汇率
-                        if (selectedRate.value) {
-                            rateHistory.value = await exchangeRatesApi.getExchangeRateHistory(
-                                selectedRate.value.currency,
-                                quoteCurrency.value
-                            )
-                            // 如果历史汇率为空，关闭详情弹窗
-                            if (rateHistory.value.length === 0) {
-                                showDetailModal.value = false
-                            } else {
-                                // 更新 selectedRate 为最新的汇率
-                                selectedRate.value = rateHistory.value[0]!
-                            }
-                        }
-                        await loadExchangeRates()
-                    } catch (error: any) {
-                        f7.toast.create({
-                            text: error.message || '删除失败',
-                            position: 'center',
-                            closeTimeout: 2000
-                        }).open()
-                    }
-                }
-            }
-        ]
-    }).open()
-}
-
-function confirmDeleteRate(rate: ExchangeRate) {
-    f7.dialog.create({
-        title: '确认删除',
-        text: `确定要删除 ${rate.currency}/${rate.quote_currency} (${formatDate(rate.effective_date)}) 的汇率记录吗？`,
-        buttons: [
-            {
-                text: '取消',
-                color: 'gray'
-            },
-            {
-                text: '确定',
-                onClick: async () => {
-                    try {
-                        await exchangeRatesApi.deleteExchangeRate(
-                            rate.currency,
-                            rate.effective_date,
-                            quoteCurrency.value
-                        )
-                        f7.toast.create({
-                            text: '汇率已删除',
-                            position: 'center',
-                            closeTimeout: 2000
-                        }).open()
-
-                        showDetailModal.value = false
-                        await loadExchangeRates()
-                    } catch (error: any) {
-                        f7.toast.create({
-                            text: error.message || '删除失败',
-                            position: 'center',
-                            closeTimeout: 2000
-                        }).open()
-                    }
-                }
-            }
-        ]
-    }).open()
-}
-
-function goBack() {
-    router.back()
-}
-
-onMounted(() => {
-    loadCommonCurrencies()
-    loadExchangeRates()
-})
+onMounted(load)
 </script>
 
 <style scoped>
-/* 主货币信息块 */
-.quote-currency-info {
-    display: flex;
-    align-items: flex-start;
-    background: linear-gradient(135deg, rgba(0, 122, 255, 0.08), rgba(88, 86, 214, 0.08));
-    border-radius: 12px;
-    padding: 16px;
-    margin: 16px;
+.exchange-rates-page {
+  padding-bottom: 24px;
 }
 
-.info-icon {
-    font-size: 32px;
-    margin-right: 12px;
+.quote-card {
+  margin: 0 0 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--bm-primary-border);
+  border-radius: var(--bm-radius);
+  background: var(--bm-primary-soft);
+  color: var(--bm-text);
 }
 
-.info-text {
-    flex: 1;
+.quote-card__title {
+  font-size: 15px;
+  font-weight: 600;
 }
 
-.info-text strong {
-    font-size: 16px;
-    color: var(--text-primary);
+.quote-card__desc {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--bm-muted);
 }
 
-.info-text p {
-    font-size: 13px;
-    color: var(--text-secondary);
-    margin: 4px 0 0 0;
-    line-height: 1.4;
+.rate-list {
+  margin-top: 8px;
 }
 
-/* 加载状态 */
-.loading-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 60px 0;
+
+.panel {
+  padding: 12px 0 20px;
 }
 
-/* 空状态 */
-.empty-state {
-    text-align: center;
-    padding: 60px 20px;
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 16px 12px;
 }
 
-.empty-icon {
-    font-size: 64px;
-    margin-bottom: 16px;
+.header-action {
+  border: 0;
+  background: transparent;
+  color: var(--bm-primary);
+  font-size: 14px;
 }
 
-.empty-text {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-primary);
-    margin-bottom: 8px;
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px 4px;
 }
 
-.empty-hint {
-    font-size: 14px;
-    color: var(--text-secondary);
-    margin-bottom: 24px;
+.panel-subtitle {
+  margin: 16px 16px 8px;
+  font-size: 14px;
+  font-weight: 600;
 }
 
-/* 汇率列表 */
-.exchange-rate-list {
-    --f7-list-bg-color: var(--bg-secondary);
-    --f7-list-item-title-text-color: var(--text-primary);
-    --f7-list-item-after-text-color: var(--text-primary);
-    --f7-list-item-border-color: var(--separator);
+.history-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
 }
 
-:deep(.list .item-content) {
-    background-color: var(--bg-secondary);
+.link-btn {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--bm-primary);
+  font-size: 13px;
 }
 
-:deep(.list strong) {
-    background-color: var(--bg-secondary);
+.link-btn--danger {
+  color: var(--bm-expense);
 }
 
-/* 货币图标 */
-.currency-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, var(--ios-blue), var(--ios-purple));
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-    font-weight: 700;
+.preview-card {
+  margin: 12px 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bm-bg);
 }
 
-/* 汇率值 */
-.rate-value {
-    font-size: 17px;
-    font-weight: 600;
-    color: var(--ios-blue);
+.preview-label {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--bm-muted);
 }
 
-/* 错误块 */
-.error-block {
-    background: rgba(255, 59, 48, 0.12);
-    color: var(--ios-red);
-    padding: 16px;
-    border-radius: 8px;
-    margin: 16px;
+.preview-code {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  word-break: break-all;
+  color: var(--bm-text);
 }
 
-.error-block p {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 500;
-}
-
-/* Beancount 预览 */
-.beancount-preview {
-    background: var(--bg-secondary);
-    border-radius: 8px;
-    padding: 16px;
-    margin: 0 16px;
-}
-
-.beancount-preview code {
-    font-family: 'SF Mono', 'Monaco', 'Menlo', monospace;
-    font-size: 14px;
-    color: var(--ios-green);
-    word-break: break-all;
-}
-
-/* 汇率详情头部 */
-.rate-detail-header {
-    text-align: center;
-    padding: 24px 16px;
-}
-
-.rate-detail-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, var(--ios-blue), var(--ios-purple));
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 28px;
-    font-weight: 700;
-    margin: 0 auto 16px;
-}
-
-.rate-detail-value {
-    font-size: 36px;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin-bottom: 4px;
-}
-
-.rate-detail-pair {
-    font-size: 16px;
-    color: var(--text-secondary);
-}
-
-/* 当前汇率高亮 */
-.current-rate {
-    background: rgba(0, 122, 255, 0.08);
-}
-
-.current-rate :deep(.item-title) {
-    font-weight: 600;
-    color: var(--ios-blue);
-}
-
-/* 历史汇率列表样式 */
-:deep(.item-title) {
-    color: var(--text-primary);
-}
-
-:deep(.item-after) {
-    color: var(--text-primary);
+.panel-submit {
+  padding: 8px 16px 0;
 }
 </style>
