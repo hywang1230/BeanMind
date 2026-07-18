@@ -260,4 +260,13 @@ describe('TransactionsPage', () => {
     await flushPromises()
     expect(vi.mocked(transactionsApi.getTransactions).mock.calls.length).toBeGreaterThan(callsBefore)
   })
+
+  it('keeps the header free of an add button so tabbar can own the entry', async () => {
+    vi.mocked(transactionsApi.getTransactions).mockResolvedValue({ items: [item], next_cursor: null, has_more: false })
+    const wrapper = mount(TransactionsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.find('.fab-add').exists()).toBe(false)
+    expect(wrapper.find('.page-header button').exists()).toBe(false)
+    expect(wrapper.find('.page-header').text()).toContain('流水')
+  })
 })

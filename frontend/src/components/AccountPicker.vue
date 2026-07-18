@@ -60,11 +60,11 @@
           :key="node.name"
           type="button"
           class="account-tree-row"
-          :class="{ selected: isRowSelected(node.name), disabled: !node.selectable }"
+          :class="{ selected: isRowSelected(node.name), disabled: !nodeIsSelectable(node) }"
           :style="{ paddingLeft: `${12 + node.level * 18}px` }"
           role="treeitem"
           :aria-selected="isRowSelected(node.name)"
-          :aria-disabled="!node.selectable"
+          :aria-disabled="!nodeIsSelectable(node)"
           @click="handleRowClick(node)"
         >
           <span
@@ -77,10 +77,10 @@
           </span>
           <span v-else class="account-tree-spacer" />
           <span class="account-tree-main">
-            <span class="account-tree-label">{{ node.label }}</span>
+            <span class="account-tree-label">{{ node.label }}{{ parentHint(node) }}</span>
             <span class="account-tree-path">{{ node.name }}</span>
           </span>
-          <van-icon v-if="node.selectable && isRowSelected(node.name)" name="success" class="account-tree-selected" />
+          <van-icon v-if="nodeIsSelectable(node) && isRowSelected(node.name)" name="success" class="account-tree-selected" />
         </button>
       </div>
     </div>
@@ -110,6 +110,8 @@ const props = withDefaults(defineProps<{
   placeholder?: string
   /** 记账交易类型；用于加载「最近常用」账户/分类 */
   transactionType?: 'expense' | 'income' | 'transfer'
+  /** 允许选择父级/中间节点（预算大类）；默认仅可选真实账户 */
+  allowParentSelect?: boolean
 }>(), {
   label: '账户',
   prefixes: () => [],
@@ -122,6 +124,7 @@ const props = withDefaults(defineProps<{
   selectedAccounts: undefined,
   placeholder: '请选择账户',
   transactionType: undefined,
+  allowParentSelect: false,
 })
 
 const emit = defineEmits<{
@@ -144,10 +147,23 @@ const fieldDisplayValue = computed(() => {
   return shortName(props.modelValue)
 })
 
-const selectableAccountNames = computed(() => flatNodes.value.filter((node) => node.selectable).map((node) => node.name))
+const selectableAccountNames = computed(() =>
+  flatNodes.value
+    .filter((node) => props.allowParentSelect || node.selectable)
+    .map((node) => node.name),
+)
 
 function shortName(name: string) {
   return accountShortLabel(name, selectableAccountNames.value)
+}
+
+function nodeIsSelectable(node: VisibleAccountNode): boolean {
+  return props.allowParentSelect || node.selectable
+}
+
+function parentHint(node: VisibleAccountNode): string {
+  if (!props.allowParentSelect || !node.hasChildren) return ''
+  return '（含子分类）'
 }
 
 function isRowSelected(name: string) {
@@ -201,7 +217,7 @@ function open() {
 }
 
 function handleRowClick(node: VisibleAccountNode) {
-  if (node.selectable) {
+  if (nodeIsSelectable(node)) {
     select(node.name)
     return
   }

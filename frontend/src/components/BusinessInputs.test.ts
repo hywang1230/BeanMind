@@ -151,6 +151,37 @@ describe('business inputs', () => {
     expect(wrapper.emitted('change')).toEqual([['Expenses:Work:Lunch']])
   })
 
+  it('allows selecting synthetic parent categories when allowParentSelect is on', async () => {
+    const wrapper = mount(AccountPicker, {
+      props: {
+        modelValue: '',
+        allowParentSelect: true,
+        prefixes: ['Expenses'],
+        accounts: [
+          {
+            name: 'Expenses:JT-交通:地铁',
+            account_type: 'Expenses',
+            currencies: ['CNY'],
+          },
+          {
+            name: 'Expenses:JT-交通:打车',
+            account_type: 'Expenses',
+            currencies: ['CNY'],
+          },
+        ],
+      },
+      global: { plugins: [Vant] },
+    })
+
+    await wrapper.find('.van-field').trigger('click')
+    const parentRow = wrapper.findAll('button.account-tree-row').find((row) => row.text().includes('JT-交通'))
+    expect(parentRow).toBeTruthy()
+    expect(parentRow!.text()).toContain('含子分类')
+    expect(parentRow!.classes()).not.toContain('disabled')
+    await parentRow!.trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['Expenses:JT-交通']])
+  })
+
   it('clears optional account picker values', async () => {
     const wrapper = mount(AccountPicker, {
       props: {

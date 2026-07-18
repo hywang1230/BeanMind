@@ -236,3 +236,24 @@ def test_monthly_cashflow_trend_dirty_and_retry(core_api_client: TestClient, tem
     )
     assert recovered.status_code == 200, recovered.text
     assert len(recovered.json()["points"]) == 12
+
+def test_income_statement_items_sorted_by_share(core_api_client: TestClient):
+    """收入/支出同级明细按金额（占比）降序。"""
+    response = core_api_client.get(
+        "/api/reports/income-statement",
+        params={"start_date": "2025-01-01", "end_date": "2025-03-31"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    def assert_sorted_desc(items):
+        amounts = [Decimal(str(item["total_cny"])) for item in items]
+        assert amounts == sorted(amounts, reverse=True)
+        for item in items:
+            children = item.get("children") or []
+            if children:
+                assert_sorted_desc(children)
+
+    assert_sorted_desc(body["income"]["items"])
+    assert_sorted_desc(body["expenses"]["items"])
+

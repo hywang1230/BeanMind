@@ -128,7 +128,7 @@ onMounted(() => { load() })
 .attention-list :deep(.van-cell__title) { font-size: 16px; }
 .attention-list :deep(.van-cell__value) { display: flex; flex: none; align-items: center; margin-left: 10px; }
 .quick-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 10px; border-radius: 16px; }
-.quick-action { display: flex; height: 94px; flex-direction: column; gap: 8px; border-color: var(--bm-border); border-radius: 12px; color: var(--bm-text); font-size: 16px; }
+.quick-action { display: flex; height: 94px; flex-direction: column; gap: 8px; border-color: var(--bm-border); border-radius: var(--bm-button-radius); color: var(--bm-text); font-size: 16px; }
 .quick-action :deep(.van-button__icon) { margin: 0; color: var(--bm-primary); font-size: 28px; }
 .quick-action :deep(.van-button__content) { flex-direction: column; gap: 8px; }
 .quick-action.primary-action { color: white; }

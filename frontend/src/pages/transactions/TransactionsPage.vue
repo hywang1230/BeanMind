@@ -2,7 +2,7 @@
   <section class="page page-with-pull transactions-page">
     <div class="page-scroll">
     <van-pull-refresh v-model="refreshing" class="page-pull-refresh" pulling-text="下拉刷新" loosing-text="释放刷新" loading-text="刷新中..." success-text="刷新成功" @refresh="onRefresh">
-    <header class="page-header"><h1>流水</h1><van-button type="primary" size="small" to="/transactions/new">记一笔</van-button></header>
+    <header class="page-header"><h1>流水</h1></header>
     <div class="filter-panel page-section">
       <van-search v-model="filters.description" placeholder="搜索交易方或备注" @search="applyFilters" @clear="applyFilters" />
       <van-cell-group inset class="filter-fields">
@@ -27,7 +27,7 @@
         <template #value><span :class="amountClass(item)">{{ amount(item) }}</span></template>
       </van-cell>
     </van-cell-group>
-    <div v-if="items.length" style="padding:16px;text-align:center">
+    <div v-if="items.length" class="list-footer">
       <van-button v-if="hasMore" :loading="loadingMore" @click="loadMore">加载更多</van-button>
       <span v-else class="muted">没有更多了</span>
     </div>
@@ -166,5 +166,9 @@ onMounted(() => { load(true); loadAccounts() })
   max-width: 42%;
   font-weight: 700;
   white-space: nowrap;
+}
+.list-footer {
+  padding: 16px;
+  text-align: center;
 }
 </style>

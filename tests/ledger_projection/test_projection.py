@@ -159,8 +159,8 @@ def test_create_all_is_idempotent_and_preserves_existing_business_data(db_sessio
 
 
 def test_cursor_round_trip_and_validation():
-    cursor = encode_transaction_cursor(date(2025, 1, 15), "fixed-id")
-    assert decode_transaction_cursor(cursor) == (date(2025, 1, 15), "fixed-id")
+    cursor = encode_transaction_cursor(date(2025, 1, 15), 42, "fixed-id")
+    assert decode_transaction_cursor(cursor) == (date(2025, 1, 15), 42, "fixed-id")
 
     for invalid in ("%%", "e30", "eyJ2IjoyLCJkYXRlIjoiMjAyNS0wMS0xNSIsImlkIjoieCJ9"):
         with pytest.raises(InvalidTransactionCursorError):
@@ -183,6 +183,20 @@ def test_keyset_paging_has_no_duplicates_or_omissions(db_session, ledger_path):
     assert len(ids) == 6
     assert len(set(ids)) == 6
     assert ids[0] not in {"fixed-lunch-2025-01-15", "fixed-salary-2025-01"}
+
+
+def test_same_day_items_ordered_by_source_lineno_desc(db_session, ledger_path):
+    LedgerProjectionService(db_session, ledger_path).rebuild_all()
+    query = TransactionQueryService(db_session, ledger_path)
+    page = query.list_transactions(start_date="2025-01-15", end_date="2025-01-15")
+    assert [item["id"] for item in page["items"]] == [
+        "fixed-lunch-2025-01-15",
+        "fixed-salary-2025-01",
+    ]
+    assert [item["meta"]["lineno"] for item in page["items"]] == sorted(
+        (item["meta"]["lineno"] for item in page["items"]),
+        reverse=True,
+    )
 
 
 def test_newer_transaction_inserted_between_pages_does_not_shift_cursor(db_session, ledger_path):

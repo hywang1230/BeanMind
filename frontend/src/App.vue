@@ -9,7 +9,11 @@ import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useUIStore } from './stores/ui'
 
-const themeVars = { primaryColor: 'var(--bm-primary)' }
+const themeVars = {
+  primaryColor: 'var(--bm-primary)',
+  buttonRadius: 'var(--bm-button-radius)',
+  buttonRoundRadius: 'var(--bm-button-radius)',
+}
 const ui = useUIStore()
 const { isDark } = storeToRefs(ui)
 const vantTheme = computed(() => isDark.value ? 'dark' : 'light')
