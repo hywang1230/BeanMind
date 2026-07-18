@@ -48,7 +48,11 @@ const selectedValues = ref<Array<string | number>>([props.modelValue])
 const displayValue = computed(() => props.options.find(option => option.value === props.modelValue)?.text || '')
 
 function open() {
-  selectedValues.value = [props.modelValue]
+  if (!props.options.length) return
+  const current = props.options.some((option) => option.value === props.modelValue)
+    ? props.modelValue
+    : props.options[0]?.value || ''
+  selectedValues.value = [current]
   show.value = true
 }
 

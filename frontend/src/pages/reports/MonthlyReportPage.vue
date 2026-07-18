@@ -5,7 +5,7 @@
     <div v-if="loading" class="state-card"><van-loading>加载中</van-loading></div>
     <van-empty v-else-if="error && !review" image="error" :description="error"><van-button @click="load">重试</van-button></van-empty>
     <template v-else-if="review">
-      <div class="review-status" :class="`status-${review.status.toLowerCase()}`">{{ statusText(review.status) }}<span v-if="review.generated_at"> · {{ review.generated_at }}</span></div>
+      <div class="review-status" :class="`status-${review.status.toLowerCase()}`">{{ statusText(review.status) }}<span v-if="review.generated_at"> · {{ formatGeneratedAt(review.generated_at) }}</span></div>
       <van-notice-bar v-if="review.status === 'DISABLED'">LLM 未启用，确定性财务事实仍可查看</van-notice-bar>
       <van-notice-bar v-else-if="review.status === 'FAILED'" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ review.last_error || '生成失败，可在下方重试' }}</van-notice-bar>
       <h2 class="section-heading">本月事实</h2>
@@ -27,6 +27,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'; import { useRoute,useRout
 const route=useRoute();const router=useRouter();const month=ref(String(route.params.month));const review=ref<MonthlyReview|null>(null);const loading=ref(false);const error=ref('');let timer:number|undefined
 function fact(name:'income'|'expense'){const values=review.value?.facts.current?.[name]||{};return Object.entries(values).map(([currency,value])=>`${currency} ${value}`).join(' / ')||'0'}
 function statusText(status:MonthlyReview['status']){return ({DISABLED:'模型未启用',NOT_GENERATED:'尚未生成',PROCESSING:'生成中',READY:'已生成',FAILED:'生成失败'} as const)[status]}
+function formatGeneratedAt(value?:string|null){if(!value)return'';const match=value.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2}:\d{2})/);return match?`${match[1]} ${match[2]}`:value}
 async function load(){loading.value=true;error.value='';try{review.value=await monthlyReviewsApi.get(month.value);schedule()}catch(reason){error.value=(reason as ApiError).message}finally{loading.value=false}}
 async function generate(){error.value='';try{review.value=await monthlyReviewsApi.generate(month.value,Boolean(review.value?.monthly_summary));schedule()}catch(reason){error.value=(reason as ApiError).message}}
 function schedule(){if(timer)window.clearTimeout(timer);if(review.value?.status==='PROCESSING')timer=window.setTimeout(async()=>{try{review.value=await monthlyReviewsApi.get(month.value);schedule()}catch(reason){error.value=(reason as ApiError).message}},1000)}

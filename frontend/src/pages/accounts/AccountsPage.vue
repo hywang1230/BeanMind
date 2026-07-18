@@ -1,6 +1,10 @@
 <template>
   <section class="page secondary-page accounts-page">
-    <van-nav-bar title="账户" left-arrow @click-left="router.back()" />
+    <van-nav-bar title="账户" left-arrow @click-left="router.back()">
+      <template #right>
+        <van-button size="small" type="primary" plain @click="openCreate">新建</van-button>
+      </template>
+    </van-nav-bar>
 
     <div v-if="loading" class="state-card"><van-loading /></div>
     <van-empty v-else-if="error" image="error" :description="error"><van-button @click="load">重试</van-button></van-empty>
@@ -34,7 +38,10 @@
               <span class="row-name">{{ root.label }}</span>
               <span class="row-path">{{ root.name }}</span>
             </span>
-            <span class="row-tags"><van-tag v-for="currency in root.account.currencies" :key="currency" plain>{{ currency }}</van-tag></span>
+            <span class="row-tags">
+              <van-tag v-if="root.account.is_active === false" plain type="warning">已关闭</van-tag>
+              <van-tag v-for="currency in root.account.currencies" :key="currency" plain>{{ currency }}</van-tag>
+            </span>
             <van-icon class="row-arrow" name="arrow" />
           </button>
 
@@ -60,6 +67,7 @@
             </span>
             <span class="row-tags">
               <van-tag v-if="node.hasChildren" plain type="primary">分组</van-tag>
+              <van-tag v-if="node.account.is_active === false" plain type="warning">已关闭</van-tag>
               <van-tag v-for="currency in node.account.currencies" :key="currency" plain>{{ currency }}</van-tag>
             </span>
             <van-icon v-if="node.selectable && !node.hasChildren" class="row-arrow" name="arrow" />
@@ -67,21 +75,87 @@
         </div>
       </article>
     </div>
+
+    <van-popup v-model:show="showCreate" position="bottom" round :style="{ minHeight: '50%' }">
+      <div class="create-panel">
+        <header class="create-header">
+          <strong>新建账户</strong>
+          <button type="button" class="header-action" @click="showCreate = false">关闭</button>
+        </header>
+        <van-form @submit="createAccount">
+          <van-cell-group inset>
+            <van-field name="type" label="类型">
+              <template #input>
+                <van-radio-group v-model="createForm.account_type" direction="horizontal">
+                  <van-radio name="Assets">资产</van-radio>
+                  <van-radio name="Liabilities">负债</van-radio>
+                  <van-radio name="Equity">权益</van-radio>
+                  <van-radio name="Income">收入</van-radio>
+                  <van-radio name="Expenses">支出</van-radio>
+                </van-radio-group>
+              </template>
+            </van-field>
+            <van-field
+              v-model="createForm.nameSuffix"
+              label="账户名"
+              :placeholder="`如 Bank:Checking`"
+              required
+            >
+              <template #label>
+                <span>账户名</span>
+              </template>
+              <template #input>
+                <div class="name-input-row">
+                  <span class="name-prefix">{{ namePrefix }}</span>
+                  <input
+                    v-model="createForm.nameSuffix"
+                    class="name-suffix-input"
+                    type="text"
+                    :placeholder="nameSuffixPlaceholder"
+                    required
+                  >
+                </div>
+              </template>
+            </van-field>
+            <van-field name="currencies" label="币种" required>
+              <template #input>
+                <van-checkbox-group v-model="createForm.currencies" direction="horizontal" class="currency-checks">
+                  <van-checkbox
+                    v-for="currency in currencyOptions"
+                    :key="currency"
+                    :name="currency"
+                    shape="square"
+                  >{{ currency }}</van-checkbox>
+                </van-checkbox-group>
+              </template>
+            </van-field>
+            <DatePickerField v-model="createForm.open_date" label="开户日期" />
+          </van-cell-group>
+          <div class="create-actions">
+            <van-button block type="primary" native-type="submit" :loading="creating">创建</van-button>
+          </div>
+          <van-notice-bar v-if="createError" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ createError }}</van-notice-bar>
+        </van-form>
+      </div>
+    </van-popup>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { showToast } from 'vant'
 import { useRouter } from 'vue-router'
 import { accountsApi, type Account } from '../../api/accounts'
 import type { ApiError } from '../../api/client'
+import DatePickerField from '../../components/DatePickerField.vue'
 import {
   buildAccountTree,
-  flattenAccountTree,
   visibleAccountNodes,
   type AccountTreeNode,
   type VisibleAccountNode,
 } from '../../utils/accountTree'
+
+const BASE_CURRENCIES = ['CNY', 'USD'] as const
 
 const router = useRouter()
 const accounts = ref<Account[]>([])
@@ -89,6 +163,26 @@ const loading = ref(false)
 const error = ref('')
 const expandedNames = ref<Set<string>>(new Set())
 const treeNodes = computed(() => sortNodes(buildAccountTree(accounts.value)))
+const showCreate = ref(false)
+const creating = ref(false)
+const createError = ref('')
+const createForm = reactive({
+  nameSuffix: '',
+  account_type: 'Assets',
+  currencies: ['CNY'] as string[],
+  open_date: new Date().toISOString().slice(0, 10),
+})
+
+const namePrefix = computed(() => `${createForm.account_type}:`)
+const nameSuffixPlaceholder = computed(() => {
+  if (createForm.account_type === 'Assets') return 'Bank:Checking'
+  if (createForm.account_type === 'Liabilities') return 'CreditCard:CMB'
+  if (createForm.account_type === 'Equity') return 'OpeningBalances'
+  if (createForm.account_type === 'Income') return 'Salary'
+  return 'Food:Lunch'
+})
+
+const currencyOptions = computed(() => [...BASE_CURRENCIES])
 
 async function load() {
   loading.value = true
@@ -101,6 +195,46 @@ async function load() {
     error.value = (reason as ApiError).message
   } finally {
     loading.value = false
+  }
+}
+
+function openCreate() {
+  createError.value = ''
+  createForm.nameSuffix = ''
+  createForm.account_type = 'Assets'
+  createForm.currencies = ['CNY']
+  createForm.open_date = new Date().toISOString().slice(0, 10)
+  showCreate.value = true
+}
+
+async function createAccount() {
+  creating.value = true
+  createError.value = ''
+  try {
+    const suffix = createForm.nameSuffix.trim().replace(/^:+/, '').replace(/:+$/, '')
+    if (!suffix) {
+      createError.value = '请填写账户名'
+      return
+    }
+    const currencies = createForm.currencies.filter(Boolean)
+    if (!currencies.length) {
+      createError.value = '请至少选择一个币种'
+      return
+    }
+    await accountsApi.createAccount({
+      name: `${createForm.account_type}:${suffix}`,
+      account_type: createForm.account_type,
+      currencies,
+      open_date: createForm.open_date,
+    })
+    showToast('账户已创建')
+    showCreate.value = false
+    createForm.nameSuffix = ''
+    await load()
+  } catch (reason) {
+    createError.value = (reason as ApiError).message || '创建失败'
+  } finally {
+    creating.value = false
   }
 }
 
@@ -127,74 +261,101 @@ function toggle(name: string) {
   expandedNames.value = next
 }
 
-function isExpanded(name: string): boolean { return expandedNames.value.has(name) }
+function isExpanded(name: string) {
+  return expandedNames.value.has(name)
+}
 
 function selectableCount(node: AccountTreeNode): number {
-  return flattenAccountTree([node]).filter((item) => item.selectable).length
+  let count = node.selectable ? 1 : 0
+  for (const child of node.children) count += selectableCount(child)
+  return count
 }
 
 function sortNodes(nodes: AccountTreeNode[]): AccountTreeNode[] {
-  return [...nodes]
-    .sort(compareNodes)
-    .map((node) => ({ ...node, children: sortNodes(node.children) }))
+  const order = ['Assets', 'Liabilities', 'Equity', 'Income', 'Expenses']
+  return [...nodes].sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name))
 }
 
-function compareNodes(a: AccountTreeNode, b: AccountTreeNode): number {
-  const typeDiff = accountTypeRank(a.name) - accountTypeRank(b.name)
-  if (typeDiff !== 0) return typeDiff
-  return a.label.localeCompare(b.label, 'zh-Hans-CN')
-}
-
-function accountTypeRank(name: string): number {
-  const order = ['Assets', 'Liabilities', 'Expenses', 'Income', 'Equity']
-  const index = order.indexOf(name)
-  return index === -1 ? order.length : index
-}
-
-function accountTypeMeta(name: string): { title: string; mark: string } {
-  const meta: Record<string, { title: string; mark: string }> = {
+function accountTypeMeta(name: string) {
+  const map: Record<string, { title: string; mark: string }> = {
     Assets: { title: '资产账户', mark: '资' },
-    Liabilities: { title: '负债账户', mark: '负' },
-    Expenses: { title: '支出账户', mark: '支' },
+    Liabilities: { title: '负债账户', mark: '债' },
+    Equity: { title: '权益账户', mark: '益' },
     Income: { title: '收入账户', mark: '收' },
-    Equity: { title: '权益账户', mark: '权' },
+    Expenses: { title: '支出账户', mark: '支' },
   }
-  return meta[name] || { title: `${name} 账户`, mark: name.slice(0, 1).toUpperCase() }
+  return map[name] || { title: name, mark: name.slice(0, 1) }
 }
 
 onMounted(load)
 </script>
 
 <style scoped>
-.accounts-page { padding-bottom: 32px; }
-.account-groups { display: grid; gap: 12px; }
-.account-group { overflow: hidden; border: 1px solid var(--bm-border); border-radius: 18px; background: var(--bm-surface); box-shadow: var(--bm-card-shadow); }
-.group-header { display: flex; width: 100%; align-items: center; gap: 12px; border: 0; background: color-mix(in srgb, var(--bm-primary-soft) 45%, var(--bm-surface)); padding: 13px 14px; color: var(--bm-text); text-align: left; }
-.group-mark { display: inline-grid; width: 36px; height: 36px; flex: 0 0 36px; place-items: center; border-radius: 13px; background: var(--bm-primary); color: #fff; font-weight: 800; }
-.group-title { display: grid; flex: 1; gap: 3px; min-width: 0; }
-.group-title strong { font-size: 16px; }
-.group-title small { color: var(--bm-muted); font-size: 12px; }
+.account-groups { display: grid; gap: 12px; padding-bottom: 8px; }
+.account-group {
+  background: var(--bm-surface);
+  border: 1px solid var(--bm-border);
+  border-radius: var(--bm-radius);
+  overflow: hidden;
+  box-shadow: var(--bm-card-shadow);
+  color: var(--bm-text);
+}
+.group-header {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 14px 14px; border: 0; background: transparent; text-align: left; color: inherit;
+}
+.group-mark {
+  width: 28px; height: 28px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bm-primary-soft); color: var(--bm-primary); font-size: 13px; font-weight: 700;
+}
+.group-title { flex: 1; display: flex; flex-direction: column; }
+.group-title strong { color: var(--bm-text); font-size: 15px; }
+.group-title small { color: var(--bm-muted); }
 .group-arrow { color: var(--bm-muted); }
-.group-body { padding: 7px 0; }
-.account-row { position: relative; display: flex; width: 100%; min-height: 54px; align-items: center; gap: 10px; border: 0; background: var(--bm-surface); padding: 7px 12px 7px calc(14px + var(--level, 0) * 20px); color: var(--bm-text); text-align: left; }
-.account-row + .account-row { border-top: 1px solid color-mix(in srgb, var(--bm-border) 78%, transparent); }
-.account-row--group { background: color-mix(in srgb, var(--bm-bg) 42%, var(--bm-surface)); }
-.account-row--leaf:active, .account-row--group:active { background: var(--bm-primary-soft); }
-.account-row--root { --level: 0; border-bottom: 1px solid var(--bm-border); }
-.tree-line { position: absolute; left: calc(28px + var(--level, 0) * 20px); top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--bm-border) 70%, transparent); }
-.row-icon { z-index: 1; display: inline-grid; width: 26px; height: 26px; flex: 0 0 26px; place-items: center; border-radius: 10px; background: var(--bm-bg); color: var(--bm-muted); }
-.row-icon--group { background: var(--bm-primary-soft); color: var(--bm-primary); }
-.row-icon--leaf { background: var(--bm-bg); color: var(--bm-muted); }
-.row-main { display: grid; flex: 1; gap: 3px; min-width: 0; }
-.row-name { overflow: hidden; font-size: 15px; font-weight: 700; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
-.row-path { overflow: hidden; color: var(--bm-muted); font-size: 12px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.row-tags { display: inline-flex; max-width: 92px; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
-.row-arrow { flex: 0 0 auto; color: var(--bm-faint); }
-.type-Liabilities .group-mark { background: #b7791f; }
-.type-Expenses .group-mark { background: var(--bm-expense); }
-.type-Income .group-mark { background: var(--bm-income); }
-.type-Equity .group-mark { background: #6b7280; }
-@media (max-width: 420px) {
-  .row-tags { max-width: 74px; }
+.account-row {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px; border: 0; border-top: 1px solid var(--bm-border); background: transparent; text-align: left;
+  padding-left: calc(14px + var(--level, 0) * 16px);
+  color: inherit;
+}
+.row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.row-name { color: var(--bm-text); font-weight: 600; }
+.row-path { color: var(--bm-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row-tags { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 120px; }
+.row-icon { width: 20px; display: inline-flex; justify-content: center; color: var(--bm-muted); }
+.row-arrow { color: var(--bm-faint); }
+.create-panel { padding-bottom: 24px; color: var(--bm-text); }
+.create-header { display: flex; justify-content: space-between; align-items: center; padding: 16px; color: var(--bm-text); }
+.header-action { border: 0; background: transparent; color: var(--bm-primary); }
+.create-actions { margin: 16px; }
+.name-input-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+.name-prefix {
+  flex: 0 0 auto;
+  color: var(--bm-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.name-suffix-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--bm-text);
+  font: inherit;
+}
+.currency-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.currency-checks :deep(.van-checkbox) {
+  margin-right: 0;
 }
 </style>

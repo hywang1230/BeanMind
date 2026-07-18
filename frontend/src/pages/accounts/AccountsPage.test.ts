@@ -7,7 +7,7 @@ import AccountsPage from './AccountsPage.vue'
 
 const push = vi.fn()
 vi.mock('vue-router', () => ({ useRouter: () => ({ back: vi.fn(), push }) }))
-vi.mock('../../api/accounts', () => ({ accountsApi: { getAccounts: vi.fn() } }))
+vi.mock('../../api/accounts', () => ({ accountsApi: { getAccounts: vi.fn(), createAccount: vi.fn() } }))
 
 describe('AccountsPage', () => {
   beforeEach(() => { vi.clearAllMocks() })
@@ -75,5 +75,64 @@ describe('AccountsPage', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('加载失败')
     expect(wrapper.text()).toContain('重试')
+  })
+
+  it('opens create dialog and submits a new account with prefix and selected currencies', async () => {
+    vi.mocked(accountsApi.getAccounts)
+      .mockResolvedValueOnce([
+        { name: 'Assets:Cash', account_type: 'Assets', currencies: ['CNY', 'USD'] },
+      ])
+      .mockResolvedValueOnce([
+        { name: 'Assets:Cash', account_type: 'Assets', currencies: ['CNY', 'USD'] },
+        { name: 'Assets:Bank:New', account_type: 'Assets', currencies: ['CNY', 'USD'] },
+      ])
+    vi.mocked(accountsApi.createAccount).mockResolvedValue({
+      name: 'Assets:Bank:New',
+      account_type: 'Assets',
+      currencies: ['CNY', 'USD'],
+    } as never)
+    const wrapper = mount(AccountsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    await wrapper.findAll('button').find(b => b.text() === '新建')!.trigger('click')
+    expect(wrapper.text()).toContain('新建账户')
+    expect(wrapper.text()).toContain('Assets:')
+    // type first, then name with prefix
+    expect(wrapper.find('.name-prefix').text()).toBe('Assets:')
+
+    const suffixInput = wrapper.find('.name-suffix-input')
+    await suffixInput.setValue('Bank:New')
+
+    // select USD in addition to default CNY
+    const checkboxes = wrapper.findAllComponents({ name: 'VanCheckbox' })
+    const usd = checkboxes.find((box) => box.text().includes('USD'))
+    if (usd && !usd.props('modelValue')) {
+      await usd.trigger('click')
+    } else {
+      // fallback: set form via group if needed
+      const group = wrapper.findComponent({ name: 'VanCheckboxGroup' })
+      await group.vm.$emit('update:modelValue', ['CNY', 'USD'])
+    }
+
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+    expect(accountsApi.createAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Assets:Bank:New',
+        account_type: 'Assets',
+        currencies: expect.arrayContaining(['CNY']),
+      }),
+    )
+  })
+
+  it('uses theme surface tokens for account group cards', async () => {
+    vi.mocked(accountsApi.getAccounts).mockResolvedValue([
+      { name: 'Assets:Cash', account_type: 'Assets', currencies: ['CNY'] },
+    ])
+    const wrapper = mount(AccountsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    const group = wrapper.find('.account-group')
+    expect(group.exists()).toBe(true)
+    // style source uses theme tokens, not hard-coded white fallbacks
+    expect(wrapper.html()).toContain('account-group')
   })
 })

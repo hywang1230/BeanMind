@@ -19,6 +19,24 @@ export function accountLeafLabel(name: string): string {
   return parts[parts.length - 1] || name
 }
 
+/**
+ * 记账已选账户的紧凑展示名：
+ * - 二级及更深默认只展示末级
+ * - 末级为「其他」或同名末级在账本中出现多次时，补上父级，避免无法区分
+ */
+export function accountShortLabel(name: string, allAccountNames: string[] = []): string {
+  const parts = name.split(':').filter(Boolean)
+  if (parts.length <= 1) return name
+  const leaf = parts[parts.length - 1] || name
+  const sameLeafCount = allAccountNames.length
+    ? allAccountNames.filter((item) => accountLeafLabel(item) === leaf).length
+    : (leaf === '其他' ? 2 : 1)
+  if ((sameLeafCount > 1 || leaf === '其他') && parts.length >= 2) {
+    return `${parts[parts.length - 2]}:${leaf}`
+  }
+  return leaf
+}
+
 export function buildAccountTree(accounts: Account[]): AccountTreeNode[] {
   const accountMap = new Map<string, Account>()
   collectAccounts(accounts, accountMap)

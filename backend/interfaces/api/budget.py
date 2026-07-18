@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/budgets", tags=["budgets"])
 
 class BudgetItemInput(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    account_pattern: str = Field(min_length=1, max_length=200)
+    account_pattern: str = Field(min_length=1, max_length=2000)
     amount: str
     display_order: int = 0
 

@@ -142,7 +142,7 @@ describe('TransactionsPage', () => {
     expect(wrapper.text()).toContain('重试')
   })
 
-  it('renders description first and falls back by transaction type', async () => {
+  it('renders account titles and puts description under the date', async () => {
     vi.mocked(transactionsApi.getTransactions).mockResolvedValue({
       items: [
         item,
@@ -189,12 +189,18 @@ describe('TransactionsPage', () => {
     await flushPromises()
 
     expect(wrapper.findAll('.transaction-title').map(title => title.text())).toEqual([
-      '午餐',
-      'Expenses:Food，Expenses:Transport',
-      'Income:Salary，Income:Bonus',
-      '转账',
+      'Food',
+      'Food，Transport',
+      'Salary，Bonus',
+      'Cash，Bank',
     ])
-    expect(wrapper.findAll('.van-cell__label').map(label => label.text())).toEqual(Array(4).fill('2026-07-01'))
+    expect(wrapper.findAll('.van-cell__label').map(label => label.text())).toEqual([
+      '2026-07-01午餐',
+      '2026-07-01',
+      '2026-07-01',
+      '2026-07-01',
+    ])
+    expect(wrapper.findAll('.transaction-note').map(note => note.text())).toEqual(['午餐'])
     expect(wrapper.text()).not.toContain('未命名交易')
     expect(wrapper.text()).not.toContain('餐厅')
   })
@@ -241,5 +247,17 @@ describe('TransactionsPage', () => {
       ['positive'],
       ['negative'],
     ])
+  })
+
+  it('pull-to-refresh reloads the first page', async () => {
+    const wrapper = mount(TransactionsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    const callsBefore = vi.mocked(transactionsApi.getTransactions).mock.calls.length
+    expect(wrapper.find('.page-with-pull').exists()).toBe(true)
+    expect(wrapper.find('.page-scroll').exists()).toBe(true)
+    expect(wrapper.find('.van-pull-refresh').exists()).toBe(true)
+    await wrapper.findComponent({ name: 'VanPullRefresh' }).vm.$emit('refresh')
+    await flushPromises()
+    expect(vi.mocked(transactionsApi.getTransactions).mock.calls.length).toBeGreaterThan(callsBefore)
   })
 })

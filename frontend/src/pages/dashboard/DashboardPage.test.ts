@@ -48,3 +48,18 @@ describe('DashboardPage', () => {
     expect(wrapper.text()).not.toContain('USD')
   })
 })
+
+  it('pull-to-refresh reloads dashboard without blanking content', async () => {
+    vi.mocked(dashboardApi.get).mockResolvedValue(dashboard)
+    const wrapper = mount(DashboardPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.find('.page-with-pull').exists()).toBe(true)
+    expect(wrapper.find('.page-scroll').exists()).toBe(true)
+    expect(wrapper.find('.van-pull-refresh').exists()).toBe(true)
+    const callsBefore = vi.mocked(dashboardApi.get).mock.calls.length
+    await wrapper.findComponent({ name: 'VanPullRefresh' }).vm.$emit('refresh')
+    await flushPromises()
+    expect(vi.mocked(dashboardApi.get).mock.calls.length).toBeGreaterThan(callsBefore)
+    expect(wrapper.text()).toContain('¥4,000.13')
+  })
+

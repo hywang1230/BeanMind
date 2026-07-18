@@ -41,7 +41,7 @@ describe('business inputs', () => {
     })
 
     await wrapper.find('.van-field').trigger('click')
-    await wrapper.find('.account-tree-toggle').trigger('click')
+    // top-level prefixes auto-expand; Food should be visible without collapsing
     expect(wrapper.text()).toContain('Food')
     expect(wrapper.text()).toContain('Expenses:Food')
     expect(wrapper.text()).not.toContain('Assets:Wallet:Lunch')

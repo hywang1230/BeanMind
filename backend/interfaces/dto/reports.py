@@ -98,6 +98,7 @@ class IncomeStatementResponse(BaseModel):
 
 class AccountTransactionItem(BaseModel):
     """账户交易项"""
+    id: Optional[str] = Field(default=None, description="交易 ID")
     date: str = Field(..., description="交易日期")
     description: str = Field(..., description="交易描述")
     payee: str = Field(default="", description="交易对方")
@@ -128,8 +129,38 @@ class AccountDetailResponse(BaseModel):
     period_change: Dict[str, Decimal] = Field(default_factory=dict, description="本期变动")
     period_change_cny: Decimal = Field(default=Decimal("0"), description="本期变动（人民币）")
     
-    # 交易列表
+    # 交易列表（Keyset Cursor 分页）
     transactions: List[AccountTransactionItem] = Field(default_factory=list, description="交易列表")
+    next_cursor: Optional[str] = Field(default=None, description="下一页游标")
+    has_more: bool = Field(default=False, description="是否还有更多")
     
     # 汇率
     exchange_rates: Dict[str, Decimal] = Field(default_factory=dict, description="汇率表")
+
+
+class MonthlyCashflowPoint(BaseModel):
+    """近 12 个月趋势中的单月点位；金额为十进制字符串。"""
+
+    month: str = Field(..., description="月份 YYYY-MM")
+    income: str = Field(..., description="经营币种收入")
+    expense: str = Field(..., description="经营币种支出")
+    net_income: str = Field(..., description="月净收入 = 收入 - 支出")
+
+
+class MissingExchangeRateMonth(BaseModel):
+    """某月缺失的折算币种。"""
+
+    month: str = Field(..., description="月份 YYYY-MM")
+    currencies: List[str] = Field(default_factory=list, description="缺失汇率的币种")
+
+
+class MonthlyCashflowTrendResponse(BaseModel):
+    """近 12 个月收支趋势响应。"""
+
+    start_month: str = Field(..., description="窗口起始月 YYYY-MM")
+    end_month: str = Field(..., description="窗口截止月 YYYY-MM")
+    currency: str = Field(..., description="经营币种")
+    points: List[MonthlyCashflowPoint] = Field(..., description="固定 12 个升序月份点位")
+    missing_exchange_rates: List[MissingExchangeRateMonth] = Field(
+        default_factory=list, description="按月缺失汇率"
+    )

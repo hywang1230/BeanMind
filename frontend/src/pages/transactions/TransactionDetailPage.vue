@@ -6,4 +6,4 @@ async function load(){loading.value=true;error.value='';try{transaction.value=aw
 async function remove(){try{await showConfirmDialog({title:'删除交易',message:'确认删除这笔交易？'});deleting.value=true;await transactionsApi.deleteTransaction(String(route.params.id));await router.replace('/transactions')}catch(reason){if((reason as string)!=='cancel'&&typeof reason==='object')error.value=(reason as ApiError).message}finally{deleting.value=false}}
 onMounted(load)
 </script>
-<style scoped>.transaction-detail-card{margin-top:8px}.detail-actions{margin:20px 16px}</style>
+<style scoped>.transaction-detail-card{margin-top:8px}.detail-actions{display:block;box-sizing:border-box;margin:20px 0;width:100%}.detail-actions :deep(.van-button){display:block;box-sizing:border-box;width:100%}</style>

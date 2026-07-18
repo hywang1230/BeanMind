@@ -1,12 +1,14 @@
 <template>
-  <section class="page dashboard-page">
+  <section class="page page-with-pull dashboard-page">
+    <div class="page-scroll">
+    <van-pull-refresh v-model="refreshing" class="page-pull-refresh" pulling-text="下拉刷新" loosing-text="释放刷新" loading-text="刷新中..." success-text="刷新成功" @refresh="onRefresh">
     <header class="page-header">
       <h1>本月总览</h1>
-      <MonthPicker v-model="month" @change="load" />
+      <MonthPicker v-model="month" @change="() => load()" />
     </header>
     <div v-if="loading" class="state-card"><van-loading>加载中</van-loading></div>
     <van-empty v-else-if="error" image="error" :description="error">
-      <van-button type="primary" size="small" @click="load">重试</van-button>
+      <van-button type="primary" size="small" @click="() => load()">重试</van-button>
     </van-empty>
     <template v-else-if="data">
       <div class="finance-card net-worth-card page-section">
@@ -43,6 +45,9 @@
         <van-button type="primary" class="quick-action primary-action" icon="edit" to="/transactions/new">记一笔</van-button>
       </div>
     </template>
+    </van-pull-refresh>
+
+    </div>
   </section>
 </template>
 
@@ -55,6 +60,7 @@ import MonthPicker from '../../components/MonthPicker.vue'
 const month = ref(new Date().toISOString().slice(0, 7))
 const data = ref<Dashboard | null>(null)
 const loading = ref(false)
+const refreshing = ref(false)
 const error = ref('')
 const riskText = computed(() => ({ NORMAL: '正常', WARNING: '接近额度', EXCEEDED: '已超支' }[data.value?.budget_risk || 'NORMAL']))
 const riskTagType = computed(() => data.value?.budget_risk === 'EXCEEDED' ? 'danger' : data.value?.budget_risk === 'WARNING' ? 'warning' : 'success')
@@ -82,17 +88,22 @@ function money(value: string) {
   const sign = negative && cents !== 0n ? '-' : ''
   return currency === 'CNY' ? `${sign}¥${whole}.${decimal}` : `${sign}${currency} ${whole}.${decimal}`
 }
-async function load() {
-  loading.value = true; error.value = ''
+async function load(options: { silent?: boolean } = {}) {
+  if (!options.silent) loading.value = true
+  error.value = ''
   try { data.value = await dashboardApi.get(month.value) }
   catch (reason) { error.value = (reason as ApiError).message }
-  finally { loading.value = false }
+  finally { if (!options.silent) loading.value = false }
 }
-onMounted(load)
+async function onRefresh() {
+  try { await load({ silent: true }) }
+  finally { refreshing.value = false }
+}
+onMounted(() => { load() })
 </script>
 
 <style scoped>
-.dashboard-page { overflow-x: hidden; padding: 24px 20px 30px; }
+.dashboard-page { padding: 18px 16px 24px; }
 .dashboard-page .page-header { margin-bottom: 22px; }
 .dashboard-page .page-header h1 { flex: 1; font-size: 30px; font-weight: 750; white-space: nowrap; }
 .net-worth-card { min-width: 0; padding: 24px 22px 23px; border-radius: 16px; }
@@ -123,7 +134,6 @@ onMounted(load)
 .quick-action.primary-action { color: white; }
 .quick-action.primary-action :deep(.van-button__icon) { color: white; }
 @media (max-width: 380px) {
-  .dashboard-page { padding-right: 16px; padding-left: 16px; }
   .dashboard-page .page-header h1 { font-size: 27px; }
   .cashflow-card strong { font-size: 13px; }
   .quick-actions { gap: 8px; padding: 10px; }

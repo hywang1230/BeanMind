@@ -7,11 +7,17 @@ describe('router', () => {
     '/dashboard',
     '/transactions',
     '/transactions/new',
+    '/transactions/distribute',
     '/transactions/example',
     '/transactions/example/edit',
     '/budgets',
     '/reviews/2026-07',
     '/settings',
+    '/accounts',
+    '/reports',
+    '/reports/balance-sheet',
+    '/reports/income-statement',
+    '/reports/account-detail',
   ])('matches independent route %s', path => {
     expect(router.resolve(path).matched.length).toBeGreaterThan(0)
   })

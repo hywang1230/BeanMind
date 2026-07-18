@@ -27,12 +27,26 @@ class MonthlyBudgetService:
         self.aggregation = aggregation
 
     @staticmethod
-    def validate_items(items: list[dict]) -> list[dict]:
+    def parse_patterns(value: str) -> list[str]:
+        """解析账户范围：支持英文/中文逗号分隔的多账户组合。"""
+        patterns: list[str] = []
+        for piece in str(value or "").replace("，", ",").split(","):
+            pattern = piece.strip().strip(":")
+            if pattern:
+                patterns.append(pattern)
+        return patterns
+
+    @staticmethod
+    def format_patterns(patterns: list[str]) -> str:
+        return ",".join(patterns)
+
+    @classmethod
+    def validate_items(cls, items: list[dict]) -> list[dict]:
         normalized: list[dict] = []
         for index, item in enumerate(items):
-            pattern = str(item.get("account_pattern", "")).strip().strip(":")
+            patterns = cls.parse_patterns(str(item.get("account_pattern", "")))
             name = str(item.get("name", "")).strip()
-            if not pattern or not name:
+            if not patterns or not name:
                 raise MonthlyBudgetError("INVALID_MONTHLY_BUDGET", "分类名称和账户范围不能为空")
             try:
                 amount = Decimal(str(item.get("amount")))
@@ -40,22 +54,42 @@ class MonthlyBudgetService:
                 raise MonthlyBudgetError("INVALID_MONTHLY_BUDGET", "分类额度必须是 Decimal") from exc
             if not amount.is_finite() or amount < 0:
                 raise MonthlyBudgetError("INVALID_MONTHLY_BUDGET", "分类额度必须大于等于零")
+
+            # 同一分类内多 pattern 也不能重叠/重复
+            for i, pattern in enumerate(patterns):
+                for other in patterns[:i]:
+                    if LedgerAggregationService.patterns_overlap(pattern, other):
+                        raise MonthlyBudgetError(
+                            "OVERLAPPING_BUDGET_PATTERN",
+                            "预算账户范围不能重叠",
+                            {"patterns": [other, pattern]},
+                        )
+
             for existing in normalized:
-                if LedgerAggregationService.patterns_overlap(pattern, existing["account_pattern"]):
-                    raise MonthlyBudgetError(
-                        "OVERLAPPING_BUDGET_PATTERN",
-                        "预算账户范围不能重叠",
-                        {"patterns": [existing["account_pattern"], pattern]},
-                    )
+                existing_patterns = cls.parse_patterns(existing["account_pattern"])
+                for pattern in patterns:
+                    for existing_pattern in existing_patterns:
+                        if LedgerAggregationService.patterns_overlap(pattern, existing_pattern):
+                            raise MonthlyBudgetError(
+                                "OVERLAPPING_BUDGET_PATTERN",
+                                "预算账户范围不能重叠",
+                                {"patterns": [existing_pattern, pattern]},
+                            )
             normalized.append(
                 {
                     "name": name,
-                    "account_pattern": pattern,
+                    "account_pattern": cls.format_patterns(patterns),
                     "amount": amount,
                     "display_order": int(item.get("display_order", index)),
                 }
             )
         return normalized
+
+    def _pattern_spent(self, month: str, currency: str, account_pattern: str) -> Decimal:
+        total = Decimal("0")
+        for pattern in self.parse_patterns(account_pattern):
+            total += self.aggregation.monthly_pattern_totals(month, pattern).get(currency, Decimal("0"))
+        return total
 
     def _find(self, month: str, currency: str) -> MonthlyBudget | None:
         month_range(month)
@@ -107,9 +141,7 @@ class MonthlyBudgetService:
         total_spent = Decimal("0")
         for item in budget.items:
             amount = Decimal(item.amount_text)
-            spent = self.aggregation.monthly_pattern_totals(month, item.account_pattern).get(
-                budget.currency, Decimal("0")
-            )
+            spent = self._pattern_spent(month, budget.currency, item.account_pattern)
             remaining = amount - spent
             usage = None if amount == 0 else spent / amount
             if amount == 0 and spent > 0:

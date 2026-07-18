@@ -167,9 +167,27 @@ class AccountService:
         if active_children:
             child_names = ", ".join([c.name for c in active_children])
             raise ValueError(f"账户 '{account_name}' 有活跃的子账户，请先关闭: {child_names}")
-        
-        # 4. 关闭账户
-        return self.account_repository.delete(account_name)
+
+        # 4. 检查所有币种余额均为零
+        balances = self.account_repository.get_balance(account_name)
+        non_zero = {
+            currency: amount
+            for currency, amount in balances.items()
+            if amount != Decimal("0")
+        }
+        if non_zero:
+            details = ", ".join(f"{currency}={amount}" for currency, amount in sorted(non_zero.items()))
+            raise ValueError(f"账户 '{account_name}' 余额不为零，无法关闭: {details}")
+
+        # 5. 校验关闭日期不早于开户日期
+        if close_date is not None and account.open_date is not None:
+            close_cmp = close_date if close_date.tzinfo is None else close_date.replace(tzinfo=None)
+            open_cmp = account.open_date if account.open_date.tzinfo is None else account.open_date.replace(tzinfo=None)
+            if close_cmp.date() < open_cmp.date():
+                raise ValueError(f"账户关闭日期不能早于开户日期")
+
+        # 6. 关闭账户
+        return self.account_repository.delete(account_name, close_date=close_date)
     
     def reopen_account(self, account_name: str) -> bool:
         """
@@ -198,7 +216,10 @@ class AccountService:
             raise ValueError(f"账户 '{account_name}' 已经是活跃状态")
         
         # 3. 重新开启账户
-        return self.account_repository.reopen(account_name)
+        result = self.account_repository.reopen(account_name)
+        if not result:
+            raise ValueError(f"账户 '{account_name}' 无法重新开启：未找到可撤销的 Close 指令")
+        return result
     
     def get_account_hierarchy(self, root_account: Optional[str] = None) -> Dict:
         """

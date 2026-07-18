@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Session
 
 from backend.infrastructure.persistence.db.models import MonthlyReview
+from backend.services.currency_convert import convert_currency_totals
 from backend.services.ledger_aggregation import LedgerAggregationService, month_range, normalize_decimal
 from backend.services.monthly_budget import MonthlyBudgetService
 
@@ -24,16 +25,11 @@ class DashboardService:
         rates = self.beancount_service.get_all_exchange_rates(
             to_currency=operating, as_of_date=as_of
         )
-        total = Decimal("0")
-        missing: list[str] = []
-        for currency, amount in values.items():
-            if currency == operating:
-                total += amount
-            elif currency in rates:
-                total += amount * Decimal(str(rates[currency]))
-            else:
-                missing.append(currency)
-        return total, sorted(missing)
+        return convert_currency_totals(
+            values,
+            operating_currency=operating,
+            rates=rates,
+        )
 
     def get(self, month: str) -> dict:
         _, end = month_range(month)

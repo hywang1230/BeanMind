@@ -50,4 +50,5 @@ Thumbs.db
 frontend/node_modules/
 frontend/dist/
 frontend/.nuxt/
+docs
 

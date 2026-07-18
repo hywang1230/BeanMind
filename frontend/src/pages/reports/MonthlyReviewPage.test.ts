@@ -36,3 +36,19 @@ describe('MonthlyReviewPage', () => {
     expect(wrapper.text()).toContain('CNY 100')
   })
 })
+
+  it('formats generated_at without ISO T and fractional seconds', async () => {
+    vi.mocked(monthlyReviewsApi.get).mockResolvedValue({
+      ...review,
+      status: 'READY',
+      last_error: null,
+      generated_at: '2026-07-18T01:09:32.856991',
+    })
+    const wrapper = mount(MonthlyReportPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('已生成')
+    expect(wrapper.text()).toContain('2026-07-18 01:09:32')
+    expect(wrapper.text()).not.toContain('2026-07-18T01:09:32')
+    expect(wrapper.text()).not.toContain('.856991')
+  })
+

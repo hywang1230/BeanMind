@@ -1,14 +1,27 @@
 <template>
   <van-field
-    :model-value="displayValue"
+    :model-value="fieldDisplayValue"
     :label="label"
-    placeholder="请选择账户"
+    :placeholder="placeholderText"
     :error-message="error"
     readonly
     @click="open"
   >
+    <template v-if="isMultiDisplay" #input>
+      <div class="account-chips">
+        <van-tag
+          v-for="name in selectedAccounts"
+          :key="name"
+          closeable
+          type="primary"
+          @click.stop
+          @close.stop="removeSelected(name)"
+        >{{ shortName(name) }}</van-tag>
+        <span v-if="!(selectedAccounts?.length)" class="chip-placeholder">{{ placeholderText }}</span>
+      </div>
+    </template>
     <template #right-icon>
-      <button v-if="clearable && modelValue" type="button" class="field-action" :aria-label="`清空${label}`" @click.stop="clear">
+      <button v-if="clearable && modelValue && !isMultiDisplay" type="button" class="field-action" :aria-label="`清空${label}`" @click.stop="clear">
         <van-icon name="cross" />
       </button>
       <van-icon v-else name="arrow" />
@@ -31,10 +44,10 @@
           :key="node.name"
           type="button"
           class="account-tree-row"
-          :class="{ selected: node.name === modelValue, disabled: !node.selectable }"
+          :class="{ selected: isRowSelected(node.name), disabled: !node.selectable }"
           :style="{ paddingLeft: `${12 + node.level * 18}px` }"
           role="treeitem"
-          :aria-selected="node.name === modelValue"
+          :aria-selected="isRowSelected(node.name)"
           :aria-disabled="!node.selectable"
           @click="handleRowClick(node)"
         >
@@ -51,7 +64,7 @@
             <span class="account-tree-label">{{ node.label }}</span>
             <span class="account-tree-path">{{ node.name }}</span>
           </span>
-          <van-icon v-if="node.selectable && node.name === modelValue" name="success" class="account-tree-selected" />
+          <van-icon v-if="node.selectable && isRowSelected(node.name)" name="success" class="account-tree-selected" />
         </button>
       </div>
     </div>
@@ -61,7 +74,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { Account } from '../api/accounts'
-import { filterAccountNodes, flattenAccountTree, visibleAccountNodes, type VisibleAccountNode } from '../utils/accountTree'
+import { accountShortLabel, filterAccountNodes, flattenAccountTree, visibleAccountNodes, type VisibleAccountNode } from '../utils/accountTree'
 
 const props = withDefaults(defineProps<{
   modelValue: string
@@ -70,20 +83,96 @@ const props = withDefaults(defineProps<{
   prefixes?: string[]
   error?: string
   clearable?: boolean
-}>(), { label: '账户', prefixes: () => [], error: '', clearable: false })
+  /** Prefer active accounts; included closed accounts always kept for edit restore. */
+  activeOnly?: boolean
+  currency?: string
+  asOfDate?: string
+  includeAccounts?: string[]
+  /** When provided, field shows selected chips and supports multi-add UX. */
+  selectedAccounts?: string[]
+  placeholder?: string
+}>(), {
+  label: '账户',
+  prefixes: () => [],
+  error: '',
+  clearable: false,
+  activeOnly: false,
+  currency: '',
+  asOfDate: '',
+  includeAccounts: () => [],
+  selectedAccounts: undefined,
+  placeholder: '请选择账户',
+})
+
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
   (event: 'change', value: string): void
+  (event: 'remove', value: string): void
 }>()
 
 const show = ref(false)
 const search = ref('')
 const expandedNames = ref<Set<string>>(new Set())
 
-const treeNodes = computed(() => filterAccountNodes(props.accounts, props.prefixes))
+const isMultiDisplay = computed(() => props.selectedAccounts !== undefined)
+const placeholderText = computed(() => props.placeholder || '请选择账户')
+const fieldDisplayValue = computed(() => {
+  if (isMultiDisplay.value) return ''
+  if (!props.modelValue) return ''
+  // 与多选 chips / 记账页一致：展示短名，值仍为完整账户路径
+  return shortName(props.modelValue)
+})
+
+const selectableAccountNames = computed(() => flatNodes.value.filter((node) => node.selectable).map((node) => node.name))
+
+function shortName(name: string) {
+  return accountShortLabel(name, selectableAccountNames.value)
+}
+
+function isRowSelected(name: string) {
+  if (isMultiDisplay.value) return (props.selectedAccounts || []).includes(name)
+  return name === props.modelValue
+}
+
+function dateOnly(value?: string | null): string {
+  if (!value) return ''
+  return value.slice(0, 10)
+}
+
+function isAccountAllowed(account: Account): boolean {
+  const included = props.includeAccounts.includes(account.name)
+  if (props.activeOnly && account.is_active === false && !included) return false
+
+  if (props.currency && account.currencies?.length) {
+    if (!account.currencies.includes(props.currency) && !included) return false
+  }
+
+  if (props.asOfDate) {
+    const open = dateOnly(account.open_date)
+    const close = dateOnly(account.close_date)
+    if (open && open > props.asOfDate && !included) return false
+    if (close && close <= props.asOfDate && !included) return false
+  }
+  return true
+}
+
+const filteredAccounts = computed(() => {
+  const walk = (items: Account[]): Account[] =>
+    items
+      .map((item) => ({
+        ...item,
+        children: item.children ? walk(item.children) : undefined,
+      }))
+      .filter((item) => {
+        const childOk = (item.children || []).length > 0
+        return isAccountAllowed(item) || childOk
+      })
+  return walk(props.accounts)
+})
+
+const treeNodes = computed(() => filterAccountNodes(filteredAccounts.value, props.prefixes))
 const flatNodes = computed(() => flattenAccountTree(treeNodes.value))
 const visibleNodes = computed(() => visibleAccountNodes(treeNodes.value, expandedNames.value, search.value))
-const displayValue = computed(() => flatNodes.value.find((node) => node.name === props.modelValue)?.name || props.modelValue)
 
 function open() {
   expandSelectedPath()
@@ -104,6 +193,10 @@ function select(value: string) {
   show.value = false
 }
 
+function removeSelected(name: string) {
+  emit('remove', name)
+}
+
 function clear() {
   emit('update:modelValue', '')
   emit('change', '')
@@ -121,40 +214,64 @@ function toggle(name: string) {
   expandedNames.value = next
 }
 
-function isExpanded(name: string): boolean {
+function isExpanded(name: string) {
   return expandedNames.value.has(name)
 }
 
 function expandSelectedPath() {
-  const selected = props.modelValue
-  if (!selected) return
+  const target = props.modelValue || (props.selectedAccounts || [])[0] || ''
+  if (!target) return
   const next = new Set(expandedNames.value)
-  const parts = selected.split(':')
-  for (let index = 1; index < parts.length; index += 1) {
-    next.add(parts.slice(0, index).join(':'))
+  const parts = target.split(':')
+  for (let i = 1; i < parts.length; i += 1) {
+    next.add(parts.slice(0, i).join(':'))
   }
   expandedNames.value = next
 }
 
-watch(() => props.prefixes, () => {
-  expandedNames.value = new Set()
-  search.value = ''
-})
+watch(
+  () => props.accounts,
+  () => {
+    if (!expandedNames.value.size && treeNodes.value.length) {
+      expandedNames.value = new Set(treeNodes.value.map((n) => n.name))
+    }
+  },
+  { immediate: true },
+)
 </script>
 
 <style scoped>
-.field-action { display: inline-grid; padding: 4px; place-items: center; border: 0; background: transparent; color: var(--bm-muted); font-size: 16px; }
-.account-picker-popup { max-height: 82vh; }
-.account-picker-panel { max-height: 82vh; display: flex; flex-direction: column; overflow: hidden; background: var(--bm-surface, var(--van-background-2, #fff)); color: var(--bm-text, #1f2937); }
-.account-picker-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--bm-border, #e8e9eb); background: var(--bm-surface, var(--van-background-2, #fff)); }
-.header-action { border: 0; background: transparent; color: var(--bm-primary, #0f766e); font-size: 14px; }
-.account-tree { flex: 1; overflow-y: auto; padding: 4px 0 16px; background: var(--bm-surface, var(--van-background-2, #fff)); }
-.account-tree-row { display: flex; width: 100%; min-height: 48px; align-items: center; gap: 8px; border: 0; border-bottom: 1px solid var(--bm-border, #e8e9eb); background: var(--bm-surface, var(--van-background-2, #fff)); padding-top: 6px; padding-right: 12px; padding-bottom: 6px; color: var(--bm-text, #1f2937); text-align: left; }
-.account-tree-row.selected { background: var(--bm-primary-soft, rgba(15, 118, 110, 0.08)); }
-.account-tree-row:active { background: var(--bm-primary-soft, rgba(15, 118, 110, 0.08)); }
-.account-tree-toggle, .account-tree-spacer { width: 20px; flex: 0 0 20px; color: var(--bm-muted, #6b7280); }
-.account-tree-main { min-width: 0; flex: 1; display: grid; gap: 2px; }
-.account-tree-label { color: var(--bm-text, #1f2937); font-weight: 600; line-height: 20px; }
-.account-tree-path { overflow: hidden; color: var(--bm-muted, #6b7280); font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
-.account-tree-selected { color: var(--bm-primary, #0f766e); }
+.account-picker-popup { height: 70vh; }
+.account-picker-panel { display: flex; flex-direction: column; height: 100%; }
+.account-picker-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-bottom: 1px solid var(--van-border-color);
+}
+.header-action { border: 0; background: transparent; color: var(--van-primary-color); font-size: 14px; }
+.account-tree { overflow: auto; flex: 1; padding-bottom: 16px; }
+.account-tree-row {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 10px 16px 10px 12px; border: 0; background: transparent; text-align: left;
+}
+.account-tree-row.selected { background: var(--van-primary-color-light, rgba(25, 137, 250, 0.08)); }
+.account-tree-row.disabled { opacity: 0.55; }
+.account-tree-toggle, .account-tree-spacer { width: 22px; display: inline-flex; justify-content: center; }
+.account-tree-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.account-tree-label { font-weight: 600; }
+.account-tree-path { color: var(--bm-muted, #888); font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.account-tree-selected { color: var(--van-primary-color); }
+.field-action { border: 0; background: transparent; padding: 0; display: inline-flex; }
+.account-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  justify-content: flex-end;
+}
+.chip-placeholder {
+  color: var(--bm-muted, #888);
+  font-size: 13px;
+  line-height: 1.4;
+}
 </style>

@@ -17,6 +17,7 @@
   --bm-primary-note-text: #34615d;
   --bm-income: #1b7f4e;
   --bm-expense: #c0392b;
+  --bm-net: #2563eb;
   --bm-warn: #b7791f;
   --bm-danger-soft: #fff1f0;
   --bm-warn-soft: #fff7e6;
@@ -63,7 +64,39 @@ button, input, select { font: inherit; }
 .van-cell-group--inset, .van-search, .van-nav-bar { border: 1px solid var(--bm-border); }
 .van-cell-group--inset { overflow: hidden; border-radius: var(--bm-radius); box-shadow: none; }
 .page > .van-cell-group--inset,
-.page > .van-form > .van-cell-group--inset { margin-right: 0; margin-left: 0; }
+.page > .van-form > .van-cell-group--inset,
+.page > .van-pull-refresh > .van-cell-group--inset,
+.page > .van-pull-refresh > .van-form > .van-cell-group--inset,
+.page > .van-pull-refresh > .van-pull-refresh__track > .van-cell-group--inset,
+.page > .van-pull-refresh > .van-pull-refresh__track > .van-form > .van-cell-group--inset,
+.page > .page-scroll > .van-pull-refresh > .van-cell-group--inset,
+.page > .page-scroll > .van-pull-refresh > .van-form > .van-cell-group--inset,
+.page > .page-scroll > .van-pull-refresh > .van-pull-refresh__track > .van-cell-group--inset,
+.page > .page-scroll > .van-pull-refresh > .van-pull-refresh__track > .van-form > .van-cell-group--inset {
+  margin-right: 0;
+  margin-left: 0;
+}
+/* 三页下拉刷新：页面固定高度，内部滚动作为 PullRefresh 的 scroll parent */
+.page-with-pull {
+  height: calc(100dvh - 50px - env(safe-area-inset-bottom, 0px));
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 12px;
+}
+.page-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+}
+.page-pull-refresh {
+  min-height: 100%;
+}
 .van-search { margin-bottom: 12px; border-radius: var(--bm-radius); background: var(--bm-surface); }
 .van-nav-bar { margin: -2px -2px 18px; border-width: 0 0 1px; background: transparent; }
 .van-nav-bar__title { color: var(--bm-text); font-weight: 700; }
@@ -90,6 +123,7 @@ html.theme-dark {
   --bm-primary-note-text: #b4d8d4;
   --bm-income: #54b982;
   --bm-expense: #f07870;
+  --bm-net: #7aa2ff;
   --bm-warn: #d5a44e;
   --bm-danger-soft: #3a2425;
   --bm-warn-soft: #39301f;

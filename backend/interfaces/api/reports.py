@@ -6,8 +6,10 @@ from typing import Optional, Dict, List
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from collections import defaultdict
+from pathlib import Path
 
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, status
+from sqlalchemy.orm import Session
 
 from backend.interfaces.dto.reports import (
     BalanceSheetResponse,
@@ -18,11 +20,20 @@ from backend.interfaces.dto.reports import (
     IncomeExpenseItem,
     AccountDetailResponse,
     AccountTransactionItem,
+    MonthlyCashflowTrendResponse,
 )
-from backend.config import settings
+from backend.config import settings, get_db
 from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
+from backend.infrastructure.persistence.ledger_projection import (
+    InvalidTransactionCursorError,
+    LedgerProjectionDirtyError,
+    TransactionQueryService,
+)
 from beancount.core.data import Transaction, Open
+
+from backend.services.ledger_aggregation import LedgerAggregationService
+from backend.services.monthly_cashflow_trend import MonthlyCashflowTrendService
 
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -31,6 +42,56 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 def get_beancount_service() -> BeancountService:
     """获取共享的 Beancount 服务"""
     return BeancountServiceProvider.get_service(settings.LEDGER_FILE)
+
+
+def get_transaction_query_service(db: Session = Depends(get_db)) -> TransactionQueryService:
+    """账户明细交易列表使用可重建 SQLite 投影查询。"""
+    return TransactionQueryService(db, Path(settings.LEDGER_FILE))
+
+
+
+
+@router.get("/monthly-cashflow-trend", response_model=MonthlyCashflowTrendResponse)
+def get_monthly_cashflow_trend(
+    end_month: Optional[str] = Query(None, description="截止月份 YYYY-MM，默认部署时区当前月"),
+    db: Session = Depends(get_db),
+    beancount_service: BeancountService = Depends(get_beancount_service),
+):
+    """最近 12 个月收入/支出/月净收入趋势。"""
+    try:
+        payload = MonthlyCashflowTrendService(
+            db,
+            LedgerAggregationService(db, settings.LEDGER_FILE),
+            beancount_service,
+            timezone=settings.SCHEDULER_TIMEZONE,
+        ).get(end_month)
+        return MonthlyCashflowTrendResponse(**payload)
+    except LedgerProjectionDirtyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_REPORT_MONTH", "message": str(exc)},
+        ) from exc
+
+
+def rate_for(currency: str, exchange_rates: Dict[str, Decimal]) -> Decimal:
+    """Return CNY rate; never default missing non-CNY rates to 1."""
+    if currency == "CNY":
+        return exchange_rates.get("CNY", Decimal("1"))
+    rate = exchange_rates.get(currency)
+    if rate is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "MISSING_EXCHANGE_RATE",
+                "message": f"缺少币种 {currency} 对 CNY 的可用汇率，无法折算报表",
+            },
+        )
+    return rate
 
 
 def get_display_name(account: str) -> str:
@@ -88,7 +149,7 @@ def build_account_tree(
         balance_dict = {}
         for currency, amount in balances.items():
             balance_dict[currency] = amount
-            rate = exchange_rates.get(currency, Decimal(1))
+            rate = rate_for(currency, exchange_rates)
             total_cny += amount * rate
         
         item = AccountBalanceItem(
@@ -205,7 +266,7 @@ def build_income_expense_tree(
                 display_amount = amount   # Expenses 保持原值
             
             amounts_dict[currency] = display_amount
-            rate = exchange_rates.get(currency, Decimal(1))
+            rate = rate_for(currency, exchange_rates)
             
             # 计算 CNY 总额时也使用相同的逻辑
             if account_type == "Income":
@@ -542,17 +603,16 @@ def get_account_detail(
     account: str = Query(..., description="账户名称"),
     start_date: Optional[str] = Query(None, description="开始日期 YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="结束日期 YYYY-MM-DD"),
-    beancount_service: BeancountService = Depends(get_beancount_service)
+    limit: int = Query(20, ge=1, le=100, description="交易分页大小"),
+    cursor: Optional[str] = Query(None, description="下一页不透明游标"),
+    beancount_service: BeancountService = Depends(get_beancount_service),
+    query_service: TransactionQueryService = Depends(get_transaction_query_service),
 ) -> AccountDetailResponse:
     """
     获取账户明细
-    
-    展示指定账户在某一期间的交易明细，包括：
-    - 期初余额
-    - 本期交易列表
-    - 期末余额
+
+    余额汇总直接读 Beancount；逐笔交易列表使用 READY 投影的 (date, id) 游标分页。
     """
-    # 解析日期
     today = date.today()
     if start_date:
         try:
@@ -561,7 +621,7 @@ def get_account_detail(
             raise HTTPException(status_code=400, detail="开始日期格式错误")
     else:
         start = date(today.year, today.month, 1)
-    
+
     if end_date:
         try:
             end = datetime.strptime(end_date, "%Y-%m-%d").date()
@@ -569,84 +629,114 @@ def get_account_detail(
             raise HTTPException(status_code=400, detail="结束日期格式错误")
     else:
         end = today
-    
-    # 验证账户是否存在
+
+    if not account or ":" not in account:
+        raise HTTPException(status_code=400, detail="账户参数无效")
+
     all_accounts = beancount_service.get_accounts()
     account_exists = any(acc["name"] == account for acc in all_accounts)
     if not account_exists:
         raise HTTPException(status_code=404, detail=f"账户 {account} 不存在")
-    
-    # 获取账户类型
+
     account_type = account.split(":")[0] if ":" in account else "Unknown"
-    
-    # 获取汇率
     exchange_rates = beancount_service.get_all_exchange_rates(to_currency="CNY", as_of_date=end)
-    
-    # 获取期初余额（开始日期前一天）
+
     opening_date = start - timedelta(days=1)
-    opening_balances_raw = beancount_service.get_account_balances(account_name=account, as_of_date=opening_date)
-    opening_balances = {}
+    opening_balances_raw = beancount_service.get_account_balances(
+        account_name=account, as_of_date=opening_date
+    )
+    opening_balances: Dict[str, Decimal] = {}
     opening_balance_cny = Decimal("0")
     if account in opening_balances_raw:
         for currency, amount in opening_balances_raw[account].items():
             opening_balances[currency] = amount
-            rate = exchange_rates.get(currency, Decimal(1))
-            opening_balance_cny += amount * rate
-    
-    # 获取当前余额（结束日期）
-    current_balances_raw = beancount_service.get_account_balances(account_name=account, as_of_date=end)
-    current_balances = {}
+            opening_balance_cny += amount * rate_for(currency, exchange_rates)
+
+    current_balances_raw = beancount_service.get_account_balances(
+        account_name=account, as_of_date=end
+    )
+    current_balances: Dict[str, Decimal] = {}
     current_balance_cny = Decimal("0")
     if account in current_balances_raw:
         for currency, amount in current_balances_raw[account].items():
             current_balances[currency] = amount
-            rate = exchange_rates.get(currency, Decimal(1))
-            current_balance_cny += amount * rate
-    
-    # 计算本期变动
-    period_change = {}
+            current_balance_cny += amount * rate_for(currency, exchange_rates)
+
+    period_change: Dict[str, Decimal] = {}
     all_currencies = set(opening_balances.keys()) | set(current_balances.keys())
     for currency in all_currencies:
         opening = opening_balances.get(currency, Decimal("0"))
         current = current_balances.get(currency, Decimal("0"))
         period_change[currency] = current - opening
     period_change_cny = current_balance_cny - opening_balance_cny
-    
-    # 获取期间内的交易
-    all_transactions = beancount_service.get_transactions(start_date=start, end_date=end, account=account)
-    
-    # 构建交易列表
-    transactions = []
-    running_balance = dict(opening_balances)  # 复制期初余额
-    
-    for txn in all_transactions:
-        # 找到当前账户的 posting
+
+    try:
+        page = query_service.list_transactions(
+            start_date=start.isoformat(),
+            end_date=end.isoformat(),
+            account=account,
+            limit=limit,
+            cursor=cursor,
+        )
+    except LedgerProjectionDirtyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    except InvalidTransactionCursorError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+
+    # 以页内分录计算交易后余额：从期初累加整段内按时间升序的分录，再映射到本页
+    page_items = page["items"]
+    balance_scan = query_service.list_transactions(
+        start_date=start.isoformat(),
+        end_date=end.isoformat(),
+        account=account,
+        limit=10000,
+        cursor=None,
+    )
+    running = dict(opening_balances)
+    balance_by_txn_currency: Dict[tuple, Decimal] = {}
+    for txn in reversed(balance_scan["items"]):
         for posting in txn.get("postings", []):
-            if posting.get("account") == account:
-                currency = posting.get("currency", "CNY")
-                amount = Decimal(str(posting.get("amount", "0")))
-                
-                # 更新运行余额
-                if currency not in running_balance:
-                    running_balance[currency] = Decimal("0")
-                running_balance[currency] += amount
-                
-                # 获取对方账户
-                counterpart_accounts = [
-                    p.get("account") for p in txn.get("postings", [])
-                    if p.get("account") != account
-                ]
-                
-                transactions.append(AccountTransactionItem(
+            if posting.get("account") != account:
+                continue
+            currency = posting.get("currency", "CNY")
+            amount = Decimal(str(posting.get("amount", "0")))
+            running[currency] = running.get(currency, Decimal("0")) + amount
+            balance_by_txn_currency[(txn["id"], currency)] = running[currency]
+
+    transactions: List[AccountTransactionItem] = []
+    for txn in page_items:
+        for posting in txn.get("postings", []):
+            if posting.get("account") != account:
+                continue
+            currency = posting.get("currency", "CNY")
+            amount = Decimal(str(posting.get("amount", "0")))
+            counterparts = [
+                p.get("account")
+                for p in txn.get("postings", [])
+                if p.get("account") and p.get("account") != account
+            ]
+            transactions.append(
+                AccountTransactionItem(
+                    id=txn.get("id"),
                     date=txn.get("date", ""),
-                    description=txn.get("description", ""),
-                    payee=txn.get("payee", ""),
+                    description=txn.get("description") or "",
+                    payee=txn.get("payee") or "",
                     amount=amount,
                     currency=currency,
-                    balance=running_balance[currency],
-                    counterpart_accounts=counterpart_accounts
-                ))
-    
+                    balance=balance_by_txn_currency.get(
+                        (txn["id"], currency),
+                        opening_balances.get(currency, Decimal("0")) + amount,
+                    ),
+                    counterpart_accounts=counterparts,
+                )
+            )
+
     return AccountDetailResponse(
         account=account,
         display_name=get_display_name(account),
@@ -660,5 +750,7 @@ def get_account_detail(
         period_change=period_change,
         period_change_cny=period_change_cny,
         transactions=transactions,
-        exchange_rates=exchange_rates
+        next_cursor=page.get("next_cursor"),
+        has_more=bool(page.get("has_more")),
+        exchange_rates=exchange_rates,
     )

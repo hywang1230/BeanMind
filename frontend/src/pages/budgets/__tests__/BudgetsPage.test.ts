@@ -51,7 +51,12 @@ describe('BudgetsPage', () => {
     await buttons.find(button => button.text().includes('新增分类'))!.trigger('click')
     const inputs = wrapper.findAll('input')
     await inputs.find(input => input.attributes('placeholder') === '例如：餐饮')!.setValue('餐饮')
-    await inputs.find(input => input.attributes('placeholder') === 'Expenses:Food')!.setValue('Expenses:Food')
+    const picker = wrapper.findComponent({ name: 'AccountPicker' })
+    expect(picker.exists()).toBe(true)
+    expect(picker.props('label')).toBe('账户')
+    expect(picker.props('selectedAccounts')).toEqual([])
+    await picker.vm.$emit('update:modelValue', 'Expenses:Food')
+    await wrapper.vm.$nextTick()
     const amount = inputs.find(input => input.attributes('inputmode') === 'decimal')!
     await amount.setValue('100')
     await wrapper.findAll('button').find(button => button.text().includes('保存预算'))!.trigger('click')
@@ -63,11 +68,104 @@ describe('BudgetsPage', () => {
     )
   })
 
+  it('formats usage rate to two decimal places and uses AccountPicker only', async () => {
+    vi.mocked(budgetsApi.get).mockResolvedValue({
+      ...emptyBudget,
+      total: '15',
+      spent: '70',
+      remaining: '-55',
+      items: [{
+        name: '餐饮',
+        account_pattern: 'Expenses:CY-餐饮',
+        amount: '15',
+        spent: '70',
+        remaining: '-55',
+        usage_rate: '4.666666666666666666666666667',
+        risk: 'EXCEEDED',
+      }],
+    })
+    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('466.67%')
+    expect(wrapper.text()).not.toContain('466.6666666666666666666666667%')
+    expect(wrapper.text()).not.toContain('账户范围')
+    expect(wrapper.text()).not.toContain('选择账户范围')
+    const picker = wrapper.findComponent({ name: 'AccountPicker' })
+    expect(picker.exists()).toBe(true)
+    expect(picker.props('label')).toBe('账户')
+    expect(picker.props('selectedAccounts')).toEqual(['Expenses:CY-餐饮'])
+    expect(wrapper.text()).toContain('CY-餐饮')
+  })
+
   it('shows retryable API error', async () => {
     vi.mocked(budgetsApi.get).mockRejectedValue({ message: '投影恢复中' })
     const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
     await flushPromises()
     expect(wrapper.text()).toContain('投影恢复中')
     expect(wrapper.text()).toContain('重试')
+  })
+
+  it('pull-to-refresh reloads budget and accounts', async () => {
+    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    const budgetCalls = vi.mocked(budgetsApi.get).mock.calls.length
+    const accountCalls = vi.mocked(accountsApi.getAccounts).mock.calls.length
+    expect(wrapper.find('.page-with-pull').exists()).toBe(true)
+    expect(wrapper.find('.page-scroll').exists()).toBe(true)
+    expect(wrapper.find('.van-pull-refresh').exists()).toBe(true)
+    await wrapper.findComponent({ name: 'VanPullRefresh' }).vm.$emit('refresh')
+    await flushPromises()
+    expect(vi.mocked(budgetsApi.get).mock.calls.length).toBeGreaterThan(budgetCalls)
+    expect(vi.mocked(accountsApi.getAccounts).mock.calls.length).toBeGreaterThan(accountCalls)
+  })
+
+  it('supports multi account patterns as comma-joined contract', async () => {
+    vi.mocked(accountsApi.getAccounts).mockResolvedValue([
+      {
+        name: 'Expenses',
+        account_type: 'Expenses',
+        currencies: ['CNY'],
+        children: [
+          { name: 'Expenses:Food', account_type: 'Expenses', currencies: ['CNY'] },
+          { name: 'Expenses:Travel', account_type: 'Expenses', currencies: ['CNY'] },
+        ],
+      },
+    ])
+    vi.mocked(budgetsApi.save).mockResolvedValue({
+      ...emptyBudget,
+      total: '200',
+      items: [{
+        name: '餐饮交通',
+        account_pattern: 'Expenses:Food,Expenses:Travel',
+        amount: '200',
+        spent: '50',
+        remaining: '150',
+        risk: 'NORMAL',
+      }],
+    })
+    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text().includes('新增分类'))!.trigger('click')
+    await wrapper.findAll('input').find(input => input.attributes('placeholder') === '例如：餐饮')!.setValue('餐饮交通')
+    const picker = wrapper.findComponent({ name: 'AccountPicker' })
+    await picker.vm.$emit('update:modelValue', 'Expenses:Food')
+    await wrapper.vm.$nextTick()
+    await picker.vm.$emit('update:modelValue', 'Expenses:Travel')
+    await wrapper.vm.$nextTick()
+    expect(picker.props('selectedAccounts')).toEqual(['Expenses:Food', 'Expenses:Travel'])
+    await wrapper.findAll('input').find(input => input.attributes('inputmode') === 'decimal')!.setValue('200')
+    await wrapper.findAll('button').find(button => button.text().includes('保存预算'))!.trigger('click')
+    await flushPromises()
+    expect(budgetsApi.save).toHaveBeenCalledWith(
+      expect.any(String),
+      'CNY',
+      [expect.objectContaining({
+        name: '餐饮交通',
+        account_pattern: 'Expenses:Food,Expenses:Travel',
+        amount: '200',
+      })],
+    )
+    expect(wrapper.text()).toContain('Food')
+    expect(wrapper.text()).toContain('Travel')
   })
 })

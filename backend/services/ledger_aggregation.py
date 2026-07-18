@@ -6,7 +6,7 @@ import calendar
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 
 from backend.infrastructure.persistence.db.models import LedgerPosting, LedgerTransaction
@@ -17,10 +17,41 @@ def month_range(month: str) -> tuple[date, date]:
     try:
         year_text, month_text = month.split("-", 1)
         year, number = int(year_text), int(month_text)
+        if number < 1 or number > 12:
+            raise ValueError("月份必须使用 YYYY-MM 格式")
         start = date(year, number, 1)
     except (TypeError, ValueError) as exc:
         raise ValueError("月份必须使用 YYYY-MM 格式") from exc
     return start, date(year, number, calendar.monthrange(year, number)[1])
+
+
+def shift_month(month: str, delta: int) -> str:
+    start, _ = month_range(month)
+    year = start.year
+    number = start.month + delta
+    while number < 1:
+        number += 12
+        year -= 1
+    while number > 12:
+        number -= 12
+        year += 1
+    return f"{year:04d}-{number:02d}"
+
+
+def months_between(start_month: str, end_month: str) -> list[str]:
+    start, _ = month_range(start_month)
+    end, _ = month_range(end_month)
+    if (start.year, start.month) > (end.year, end.month):
+        raise ValueError("开始月份不能晚于结束月份")
+    months: list[str] = []
+    year, number = start.year, start.month
+    while (year, number) <= (end.year, end.month):
+        months.append(f"{year:04d}-{number:02d}")
+        number += 1
+        if number > 12:
+            number = 1
+            year += 1
+    return months
 
 
 def normalize_decimal(value: Decimal | str | int) -> str:
@@ -97,3 +128,57 @@ class LedgerAggregationService:
             "expense": expenses,
             "income": {currency: -amount for currency, amount in raw_income.items()},
         }
+
+    def monthly_cashflow_by_currency(
+        self, start_month: str, end_month: str
+    ) -> dict[str, dict[str, dict[str, Decimal]]]:
+        """一次 SQL 聚合 [start_month, end_month] 内按月/收支根/币种的流量。
+
+        返回结构：
+        {
+          "YYYY-MM": {
+            "income": {currency: Decimal},   # Income 分录合计的相反数
+            "expense": {currency: Decimal},  # Expenses 保留原符号
+          }
+        }
+        缺月会补齐为零币种字典。
+        """
+        self.projection.assert_ready()
+        months = months_between(start_month, end_month)
+        start, _ = month_range(start_month)
+        _, end = month_range(end_month)
+
+        month_expr = func.strftime("%Y-%m", LedgerTransaction.date)
+        flow_type = case(
+            (self._pattern_filter("Income"), "income"),
+            (self._pattern_filter("Expenses"), "expense"),
+            else_="other",
+        )
+
+        rows = (
+            self.db.query(
+                month_expr.label("month"),
+                flow_type.label("flow_type"),
+                LedgerPosting.currency,
+                func.decimal_sum(LedgerPosting.amount_text),
+            )
+            .join(LedgerTransaction, LedgerTransaction.id == LedgerPosting.transaction_id)
+            .filter(LedgerTransaction.date >= start)
+            .filter(LedgerTransaction.date <= end)
+            .filter(or_(self._pattern_filter("Income"), self._pattern_filter("Expenses")))
+            .group_by(month_expr, flow_type, LedgerPosting.currency)
+            .all()
+        )
+
+        result: dict[str, dict[str, dict[str, Decimal]]] = {
+            month: {"income": {}, "expense": {}} for month in months
+        }
+        for month_key, flow, currency, total in rows:
+            if month_key not in result or flow not in ("income", "expense"):
+                continue
+            amount = Decimal(str(total or 0))
+            if flow == "income":
+                amount = -amount
+            bucket = result[month_key][flow]
+            bucket[currency] = bucket.get(currency, Decimal("0")) + amount
+        return result
