@@ -25,6 +25,7 @@
   --bm-radius: 12px;
   /* 全站按钮统一圆角（含默认/round，避免 4px vs 胶囊不一致） */
   --bm-button-radius: 10px;
+  --bm-tabbar-height: 60px;
   --app-primary: var(--bm-primary);
   --app-danger: var(--bm-expense);
   --app-success: var(--bm-income);
@@ -51,7 +52,7 @@ button, input, select, textarea { font: inherit; }
 #app input, #app select, #app textarea { font-size: 16px; }
 .app-shell { min-height: 100vh; }
 .app-main { min-height: 100vh; }
-.app-main.with-tabbar { padding-bottom: calc(50px + env(safe-area-inset-bottom)); }
+.app-main.with-tabbar { padding-bottom: calc(var(--bm-tabbar-height) + env(safe-area-inset-bottom)); }
 .page { min-height: 100vh; padding: 18px 16px 24px; }
 .page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .page-header h1 { margin: 0; font-size: 25px; line-height: 1.25; letter-spacing: -.02em; }
@@ -84,7 +85,7 @@ button, input, select, textarea { font: inherit; }
 }
 /* 三页下拉刷新：页面固定高度，内部滚动作为 PullRefresh 的 scroll parent */
 .page-with-pull {
-  height: calc(100dvh - 50px - env(safe-area-inset-bottom, 0px));
+  height: calc(100dvh - var(--bm-tabbar-height) - env(safe-area-inset-bottom, 0px));
   min-height: 0;
   overflow: hidden;
   display: flex;

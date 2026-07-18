@@ -48,6 +48,10 @@ function onAddTransaction() {
 
 <style scoped>
 .main-tabbar {
+  --van-tabbar-height: var(--bm-tabbar-height);
+  --van-tabbar-item-icon-size: 26px;
+  --van-tabbar-item-font-size: 13px;
+  --van-tabbar-item-icon-margin-bottom: 4px;
   border-top: 1px solid var(--bm-border);
   background: var(--bm-surface);
 }
@@ -64,14 +68,14 @@ function onAddTransaction() {
 .tabbar-add-btn {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   background: var(--bm-primary);
   color: #fff;
 }
 .tabbar-add-btn :deep(.van-icon) {
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 700;
 }
 .tabbar-add:active .tabbar-add-btn {
