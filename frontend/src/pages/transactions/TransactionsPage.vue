@@ -1,6 +1,6 @@
 <template>
   <section class="page page-with-pull transactions-page">
-    <div class="page-scroll">
+    <div class="page-scroll" @scroll.passive="onScroll">
     <van-pull-refresh v-model="refreshing" class="page-pull-refresh" pulling-text="下拉刷新" loosing-text="释放刷新" loading-text="刷新中..." success-text="刷新成功" @refresh="onRefresh">
     <header class="page-header"><h1>流水</h1></header>
     <div class="filter-panel page-section">
@@ -28,7 +28,12 @@
       </van-cell>
     </van-cell-group>
     <div v-if="items.length" class="list-footer">
-      <van-button v-if="hasMore" :loading="loadingMore" @click="loadMore">加载更多</van-button>
+      <van-loading v-if="loadingMore" size="20px">加载中</van-loading>
+      <div v-else-if="error" class="load-more-error">
+        <span>{{ error }}</span>
+        <van-button size="small" plain type="primary" @click="loadMore">重试</van-button>
+      </div>
+      <span v-else-if="hasMore" class="muted">继续上滑加载更多</span>
       <span v-else class="muted">没有更多了</span>
     </div>
     </van-pull-refresh>
@@ -88,7 +93,11 @@ async function load(reset = true, options: { silent?: boolean } = {}) {
   }
 }
 async function loadAccounts() { accountError.value = ''; try { accounts.value = await accountsApi.getAccounts() } catch (reason) { accountError.value = (reason as ApiError).message } }
-async function loadMore() { if (!cursor.value || loadingMore.value) return; loadingMore.value = true; try { const page = await transactionsApi.getTransactions({ ...query(), cursor: cursor.value }); items.value.push(...page.items); cursor.value = page.next_cursor; hasMore.value = page.has_more } catch (reason) { error.value = (reason as ApiError).message } finally { loadingMore.value = false } }
+async function loadMore() { if (!cursor.value || loadingMore.value) return; loadingMore.value = true; error.value = ''; try { const page = await transactionsApi.getTransactions({ ...query(), cursor: cursor.value }); items.value.push(...page.items); cursor.value = page.next_cursor; hasMore.value = page.has_more } catch (reason) { error.value = (reason as ApiError).message } finally { loadingMore.value = false } }
+function onScroll(event: Event) {
+  const target = event.currentTarget as HTMLElement
+  if (target.scrollHeight - target.scrollTop - target.clientHeight <= 120) loadMore()
+}
 async function onRefresh() {
   try { await Promise.all([load(true, { silent: true }), loadAccounts()]) }
   finally { refreshing.value = false }
@@ -171,4 +180,5 @@ onMounted(() => { load(true); loadAccounts() })
   padding: 16px;
   text-align: center;
 }
+.load-more-error { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--bm-expense); }
 </style>
