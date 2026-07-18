@@ -104,6 +104,54 @@ volumes:
   curl -X POST http://localhost:8000/api/transactions/projection/rebuild
   ```
 
+### 从 `main` 升级到 3.0.0
+
+升级必须在旧容器停止后进行，避免 SQLite WAL 或周期调度器继续写入：
+
+```bash
+docker compose down
+cp ./data/beanmind.db /外部备份目录/beanmind-before-v3.db
+cp -R ./data/ledger /外部备份目录/ledger-before-v3
+```
+
+先在同一版本代码目录执行只读预览：
+
+```bash
+uv run python scripts/migrate_v3.py ./data/beanmind.db \
+  --ledger ./data/ledger/main.beancount
+```
+
+确认以下内容后再应用：
+
+- `ledger.errors` 为空，交易数和分录数符合账本实际情况；
+- `recurring.orphan_rule_ids` 为空，周期规则数和执行数正确；
+- `drop_budgets` 是允许永久丢弃的旧预算数据；
+- `--backup` 指向停机后生成、与源数据库 SHA-256 完全一致的外部备份。
+- `database_sidecars.-wal` 不存在或为空；非空 WAL 说明仍有未合并写入，迁移会拒绝执行。
+
+```bash
+uv run python scripts/migrate_v3.py ./data/beanmind.db \
+  --ledger ./data/ledger/main.beancount \
+  --apply \
+  --backup /外部备份目录/beanmind-before-v3.db \
+  --confirm-drop-budgets
+docker compose up -d
+```
+
+迁移脚本不会修改 Beancount。成功报告必须显示流水投影核对通过、周期规则和执行记录数量不变、当前月度预算表为空。结构事务失败会自动回滚；若提交后投影或启动核对失败，停止容器并用外部备份恢复 `beanmind.db`，不要用 SQLite 覆盖账本。
+
+`main` 到 3.0.0 的数据库覆盖关系如下：
+
+| `main` / 中间版本数据 | 3.0.0 处理方式 | 核对标准 |
+|---|---|---|
+| Beancount 流水 | 原文件只读保留；删除旧 `transaction_metadata` 和投影后重建 | 文件指纹不变，交易数、分录数和 Decimal 汇总一致，投影 `READY` |
+| `recurring_rules` | 仅移除 `user_id`，其余字段按原 ID 复制 | 规则数量与 ID 集合不变 |
+| `recurring_executions` | 原表原记录保留 | 执行数量、ID、`rule_id` 关联不变，无孤儿外键 |
+| `budgets` / `budget_items` / `budget_cycles` | 删除，不转换 | 预览列出删除数量 |
+| 中间版本 `monthly_budgets` / `monthly_budget_items` | 删除并创建当前空结构 | 两张当前表存在且均为 0 条 |
+| 用户、同步、备份、旧配置、旧 AI、旧月报 | 删除 | 迁移后废弃表不存在 |
+| 币种、月度复盘等 3.0.0 新表 | 由当前 SQLAlchemy 模型创建 | 当前应用可启动并正常查询 |
+
 ## 自动初始化
 
 入口脚本 `docker-entrypoint.sh` 在启动 uvicorn 前执行：

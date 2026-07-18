@@ -49,6 +49,28 @@ curl -X POST http://localhost:8000/api/transactions/projection/rebuild
 
 迁移或性能测试应先使用真实账本副本或匿名化数据。SQLite 投影不得反向覆盖 Beancount。
 
+### 从 `main` 升级到 3.0.0
+
+升级前先停止服务，分别备份完整 `data/ledger/` 和停机后的 `data/beanmind.db`。3.0.0 只保留一个迁移入口，默认命令只读预览：
+
+```bash
+cp data/beanmind.db /外部备份目录/beanmind-before-v3.db
+uv run python scripts/migrate_v3.py data/beanmind.db \
+  --ledger data/ledger/main.beancount
+```
+
+核对预览中的账本交易/分录数、周期规则/执行数和待删除预算数后，明确放弃旧预算并执行：
+
+```bash
+uv run python scripts/migrate_v3.py data/beanmind.db \
+  --ledger data/ledger/main.beancount \
+  --apply \
+  --backup /外部备份目录/beanmind-before-v3.db \
+  --confirm-drop-budgets
+```
+
+脚本会完整保留周期记账，删除旧预算和废弃元数据，并只从 Beancount 重建流水投影。备份与源数据库不是完全相同的停机副本、存在未 checkpoint 的非空 SQLite WAL、账本无法解析或周期执行存在孤儿关联时，迁移会拒绝开始。迁移后应确认报告中投影为 `READY`、流水数量一致、周期规则与执行数一致、月度预算为空；如需回退，先停止服务，再恢复已校验的 SQLite 外部备份，账本无需由 SQLite 回写。
+
 ## LLM 配置
 
 默认关闭。启用时在 `.env` 配置：
