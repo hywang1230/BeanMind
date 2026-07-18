@@ -1,7 +1,8 @@
-import { mount, shallowMount } from '@vue/test-utils'
+import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import Vant from 'vant'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { statisticsApi } from '../api/statistics'
 import AccountPicker from './AccountPicker.vue'
 import DatePickerField from './DatePickerField.vue'
 import DateRangePickerField from './DateRangePickerField.vue'
@@ -9,7 +10,17 @@ import MoneyInput from './MoneyInput.vue'
 import MonthPicker from './MonthPicker.vue'
 import SelectPickerField from './SelectPickerField.vue'
 
+vi.mock('../api/statistics', () => ({
+  statisticsApi: {
+    getFrequentItems: vi.fn(),
+  },
+}))
+
 describe('business inputs', () => {
+  beforeEach(() => {
+    vi.mocked(statisticsApi.getFrequentItems).mockReset()
+  })
+
   it('opens a calc keypad and commits decimal-string results', async () => {
     const wrapper = mount(MoneyInput, {
       props: { modelValue: '', currency: 'CNY' },
@@ -152,6 +163,76 @@ describe('business inputs', () => {
     await wrapper.find('[aria-label="清空账户"]').trigger('click')
     expect(wrapper.emitted('update:modelValue')).toEqual([['']])
     expect(wrapper.emitted('change')).toEqual([['']])
+  })
+
+  it('loads frequent accounts for the transaction type and supports quick select', async () => {
+    vi.mocked(statisticsApi.getFrequentItems).mockResolvedValue([
+      { name: 'Expenses:Food:Lunch', count: 5, last_used: '2026-07-01' },
+      { name: 'Expenses:Food:Dinner', count: 3, last_used: '2026-07-02' },
+      { name: 'Assets:Cash', count: 9, last_used: '2026-07-03' },
+    ])
+
+    const wrapper = mount(AccountPicker, {
+      props: {
+        modelValue: '',
+        transactionType: 'expense',
+        prefixes: ['Expenses'],
+        accounts: [
+          {
+            name: 'Expenses',
+            account_type: 'Expenses',
+            currencies: ['CNY'],
+            children: [
+              {
+                name: 'Expenses:Food',
+                account_type: 'Expenses',
+                currencies: ['CNY'],
+                children: [
+                  { name: 'Expenses:Food:Lunch', account_type: 'Expenses', currencies: ['CNY'] },
+                  { name: 'Expenses:Food:Dinner', account_type: 'Expenses', currencies: ['CNY'] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      global: { plugins: [Vant] },
+    })
+
+    await wrapper.find('.van-field').trigger('click')
+    await flushPromises()
+
+    expect(statisticsApi.getFrequentItems).toHaveBeenCalledWith({
+      type: 'expense',
+      days: 30,
+      limit: 3,
+    })
+    expect(wrapper.text()).toContain('最近常用')
+    expect(wrapper.text()).toContain('Expenses:Food:Lunch')
+    expect(wrapper.text()).not.toContain('Assets:Cash')
+
+    await wrapper.find('.frequent-item').trigger('click')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['Expenses:Food:Lunch']])
+    expect(wrapper.emitted('change')).toEqual([['Expenses:Food:Lunch']])
+  })
+
+  it('skips frequent account loading without transactionType', async () => {
+    const wrapper = mount(AccountPicker, {
+      props: {
+        modelValue: '',
+        prefixes: ['Expenses'],
+        accounts: [
+          { name: 'Expenses:Food:Lunch', account_type: 'Expenses', currencies: ['CNY'] },
+        ],
+      },
+      global: { plugins: [Vant] },
+    })
+
+    await wrapper.find('.van-field').trigger('click')
+    await flushPromises()
+
+    expect(statisticsApi.getFrequentItems).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('最近常用')
   })
 
   it('clears optional picker values through the field clear action', async () => {

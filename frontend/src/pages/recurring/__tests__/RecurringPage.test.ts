@@ -118,4 +118,27 @@ describe('RecurringPage', () => {
     expect(recurringApi.createRule).not.toHaveBeenCalled()
     wrapper.unmount()
   })
+
+  it('uses SelectPickerField for posting currency in the create form', async () => {
+    const wrapper = mount(RecurringPage, { global: { plugins: [Vant] }, attachTo: document.body })
+    await flushPromises()
+    const createButtons = wrapper.findAll('button').filter(button => button.text().includes('创建规则'))
+    await createButtons[0]!.trigger('click')
+    await flushPromises()
+
+    // 币种字段应为只读选择器，而不是可自由输入的 van-field
+    const currencyLabels = Array.from(document.body.querySelectorAll('.van-field')).filter((field) => {
+      const label = field.querySelector('.van-field__label')
+      return label?.textContent?.trim() === '币种'
+    })
+    expect(currencyLabels.length).toBeGreaterThan(0)
+    for (const field of currencyLabels) {
+      const input = field.querySelector('input') as HTMLInputElement | null
+      expect(input).toBeTruthy()
+      expect(input!.hasAttribute('readonly')).toBe(true)
+      expect(input!.value).toBe('CNY')
+    }
+    wrapper.unmount()
+  })
+
 })

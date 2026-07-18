@@ -68,7 +68,12 @@
             <div v-for="(posting, index) in draft.transaction_template.postings" :key="index" class="posting-editor">
               <AccountPicker v-model="posting.account" :accounts="accounts" :label="`账户 ${index + 1}`" clearable :error="accountError" />
               <van-field v-model="posting.amount" label="金额" inputmode="decimal" placeholder="正负金额" />
-              <van-field v-model="posting.currency" label="币种" />
+              <SelectPickerField
+                v-model="posting.currency"
+                label="币种"
+                :options="currencyOptionsFor(posting.currency)"
+                placeholder="请选择币种"
+              />
               <van-button v-if="draft.transaction_template.postings.length > 2" size="mini" type="danger" @click="removePosting(index)">删除分录</van-button>
             </div>
             <van-button block plain type="primary" @click="addPosting">添加分录</van-button>
@@ -152,6 +157,17 @@ const frequencyOptions = [
   { text: '双周', value: 'biweekly' }, { text: '每月', value: 'monthly' },
   { text: '每年', value: 'yearly' },
 ]
+
+
+// 与记账表单一致：产品仅支持人民币、美元；编辑存量数据时保留当前币种可选。
+const SUPPORTED_CURRENCIES = ['CNY', 'USD']
+
+function currencyOptionsFor(current: string) {
+  const values = current && !SUPPORTED_CURRENCIES.includes(current)
+    ? [...SUPPORTED_CURRENCIES, current]
+    : [...SUPPORTED_CURRENCIES]
+  return values.map((currency) => ({ text: currency, value: currency }))
+}
 const weekdayOptions = [
   { text: '周一', value: 1 }, { text: '周二', value: 2 }, { text: '周三', value: 3 },
   { text: '周四', value: 4 }, { text: '周五', value: 5 }, { text: '周六', value: 6 }, { text: '周日', value: 7 },

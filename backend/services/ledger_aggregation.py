@@ -182,3 +182,75 @@ class LedgerAggregationService:
             bucket = result[month_key][flow]
             bucket[currency] = bucket.get(currency, Decimal("0")) + amount
         return result
+
+    def frequent_items(
+        self,
+        *,
+        item_type: str,
+        start: date,
+        end: date,
+        limit: int = 3,
+    ) -> list[dict[str, object]]:
+        """按账户/分类统计近期使用频次，直接在投影表聚合。
+
+        item_type:
+        - expense: Expenses:*
+        - income: Income:*
+        - transfer / account: Assets:* 与 Liabilities:*
+        """
+        self.projection.assert_ready()
+        if start > end:
+            raise ValueError("开始日期不能晚于结束日期")
+        if limit < 1:
+            raise ValueError("limit 必须大于等于 1")
+
+        query = (
+            self.db.query(
+                LedgerPosting.account,
+                func.count().label("use_count"),
+                func.max(LedgerTransaction.date).label("last_used"),
+            )
+            .join(LedgerTransaction, LedgerTransaction.id == LedgerPosting.transaction_id)
+            .filter(LedgerTransaction.date >= start)
+            .filter(LedgerTransaction.date <= end)
+        )
+
+        if item_type == "expense":
+            query = query.filter(self._pattern_filter("Expenses"))
+        elif item_type == "income":
+            query = query.filter(self._pattern_filter("Income"))
+        elif item_type in ("transfer", "account"):
+            query = query.filter(
+                or_(
+                    self._pattern_filter("Assets"),
+                    self._pattern_filter("Liabilities"),
+                )
+            )
+        else:
+            raise ValueError(f"不支持的常用项类型: {item_type}")
+
+        rows = (
+            query.group_by(LedgerPosting.account)
+            .order_by(
+                func.count().desc(),
+                func.max(LedgerTransaction.date).desc(),
+                LedgerPosting.account.asc(),
+            )
+            .limit(limit)
+            .all()
+        )
+
+        result: list[dict[str, object]] = []
+        for name, use_count, last_used in rows:
+            if hasattr(last_used, "isoformat"):
+                last_used_text = last_used.isoformat()
+            else:
+                last_used_text = str(last_used)
+            result.append(
+                {
+                    "name": name,
+                    "count": int(use_count or 0),
+                    "last_used": last_used_text,
+                }
+            )
+        return result

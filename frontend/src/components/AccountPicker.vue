@@ -36,6 +36,22 @@
         <button type="button" class="header-action" @click="clearSearch">清空搜索</button>
       </header>
       <van-search v-model="search" placeholder="搜索完整账户名、叶子名称或父级路径" />
+      <div v-if="frequentAccounts.length && !search.trim()" class="frequent-section">
+        <div class="frequent-title">最近常用</div>
+        <button
+          v-for="item in frequentAccounts"
+          :key="item.name"
+          type="button"
+          class="frequent-item"
+          @click="select(item.name)"
+        >
+          <van-icon name="star" class="frequent-icon" />
+          <span class="frequent-main">
+            <span class="frequent-label">{{ shortName(item.name) }}</span>
+            <span class="frequent-path">{{ item.name }}</span>
+          </span>
+        </button>
+      </div>
       <van-empty v-if="!treeNodes.length" description="暂无账户" />
       <van-empty v-else-if="!visibleNodes.length" description="没有匹配的账户" />
       <div v-else class="account-tree" role="tree">
@@ -74,6 +90,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { Account } from '../api/accounts'
+import { statisticsApi, type FrequentItem } from '../api/statistics'
 import { accountShortLabel, filterAccountNodes, flattenAccountTree, visibleAccountNodes, type VisibleAccountNode } from '../utils/accountTree'
 
 const props = withDefaults(defineProps<{
@@ -91,6 +108,8 @@ const props = withDefaults(defineProps<{
   /** When provided, field shows selected chips and supports multi-add UX. */
   selectedAccounts?: string[]
   placeholder?: string
+  /** 记账交易类型；用于加载「最近常用」账户/分类 */
+  transactionType?: 'expense' | 'income' | 'transfer'
 }>(), {
   label: '账户',
   prefixes: () => [],
@@ -102,6 +121,7 @@ const props = withDefaults(defineProps<{
   includeAccounts: () => [],
   selectedAccounts: undefined,
   placeholder: '请选择账户',
+  transactionType: undefined,
 })
 
 const emit = defineEmits<{
@@ -113,6 +133,7 @@ const emit = defineEmits<{
 const show = ref(false)
 const search = ref('')
 const expandedNames = ref<Set<string>>(new Set())
+const frequentAccounts = ref<FrequentItem[]>([])
 
 const isMultiDisplay = computed(() => props.selectedAccounts !== undefined)
 const placeholderText = computed(() => props.placeholder || '请选择账户')
@@ -238,6 +259,54 @@ watch(
   },
   { immediate: true },
 )
+
+function matchesPrefixes(name: string): boolean {
+  const prefixes = props.prefixes || []
+  if (!prefixes.length) return true
+  return prefixes.some((prefix) => name === prefix || name.startsWith(`${prefix}:`) || name.startsWith(prefix))
+}
+
+function resolveFrequentType(): 'expense' | 'income' | 'transfer' | 'account' {
+  if (props.transactionType === 'expense') {
+    return props.prefixes.some((prefix) => prefix === 'Expenses' || prefix.startsWith('Expenses'))
+      ? 'expense'
+      : 'account'
+  }
+  if (props.transactionType === 'income') {
+    return props.prefixes.some((prefix) => prefix === 'Income' || prefix.startsWith('Income'))
+      ? 'income'
+      : 'account'
+  }
+  return 'account'
+}
+
+async function loadFrequentAccounts() {
+  if (!props.transactionType) {
+    frequentAccounts.value = []
+    return
+  }
+
+  try {
+    const result = await statisticsApi.getFrequentItems({
+      type: resolveFrequentType(),
+      days: 30,
+      limit: 3,
+    })
+    const selectable = new Set(selectableAccountNames.value)
+    frequentAccounts.value = result.filter((item) => {
+      if (!matchesPrefixes(item.name)) return false
+      // 仅展示当前可选账户范围内的末级账户
+      if (selectable.size > 0 && !selectable.has(item.name)) return false
+      return true
+    })
+  } catch {
+    frequentAccounts.value = []
+  }
+}
+
+watch(show, async (opened) => {
+  if (opened) await loadFrequentAccounts()
+})
 </script>
 
 <style scoped>
@@ -273,5 +342,48 @@ watch(
   color: var(--bm-muted, #888);
   font-size: 13px;
   line-height: 1.4;
+}
+.frequent-section {
+  padding: 4px 12px 8px;
+  border-bottom: 1px solid var(--van-border-color, #ebedf0);
+}
+.frequent-title {
+  padding: 6px 4px 8px;
+  font-size: 12px;
+  color: var(--bm-muted, #888);
+}
+.frequent-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+}
+.frequent-item:active {
+  background: var(--van-active-color, rgba(0, 0, 0, 0.05));
+}
+.frequent-icon {
+  color: var(--van-warning-color, #ff976a);
+  flex-shrink: 0;
+}
+.frequent-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.frequent-label {
+  font-weight: 600;
+}
+.frequent-path {
+  color: var(--bm-muted, #888);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

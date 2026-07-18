@@ -4,7 +4,7 @@
 """
 from typing import Optional, Literal
 from fastapi import APIRouter, Depends, Query
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from sqlalchemy.orm import Session
 
@@ -17,7 +17,10 @@ from backend.interfaces.dto.statistics import (
 from backend.config import settings, get_db
 from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.repositories import AccountRepositoryImpl, TransactionRepositoryImpl
+from backend.infrastructure.persistence.ledger_projection import LedgerProjectionDirtyError
 from backend.application.services import AccountApplicationService, TransactionApplicationService
+from backend.interfaces.errors import ApiError
+from backend.services.ledger_aggregation import LedgerAggregationService
 
 router = APIRouter(prefix="/api/statistics", tags=["statistics"])
 
@@ -304,98 +307,31 @@ def get_frequent_items(
     type: Literal["expense", "income", "transfer", "account"] = Query(..., description="类型：支出/收入/转账/账户"),
     days: int = Query(30, ge=1, le=90, description="统计天数"),
     limit: int = Query(3, ge=1, le=10, description="返回数量限制"),
-    transaction_service: TransactionApplicationService = Depends(get_transaction_service)
+    db: Session = Depends(get_db),
 ) -> list[FrequentItemResponse]:
     """
     获取常用账户/分类
 
-    返回最近N天内使用频率最高的账户或分类（Top 3）
+    返回最近N天内使用频率最高的账户或分类（默认 Top 3）。
+    直接在可重建账本投影上 SQL 聚合，避免加载全量交易 DTO。
 
     统计规则：
-    - expense: 返回支出交易中最常用的分类（Expenses:*）
-    - income: 返回收入交易中最常用的分类（Income:*）
-    - transfer: 返回转账交易中最常用的账户（Assets:* 和 Liabilities:*）
-    - account: 返回所有交易中最常用的账户（Assets:* 和 Liabilities:*）
+    - expense: 返回支出分类（Expenses）
+    - income: 返回收入分类（Income）
+    - transfer / account: 返回资产与负债账户（Assets / Liabilities）
     """
-    # 计算日期范围
-    end_date = datetime.now()
+    end_date = date.today()
     start_date = end_date - timedelta(days=days)
-
-    start_date_str = start_date.strftime("%Y-%m-%d")
-    end_date_str = end_date.strftime("%Y-%m-%d")
-
-    # 获取交易列表
-    transactions = transaction_service.get_transactions(
-        start_date=start_date_str,
-        end_date=end_date_str,
-        limit=1000  # 获取足够的交易
-    )
-
-    # 统计账户/分类使用频率
-    item_stats: dict[str, dict] = {}
-
-    for transaction in transactions:
-        postings = transaction.get("postings", [])
-        txn_date = transaction.get("date", "")
-
-        # 判断交易类型
-        is_expense = any(p.get("account", "").startswith("Expenses:") for p in postings)
-        is_income = any(p.get("account", "").startswith("Income:") for p in postings)
-        is_transfer = any(
-            p.get("account", "").startswith("Assets:") or p.get("account", "").startswith("Liabilities:")
-            for p in postings
+    try:
+        items = LedgerAggregationService(db, settings.LEDGER_FILE).frequent_items(
+            item_type=type,
+            start=start_date,
+            end=end_date,
+            limit=limit,
         )
+    except LedgerProjectionDirtyError as exc:
+        raise ApiError(503, exc.code, str(exc)) from exc
+    except ValueError as exc:
+        raise ApiError(400, "INVALID_FREQUENT_QUERY", str(exc)) from exc
 
-        # 根据类型筛选
-        if type == "expense" and not is_expense:
-            continue
-        if type == "income" and not is_income:
-            continue
-        if type == "transfer" and not is_transfer:
-            continue
-
-        # 统计每个账户/分类（使用完整的末级账户路径）
-        for posting in postings:
-            account = posting.get("account", "")
-
-            # 根据类型过滤账户
-            if type == "expense":
-                # 只统计支出分类（末级）
-                if not account.startswith("Expenses:"):
-                    continue
-            elif type == "income":
-                # 只统计收入分类（末级）
-                if not account.startswith("Income:"):
-                    continue
-            elif type in ["transfer", "account"]:
-                # 统计资产和负债账户（末级）
-                if not (account.startswith("Assets:") or account.startswith("Liabilities:")):
-                    continue
-
-            # 使用完整的账户名称（beancount posting通常使用末级账户）
-            # 不需要额外处理，account已经是完整的末级账户路径
-
-            # 统计使用次数
-            if account not in item_stats:
-                item_stats[account] = {
-                    "count": 0,
-                    "last_used": txn_date
-                }
-
-            item_stats[account]["count"] += 1
-            # 更新最后使用日期
-            if txn_date > item_stats[account]["last_used"]:
-                item_stats[account]["last_used"] = txn_date
-
-    # 转换为列表并按使用次数排序
-    result = []
-    for name, stats in item_stats.items():
-        result.append(FrequentItemResponse(
-            name=name,
-            count=stats["count"],
-            last_used=stats["last_used"]
-        ))
-
-    # 按使用次数降序排序并限制数量
-    result.sort(key=lambda x: (x.count, x.last_used), reverse=True)
-    return result[:limit]
+    return [FrequentItemResponse(**item) for item in items]

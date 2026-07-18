@@ -22,6 +22,7 @@
         :active-only="true"
         :include-accounts="form.fromAccounts"
         :selected-accounts="form.fromAccounts"
+        :transaction-type="form.type"
         @update:model-value="addAccount('from', $event)"
         @remove="removeAccount('from', $event)"
       />
@@ -35,6 +36,7 @@
         :active-only="true"
         :include-accounts="form.toAccounts"
         :selected-accounts="form.toAccounts"
+        :transaction-type="form.type"
         @update:model-value="addAccount('to', $event)"
         @remove="removeAccount('to', $event)"
       />
