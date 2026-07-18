@@ -67,4 +67,55 @@ describe('RecurringPage', () => {
     await flushPromises()
     expect(recurringApi.updateRule).toHaveBeenCalledWith('rule-1', { is_active: false })
   })
+
+  it('opens the edit form with existing rule and saves via updateRule', async () => {
+    const rule = {
+      id: 'rule-1', name: '停车费', frequency: 'monthly' as const,
+      frequency_config: { month_days: [1] },
+      transaction_template: {
+        description: '每月停车费',
+        postings: [
+          { account: 'Expenses:Parking', amount: '200', currency: 'CNY' },
+          { account: 'Assets:Cash', amount: '-200', currency: 'CNY' },
+        ],
+      },
+      start_date: '2026-07-17', is_active: true,
+    }
+    vi.mocked(recurringApi.getRules).mockResolvedValue([rule])
+    vi.mocked(recurringApi.updateRule).mockResolvedValue({ ...rule, name: '停车费-改' })
+    const wrapper = mount(RecurringPage, { global: { plugins: [Vant] }, attachTo: document.body })
+    await flushPromises()
+
+    const editButton = wrapper.findAll('button').find(button => button.text() === '编辑')!
+    await editButton.trigger('click')
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('编辑周期规则')
+    expect(document.body.textContent).toContain('停车费')
+    expect(document.body.textContent).toContain('每月停车费')
+
+    const form = document.body.querySelector('form')
+    expect(form).toBeTruthy()
+    form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(recurringApi.updateRule).toHaveBeenCalled()
+    const [id, payload] = vi.mocked(recurringApi.updateRule).mock.calls.at(-1)!
+    expect(id).toBe('rule-1')
+    expect(payload).toMatchObject({
+      name: '停车费',
+      frequency: 'monthly',
+      frequency_config: { month_days: [1] },
+      transaction_template: {
+        description: '每月停车费',
+        postings: [
+          { account: 'Expenses:Parking', amount: '200', currency: 'CNY' },
+          { account: 'Assets:Cash', amount: '-200', currency: 'CNY' },
+        ],
+      },
+      start_date: '2026-07-17',
+    })
+    expect(recurringApi.createRule).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 })
