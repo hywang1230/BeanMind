@@ -133,6 +133,21 @@ def test_fixture_rebuild_is_idempotent_and_preserves_decimal(db_session, ledger_
     assert projection.check_consistency()["consistent"] is True
 
 
+def test_dirty_projection_is_rebuilt_by_ensure_current(db_session, ledger_path):
+    projection = LedgerProjectionService(db_session, ledger_path)
+    projection.rebuild_all()
+    projection.mark_dirty(ledger_path, "test failure")
+
+    result = projection.ensure_current()
+
+    assert result["status"] == "READY"
+    assert db_session.query(LedgerTransaction).count() == 6
+    assert all(
+        record.status == "READY"
+        for record in db_session.query(LedgerIndexFile).all()
+    )
+
+
 def test_create_all_is_idempotent_and_preserves_existing_business_data(db_session):
     budget = MonthlyBudget(id="existing-budget", month="2025-01")
     db_session.add(budget)

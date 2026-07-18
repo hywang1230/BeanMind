@@ -332,7 +332,7 @@ class LedgerProjectionService:
             self.db.query(LedgerPosting).delete(synchronize_session=False)
             self.db.query(LedgerTag).delete(synchronize_session=False)
             self.db.query(LedgerTransaction).delete(synchronize_session=False)
-            self.db.query(LedgerIndexFile).delete(synchronize_session=False)
+            self.db.query(LedgerIndexFile).delete(synchronize_session="fetch")
             self.db.add_all(transactions)
             for path in sorted(files):
                 self._record_file(path)
