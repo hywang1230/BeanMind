@@ -52,7 +52,12 @@ describe('reports AccountDetailPage', () => {
       has_more: true,
     })
 
-    const wrapper = mount(AccountDetailPage, { global: { plugins: [Vant] } })
+    const wrapper = mount(AccountDetailPage, {
+      global: {
+        plugins: [Vant],
+        stubs: { VanNavBar: true },
+      },
+    })
     await flushPromises()
     expect(reportsApi.getAccountDetail).toHaveBeenCalledWith(
       expect.objectContaining({ account: 'Assets:Cash', start_date: '2026-07-01', end_date: '2026-07-31' }),
