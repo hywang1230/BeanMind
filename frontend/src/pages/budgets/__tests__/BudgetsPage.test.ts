@@ -3,7 +3,6 @@ import Vant from 'vant'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { accountsApi } from '../../../api/accounts'
-import { currenciesApi } from '../../../api/currencies'
 import { budgetsApi } from '../../../api/budgets'
 import BudgetsPage from '../BudgetsPage.vue'
 
@@ -21,14 +20,9 @@ vi.mock('../../../api/budgets', () => ({
 
 const emptyBudget = { month: '2026-07', currency: 'CNY', total: '0', spent: '0', remaining: '0', items: [] }
 
-vi.mock('../../../api/currencies', () => ({
-  currenciesApi: { listEnabledCodes: vi.fn(), list: vi.fn() },
-}))
-
 describe('BudgetsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(currenciesApi.listEnabledCodes).mockResolvedValue(['CNY', 'USD'])
     vi.mocked(accountsApi.getAccounts).mockResolvedValue([
       { name: 'Expenses', account_type: 'Expenses', currencies: ['CNY'], children: [
         { name: 'Expenses:Food', account_type: 'Expenses', currencies: ['CNY'] },
@@ -42,7 +36,10 @@ describe('BudgetsPage', () => {
     await flushPromises()
     expect(wrapper.find('h1').text()).toBe('月度预算')
     expect(wrapper.text()).toContain('本月尚未设置预算')
+    expect(wrapper.text()).toContain('CNY 0')
+    expect(wrapper.text()).not.toContain('请选择币种')
     expect(budgetsApi.get).toHaveBeenCalledOnce()
+    expect(budgetsApi.get).toHaveBeenCalledWith(expect.any(String))
   })
 
   it('adds a category and saves the monthly contract', async () => {
@@ -69,7 +66,6 @@ describe('BudgetsPage', () => {
     await flushPromises()
     expect(budgetsApi.save).toHaveBeenCalledWith(
       expect.any(String),
-      'CNY',
       [expect.objectContaining({ name: '餐饮', account_pattern: 'Expenses:Food', amount: '100' })],
     )
   })
@@ -104,10 +100,10 @@ describe('BudgetsPage', () => {
   })
 
   it('shows retryable API error', async () => {
-    vi.mocked(budgetsApi.get).mockRejectedValue({ message: '投影恢复中' })
+    vi.mocked(budgetsApi.get).mockRejectedValue({ message: '缺少币种 USD 对 CNY 的可用汇率' })
     const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
     await flushPromises()
-    expect(wrapper.text()).toContain('投影恢复中')
+    expect(wrapper.text()).toContain('缺少币种 USD 对 CNY 的可用汇率')
     expect(wrapper.text()).toContain('重试')
   })
 
@@ -164,7 +160,6 @@ describe('BudgetsPage', () => {
     await flushPromises()
     expect(budgetsApi.save).toHaveBeenCalledWith(
       expect.any(String),
-      'CNY',
       [expect.objectContaining({
         name: '餐饮交通',
         account_pattern: 'Expenses:Food,Expenses:Travel',
@@ -173,5 +168,21 @@ describe('BudgetsPage', () => {
     )
     expect(wrapper.text()).toContain('Food')
     expect(wrapper.text()).toContain('Travel')
+  })
+
+  it('copies the previous month without sending a currency', async () => {
+    vi.mocked(budgetsApi.copyPrevious).mockResolvedValue({
+      ...emptyBudget,
+      total: '100',
+      items: [{ name: '餐饮', account_pattern: 'Expenses:Food', amount: '100' }],
+    })
+    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text().includes('复制上月'))!.trigger('click')
+    await flushPromises()
+    expect(budgetsApi.copyPrevious).toHaveBeenCalledWith(expect.any(String))
+    expect(
+      wrapper.findAll('input').find(input => input.attributes('placeholder') === '例如：餐饮')!.element.value,
+    ).toBe('餐饮')
   })
 })

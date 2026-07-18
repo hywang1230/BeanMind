@@ -7,7 +7,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy.orm import Session, selectinload
 
 from backend.infrastructure.persistence.db.models import MonthlyBudget, MonthlyBudgetItem
-from backend.services.currency_catalog import CurrencyCatalogError, CurrencyCatalogService
+from backend.services.currency_convert import convert_currency_totals
 from backend.services.ledger_aggregation import (
     LedgerAggregationService,
     month_range,
@@ -23,9 +23,10 @@ class MonthlyBudgetError(ValueError):
 
 
 class MonthlyBudgetService:
-    def __init__(self, db: Session, aggregation: LedgerAggregationService) -> None:
+    def __init__(self, db: Session, aggregation: LedgerAggregationService, beancount_service) -> None:
         self.db = db
         self.aggregation = aggregation
+        self.beancount_service = beancount_service
 
     @staticmethod
     def parse_patterns(value: str) -> list[str]:
@@ -86,39 +87,67 @@ class MonthlyBudgetService:
             )
         return normalized
 
-    def _pattern_spent(self, month: str, currency: str, account_pattern: str) -> Decimal:
-        total = Decimal("0")
+    def _pattern_totals(self, month: str, account_pattern: str) -> dict[str, Decimal]:
+        totals: dict[str, Decimal] = {}
         for pattern in self.parse_patterns(account_pattern):
-            total += self.aggregation.monthly_pattern_totals(month, pattern).get(currency, Decimal("0"))
-        return total
+            for currency, amount in self.aggregation.monthly_pattern_totals(month, pattern).items():
+                totals[currency] = totals.get(currency, Decimal("0")) + amount
+        return totals
 
-    def _find(self, month: str, currency: str) -> MonthlyBudget | None:
+    def _find(self, month: str) -> MonthlyBudget | None:
         month_range(month)
         return (
             self.db.query(MonthlyBudget)
             .options(selectinload(MonthlyBudget.items))
-            .filter(MonthlyBudget.month == month, MonthlyBudget.currency == currency)
+            .filter(MonthlyBudget.month == month)
             .first()
         )
 
-    def _require_enabled_currency(self, currency: str) -> str:
-        try:
-            return CurrencyCatalogService(self.db).require_enabled(currency)
-        except CurrencyCatalogError as exc:
-            raise MonthlyBudgetError(exc.code, str(exc), exc.details) from exc
+    def _calculate_spending(
+        self,
+        month: str,
+        account_patterns: list[str],
+    ) -> tuple[str, dict[str, Decimal]]:
+        _, month_end = month_range(month)
+        operating_currency = self.beancount_service.get_operating_currency()
+        rates = self.beancount_service.get_all_exchange_rates(
+            to_currency=operating_currency,
+            as_of_date=month_end,
+        )
+        spent_by_pattern: dict[str, Decimal] = {}
+        missing: set[str] = set()
+        for account_pattern in account_patterns:
+            spent, item_missing = convert_currency_totals(
+                self._pattern_totals(month, account_pattern),
+                operating_currency=operating_currency,
+                rates=rates,
+            )
+            spent_by_pattern[account_pattern] = spent
+            missing.update(item_missing)
+        if missing:
+            raise MonthlyBudgetError(
+                "MISSING_EXCHANGE_RATE",
+                f"缺少币种 {', '.join(sorted(missing))} 对 {operating_currency} 的可用汇率",
+                {
+                    "month": month,
+                    "operating_currency": operating_currency,
+                    "currencies": sorted(missing),
+                },
+            )
+        return operating_currency, spent_by_pattern
 
-    def save(self, month: str, currency: str, items: list[dict]) -> dict:
+    def save(self, month: str, items: list[dict]) -> dict:
         self.aggregation.projection.assert_ready()
         month_range(month)
-        currency = currency.strip().upper()
-        if not currency:
-            raise MonthlyBudgetError("INVALID_MONTHLY_BUDGET", "币种不能为空")
-        currency = self._require_enabled_currency(currency)
         normalized = self.validate_items(items)
+        operating_currency, spent_by_pattern = self._calculate_spending(
+            month,
+            [item["account_pattern"] for item in normalized],
+        )
         try:
-            budget = self._find(month, currency)
+            budget = self._find(month)
             if budget is None:
-                budget = MonthlyBudget(month=month, currency=currency)
+                budget = MonthlyBudget(month=month)
                 self.db.add(budget)
                 self.db.flush()
             else:
@@ -134,22 +163,36 @@ class MonthlyBudgetService:
                     )
                 )
             self.db.commit()
+            self.db.refresh(budget)
         except Exception:
             self.db.rollback()
             raise
-        return self.get(month, currency)
+        return self._serialize(budget, operating_currency, spent_by_pattern)
 
-    def get(self, month: str, currency: str) -> dict:
+    def get(self, month: str) -> dict:
         self.aggregation.projection.assert_ready()
-        budget = self._find(month, currency.upper())
+        budget = self._find(month)
+        operating_currency = self.beancount_service.get_operating_currency()
         if budget is None:
-            return {"month": month, "currency": currency.upper(), "total": "0", "items": []}
+            return {"month": month, "currency": operating_currency, "total": "0", "items": []}
+        operating_currency, spent_by_pattern = self._calculate_spending(
+            month,
+            [item.account_pattern for item in budget.items],
+        )
+        return self._serialize(budget, operating_currency, spent_by_pattern)
+
+    def _serialize(
+        self,
+        budget: MonthlyBudget,
+        operating_currency: str,
+        spent_by_pattern: dict[str, Decimal],
+    ) -> dict:
         output_items = []
         total_budget = Decimal("0")
         total_spent = Decimal("0")
         for item in budget.items:
             amount = Decimal(item.amount_text)
-            spent = self._pattern_spent(month, budget.currency, item.account_pattern)
+            spent = spent_by_pattern[item.account_pattern]
             remaining = amount - spent
             usage = None if amount == 0 else spent / amount
             if amount == 0 and spent > 0:
@@ -178,24 +221,23 @@ class MonthlyBudgetService:
         return {
             "id": budget.id,
             "month": budget.month,
-            "currency": budget.currency,
+            "currency": operating_currency,
             "total": normalize_decimal(total_budget),
             "spent": normalize_decimal(total_spent),
             "remaining": normalize_decimal(total_budget - total_spent),
             "items": output_items,
         }
 
-    def copy_previous(self, month: str, currency: str, overwrite: bool = False) -> dict:
+    def copy_previous(self, month: str, overwrite: bool = False) -> dict:
         start, _ = month_range(month)
         previous_month = f"{start.year - 1}-12" if start.month == 1 else f"{start.year}-{start.month - 1:02d}"
-        if self._find(month, currency) is not None and not overwrite:
+        if self._find(month) is not None and not overwrite:
             raise MonthlyBudgetError("MONTHLY_BUDGET_EXISTS", "目标月份已有预算")
-        previous = self._find(previous_month, currency)
+        previous = self._find(previous_month)
         if previous is None:
             raise MonthlyBudgetError("PREVIOUS_MONTHLY_BUDGET_NOT_FOUND", "上月没有预算")
         return self.save(
             month,
-            currency,
             [
                 {
                     "name": item.name,

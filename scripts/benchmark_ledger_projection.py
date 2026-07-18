@@ -257,13 +257,16 @@ def benchmark(ledger_path: Path, iterations: int, scale: int) -> dict:
                 LedgerTransaction.date.desc()
             ).first()[0].strftime("%Y-%m")
             aggregation = LedgerAggregationService(session, effective_ledger)
-            budget_service = MonthlyBudgetService(session, aggregation)
+            beancount_service = BeancountService(effective_ledger)
+            budget_service = MonthlyBudgetService(
+                session,
+                aggregation,
+                beancount_service,
+            )
             budget_service.save(
                 latest_month,
-                "CNY",
                 [{"name": "支出", "account_pattern": "Expenses", "amount": "999999999"}],
             )
-            beancount_service = BeancountService(effective_ledger)
             dashboard_service = DashboardService(
                 session, aggregation, beancount_service, llm_enabled=False
             )
@@ -286,7 +289,7 @@ def benchmark(ledger_path: Path, iterations: int, scale: int) -> dict:
                     for _ in range(iterations)
                 ]),
                 "budget": distribution([
-                    elapsed_ms(lambda: budget_service.get(latest_month, "CNY"))[0]
+                    elapsed_ms(lambda: budget_service.get(latest_month))[0]
                     for _ in range(iterations)
                 ]),
                 "monthly_review_facts": distribution([

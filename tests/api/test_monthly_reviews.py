@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from backend.config import get_db
+from backend.config import get_db, settings
 from backend.infrastructure.persistence.ledger_projection import LedgerProjectionService
 from backend.main import app
 from backend.interfaces.api.monthly_report import get_service
@@ -14,6 +14,7 @@ class FakeBeancountService:
 def test_disabled_monthly_review_returns_facts_without_external_call(
     db_session, ledger_path, monkeypatch
 ) -> None:
+    monkeypatch.setattr(settings, "LLM_ENABLED", False)
     LedgerProjectionService(db_session, ledger_path).rebuild_all()
     app.dependency_overrides[get_db] = lambda: db_session
     monkeypatch.setattr(

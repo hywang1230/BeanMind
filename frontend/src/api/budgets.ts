@@ -23,13 +23,13 @@ export type MonthlyBudget = {
 }
 
 export const budgetsApi = {
-  get(month: string, currency = 'CNY'): Promise<MonthlyBudget> {
-    return apiClient.get('/api/budgets', { params: { month, currency } })
+  get(month: string): Promise<MonthlyBudget> {
+    return apiClient.get('/api/budgets', { params: { month } })
   },
-  save(month: string, currency: string, items: BudgetItem[]): Promise<MonthlyBudget> {
-    return apiClient.put(`/api/budgets/${month}`, { currency, items })
+  save(month: string, items: BudgetItem[]): Promise<MonthlyBudget> {
+    return apiClient.put(`/api/budgets/${month}`, { items })
   },
-  copyPrevious(month: string, currency = 'CNY', overwrite = false): Promise<MonthlyBudget> {
-    return apiClient.post(`/api/budgets/${month}/copy`, undefined, { params: { currency, overwrite } })
+  copyPrevious(month: string, overwrite = false): Promise<MonthlyBudget> {
+    return apiClient.post(`/api/budgets/${month}/copy`, undefined, { params: { overwrite } })
   },
 }

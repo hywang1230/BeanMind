@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
-from backend.config import get_db
+from backend.config import get_db, settings
 from backend.infrastructure.persistence.ledger_projection import LedgerProjectionService
 from backend.main import app
 
@@ -16,6 +16,7 @@ class FakeBeancountService:
 
 
 def test_dashboard_contract_uses_projection(db_session, ledger_path, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "LLM_ENABLED", False)
     LedgerProjectionService(db_session, ledger_path).rebuild_all()
     app.dependency_overrides[get_db] = lambda: db_session
     monkeypatch.setattr(
@@ -36,6 +37,7 @@ def test_dashboard_contract_uses_projection(db_session, ledger_path, monkeypatch
 
 
 def test_dashboard_dirty_and_invalid_month(db_session, ledger_path, monkeypatch) -> None:
+    monkeypatch.setattr(settings, "LLM_ENABLED", False)
     projection = LedgerProjectionService(db_session, ledger_path)
     projection.rebuild_all()
     projection.mark_dirty(ledger_path, RuntimeError("broken"))

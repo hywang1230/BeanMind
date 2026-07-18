@@ -12,6 +12,10 @@ sys.path.insert(0, str((Path(__file__).parents[1] / "scripts").resolve()))
 from generate_test_ledger import generate  # noqa: E402
 from migrate_single_machine import apply, preview  # noqa: E402
 from migrate_monthly_budgets import analyze  # noqa: E402
+from migrate_budget_operating_currency import (  # noqa: E402
+    analyze as analyze_operating_currency_budgets,
+    apply as apply_operating_currency_budgets,
+)
 
 
 def create_database(path: Path) -> None:
@@ -151,3 +155,107 @@ def test_monthly_budget_preview_blocks_ambiguous_data_without_writing(tmp_path: 
     assert report["convertible"] == []
     assert report["blocked"][0]["reasons"]
     assert database.read_bytes() == before
+
+
+def create_multicurrency_monthly_budgets(path: Path, *, include_cny: bool = True) -> None:
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE monthly_budgets (
+                month TEXT NOT NULL, currency TEXT NOT NULL,
+                id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                UNIQUE(month, currency)
+            );
+            CREATE TABLE monthly_budget_items (
+                budget_id TEXT NOT NULL, name TEXT NOT NULL, account_pattern TEXT NOT NULL,
+                amount_text TEXT NOT NULL, display_order INTEGER NOT NULL,
+                id TEXT PRIMARY KEY, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            """
+        )
+        if include_cny:
+            connection.execute(
+                "INSERT INTO monthly_budgets VALUES ('2025-01', 'CNY', 'cny', 'now', 'now')"
+            )
+            connection.execute(
+                "INSERT INTO monthly_budget_items VALUES ('cny', '餐饮', 'Expenses:Food', '100.10', 0, 'cny-item', 'now', 'now')"
+            )
+        connection.execute(
+            "INSERT INTO monthly_budgets VALUES ('2025-01', 'USD', 'usd', 'now', 'now')"
+        )
+        connection.execute(
+            "INSERT INTO monthly_budget_items VALUES ('usd', '差旅', 'Expenses:Travel', '20.20', 0, 'usd-item', 'now', 'now')"
+        )
+
+
+def test_operating_currency_budget_preview_is_read_only_and_reports_removals(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "beanmind.db"
+    create_multicurrency_monthly_budgets(database)
+    before = database.read_bytes()
+
+    report = analyze_operating_currency_budgets(database, "CNY")
+
+    assert report["schema_state"] == "MULTI_CURRENCY"
+    assert report["keep"] == [
+        {
+            "budget_id": "cny",
+            "month": "2025-01",
+            "currency": "CNY",
+            "item_count": 1,
+            "total": "100.10",
+        }
+    ]
+    assert report["remove"][0]["currency"] == "USD"
+    assert report["blocked"] == []
+    assert database.read_bytes() == before
+
+
+def test_operating_currency_budget_preview_blocks_foreign_only_month(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "beanmind.db"
+    create_multicurrency_monthly_budgets(database, include_cny=False)
+
+    report = analyze_operating_currency_budgets(database, "CNY")
+
+    assert report["keep"] == []
+    assert report["blocked"] == [
+        {"month": "2025-01", "currencies": ["USD"], "reason": "仅有非经营币种预算"}
+    ]
+
+
+def test_operating_currency_budget_apply_requires_confirmation_and_is_atomic(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "beanmind.db"
+    backup = tmp_path / "backup.db"
+    create_multicurrency_monthly_budgets(database)
+    shutil.copy2(database, backup)
+
+    with pytest.raises(ValueError, match="显式确认"):
+        apply_operating_currency_budgets(database, backup, "CNY")
+    with pytest.raises(RuntimeError, match="故障注入"):
+        apply_operating_currency_budgets(
+            database,
+            backup,
+            "CNY",
+            confirm_removals=True,
+            fail_after_rebuild=True,
+        )
+    assert analyze_operating_currency_budgets(database, "CNY")["schema_state"] == "MULTI_CURRENCY"
+
+    result = apply_operating_currency_budgets(
+        database,
+        backup,
+        "CNY",
+        confirm_removals=True,
+    )
+    assert result["migrated"] is True
+    assert result["removed_budgets"] == 1
+    with sqlite3.connect(database) as connection:
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(monthly_budgets)")]
+        assert "currency" not in columns
+        assert connection.execute("SELECT month FROM monthly_budgets").fetchall() == [("2025-01",)]
+        assert connection.execute("SELECT amount_text FROM monthly_budget_items").fetchall() == [("100.10",)]

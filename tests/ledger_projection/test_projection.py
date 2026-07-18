@@ -134,7 +134,7 @@ def test_fixture_rebuild_is_idempotent_and_preserves_decimal(db_session, ledger_
 
 
 def test_create_all_is_idempotent_and_preserves_existing_business_data(db_session):
-    budget = MonthlyBudget(id="existing-budget", month="2025-01", currency="CNY")
+    budget = MonthlyBudget(id="existing-budget", month="2025-01")
     db_session.add(budget)
     db_session.commit()
 

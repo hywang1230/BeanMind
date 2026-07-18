@@ -4,6 +4,7 @@ import httpx
 
 from backend.ai.llm_client import LlmUnavailableError, OpenAICompatibleClient
 from backend.infrastructure.persistence.ledger_projection import LedgerProjectionService
+from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
 from backend.services.ledger_aggregation import LedgerAggregationService
 from backend.services.monthly_budget import MonthlyBudgetService
 from backend.services.monthly_review import MonthlyReviewService
@@ -108,7 +109,7 @@ def test_monthly_review_preserves_last_success_on_failed_regeneration(db_session
     service = MonthlyReviewService(
         db_session,
         aggregation,
-        MonthlyBudgetService(db_session, aggregation),
+        MonthlyBudgetService(db_session, aggregation, BeancountService(ledger_path)),
         make_client(
             json.dumps(
                 {
@@ -127,7 +128,7 @@ def test_monthly_review_preserves_last_success_on_failed_regeneration(db_session
     failing = MonthlyReviewService(
         db_session,
         aggregation,
-        MonthlyBudgetService(db_session, aggregation),
+        MonthlyBudgetService(db_session, aggregation, BeancountService(ledger_path)),
         make_client("not-json"),
         "CNY",
     )

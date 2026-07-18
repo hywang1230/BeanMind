@@ -1,7 +1,8 @@
 option "title" "BeanMind projection fixture"
 option "operating_currency" "CNY"
 
+2025-01-31 price USD 7.20 CNY
+
 include "accounts.beancount"
 include "transactions_2024.beancount"
 include "transactions_2025.beancount"
-

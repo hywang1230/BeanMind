@@ -7,14 +7,6 @@
     <van-empty v-else-if="error && !budget" image="error" :description="error"><van-button size="small" type="primary" @click="() => load()">重试</van-button></van-empty>
     <template v-else>
       <div class="finance-card budget-summary page-section">
-        <SelectPickerField
-          v-model="currency"
-          label="币种"
-          :options="currencyOptions"
-          placeholder="请选择币种"
-          :error="currencyLoadError"
-          @change="() => load()"
-        />
         <div class="budget-total"><span>总预算</span><strong>{{ currency }} {{ total }}</strong></div>
         <div v-if="budget" class="budget-stats">
           <span>已用<strong>{{ currency }} {{ budget.spent || '0' }}</strong></span>
@@ -66,16 +58,10 @@ import { budgetsApi, type BudgetItem, type MonthlyBudget } from '../../api/budge
 import type { ApiError } from '../../api/client'
 import AccountPicker from '../../components/AccountPicker.vue'
 import MonthPicker from '../../components/MonthPicker.vue'
-import SelectPickerField from '../../components/SelectPickerField.vue'
-import { currenciesApi } from '../../api/currencies'
 
-const month = ref(new Date().toISOString().slice(0, 7)); const currency = ref('CNY')
-const enabledCurrencies = ref<string[]>([])
-const currencyLoadError = ref('')
-const currencyOptions = computed(() =>
-  enabledCurrencies.value.map((code) => ({ text: code, value: code })),
-)
+const month = ref(new Date().toISOString().slice(0, 7))
 const budget = ref<MonthlyBudget|null>(null); const items = ref<BudgetItem[]>([])
+const currency = computed(() => budget.value?.currency || '')
 const accounts = ref<Account[]>([])
 const loading = ref(false); const refreshing = ref(false); const saving = ref(false); const error = ref(''); const accountError = ref('')
 function addDecimalStrings(values: string[]): string {
@@ -139,25 +125,11 @@ function percentage(value:string){
   return `${whole}.${decimals}`
 }
 function progress(value:string){const parsed=Number(percentage(value));return Number.isFinite(parsed)?Math.min(100,Math.max(0,parsed)):0}
-async function loadCurrencies() {
-  currencyLoadError.value = ''
-  try {
-    const codes = await currenciesApi.listEnabledCodes()
-    enabledCurrencies.value = codes
-    if (!codes.includes(currency.value)) {
-      currency.value = codes.includes('CNY') ? 'CNY' : (codes[0] || '')
-    }
-  } catch (reason) {
-    enabledCurrencies.value = []
-    currencyLoadError.value = (reason as ApiError).message || '币种目录加载失败'
-  }
-}
-
 async function load(options: { silent?: boolean } = {}){
   if (!options.silent) loading.value = true
   error.value = ''
   try {
-    budget.value = await budgetsApi.get(month.value, currency.value)
+    budget.value = await budgetsApi.get(month.value)
     items.value = budget.value.items.map(item => ({ ...item }))
   } catch (reason) {
     error.value = (reason as ApiError).message
@@ -172,15 +144,14 @@ async function onRefresh() {
   try { await Promise.all([load({ silent: true }), loadAccounts()]) }
   finally { refreshing.value = false }
 }
-async function save(){saving.value=true;error.value='';try{budget.value=await budgetsApi.save(month.value,currency.value,items.value.map((item,index)=>({...item,display_order:index})));items.value=budget.value.items.map(item=>({...item}));showSuccessToast('预算已保存')}catch(reason){error.value=(reason as ApiError).message}finally{saving.value=false}}
-async function copyPrevious(){error.value='';try{if(items.value.length){await showConfirmDialog({title:'覆盖预算',message:'当前分类会被上月配置替换，是否继续？'});budget.value=await budgetsApi.copyPrevious(month.value,currency.value,true)}else{budget.value=await budgetsApi.copyPrevious(month.value,currency.value)}items.value=budget.value.items.map(item=>({...item}))}catch(reason){if((reason as string)!=='cancel'&&typeof reason==='object')error.value=(reason as ApiError).message}}
+async function save(){saving.value=true;error.value='';try{budget.value=await budgetsApi.save(month.value,items.value.map((item,index)=>({...item,display_order:index})));items.value=budget.value.items.map(item=>({...item}));showSuccessToast('预算已保存')}catch(reason){error.value=(reason as ApiError).message}finally{saving.value=false}}
+async function copyPrevious(){error.value='';try{if(items.value.length){await showConfirmDialog({title:'覆盖预算',message:'当前分类会被上月配置替换，是否继续？'});budget.value=await budgetsApi.copyPrevious(month.value,true)}else{budget.value=await budgetsApi.copyPrevious(month.value)}items.value=budget.value.items.map(item=>({...item}))}catch(reason){if((reason as string)!=='cancel'&&typeof reason==='object')error.value=(reason as ApiError).message}}
 onMounted(async () => {
-  await loadCurrencies()
   load()
   loadAccounts()
 })
 </script>
 
 <style scoped>
-.budget-summary{padding:4px 16px 18px}.budget-summary :deep(.van-cell){padding-right:0;padding-left:0}.budget-total{display:grid;gap:8px;padding:14px 0}.budget-total span{color:var(--bm-muted)}.budget-total strong{font-size:30px}.budget-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;border-top:1px solid var(--bm-border);padding-top:16px}.budget-stats span{display:grid;gap:6px;color:var(--bm-muted);font-size:13px}.budget-stats strong{color:var(--bm-text);font-size:16px}.budget-item{border-left:3px solid var(--bm-primary)}.budget-item.risk-warning{border-left-color:var(--bm-warn)}.budget-item.risk-exceeded{border-left-color:var(--bm-expense)}.budget-progress{display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px;padding:2px 16px 14px}.budget-progress span{min-width:64px;text-align:right;font-weight:700}.budget-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin:16px}
+.budget-summary{padding:4px 16px 18px}.budget-total{display:grid;gap:8px;padding:14px 0}.budget-total span{color:var(--bm-muted)}.budget-total strong{font-size:30px}.budget-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;border-top:1px solid var(--bm-border);padding-top:16px}.budget-stats span{display:grid;gap:6px;color:var(--bm-muted);font-size:13px}.budget-stats strong{color:var(--bm-text);font-size:16px}.budget-item{border-left:3px solid var(--bm-primary)}.budget-item.risk-warning{border-left-color:var(--bm-warn)}.budget-item.risk-exceeded{border-left-color:var(--bm-expense)}.budget-progress{display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px;padding:2px 16px 14px}.budget-progress span{min-width:64px;text-align:right;font-weight:700}.budget-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin:16px}
 </style>

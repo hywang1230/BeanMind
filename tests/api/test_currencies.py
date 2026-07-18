@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import shutil
+import json
+from datetime import date
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from backend.config import get_db, settings
 from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
-from backend.infrastructure.persistence.db.models import MonthlyBudget
+from backend.infrastructure.persistence.db.models import RecurringRule
 from backend.main import app
 from backend.services.currency_catalog import CurrencyCatalogService
 
@@ -117,8 +119,17 @@ def test_currency_in_use_cannot_disable_or_delete(db_session, tmp_path, monkeypa
         assert created.status_code == 201, created.text
         assert created.json()["in_use"] is False
 
-        # 预算引用后视为使用中
-        db_session.add(MonthlyBudget(month="2026-07", currency="NZD"))
+        # 周期记账模板引用后视为使用中
+        rule = RecurringRule(
+            name="NZD 测试",
+            frequency="MONTHLY",
+            transaction_template=json.dumps(
+                {"postings": [{"account": "Expenses:Travel", "amount": "1", "currency": "NZD"}]}
+            ),
+            start_date=date(2026, 7, 1),
+            is_active=True,
+        )
+        db_session.add(rule)
         db_session.commit()
 
         listed = client.get("/api/currencies")
@@ -135,7 +146,7 @@ def test_currency_in_use_cannot_disable_or_delete(db_session, tmp_path, monkeypa
         assert delete_used.json()["code"] == "CURRENCY_IN_USE"
 
         # 解除引用后可删除
-        db_session.query(MonthlyBudget).filter(MonthlyBudget.currency == "NZD").delete()
+        db_session.delete(rule)
         db_session.commit()
 
         delete_ok = client.delete("/api/currencies/NZD")

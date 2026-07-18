@@ -10,7 +10,6 @@ class MonthlyBudget(BaseModel):
     __tablename__ = "monthly_budgets"
 
     month = Column(String(7), nullable=False)
-    currency = Column(String(16), nullable=False)
     items = relationship(
         "MonthlyBudgetItem",
         back_populates="budget",
@@ -19,7 +18,7 @@ class MonthlyBudget(BaseModel):
     )
 
     __table_args__ = (
-        UniqueConstraint("month", "currency", name="uq_monthly_budget_month_currency"),
+        UniqueConstraint("month", name="uq_monthly_budget_month"),
         Index("idx_monthly_budgets_month", "month"),
     )
 

@@ -41,7 +41,7 @@ class MonthlyReviewService:
     def build_facts(self, month: str) -> dict:
         current = self.aggregation.monthly_flows(month)
         previous = self.aggregation.monthly_flows(previous_month(month))
-        budget = self.budget_service.get(month, self.operating_currency)
+        budget = self.budget_service.get(month)
 
         def encoded(flows: dict[str, dict[str, Decimal]]) -> dict:
             return {

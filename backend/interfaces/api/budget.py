@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from backend.config import get_db, settings
+from backend.config import get_beancount_service, get_db, settings
 from backend.infrastructure.persistence.ledger_projection import LedgerProjectionDirtyError
 from backend.interfaces.errors import ApiError
 from backend.services.ledger_aggregation import LedgerAggregationService
@@ -26,12 +24,17 @@ class BudgetItemInput(BaseModel):
 
 
 class MonthlyBudgetInput(BaseModel):
-    currency: str = "CNY"
+    model_config = ConfigDict(extra="forbid")
+
     items: list[BudgetItemInput]
 
 
 def get_budget_service(db: Session = Depends(get_db)) -> MonthlyBudgetService:
-    return MonthlyBudgetService(db, LedgerAggregationService(db, settings.LEDGER_FILE))
+    return MonthlyBudgetService(
+        db,
+        LedgerAggregationService(db, settings.LEDGER_FILE),
+        get_beancount_service(),
+    )
 
 
 def map_budget_error(error: MonthlyBudgetError) -> ApiError:
@@ -46,11 +49,10 @@ def map_budget_error(error: MonthlyBudgetError) -> ApiError:
 @router.get("")
 def get_monthly_budget(
     month: str,
-    currency: Annotated[str, Query(min_length=3, max_length=16)] = "CNY",
     service: MonthlyBudgetService = Depends(get_budget_service),
 ):
     try:
-        return service.get(month, currency)
+        return service.get(month)
     except LedgerProjectionDirtyError as exc:
         raise ApiError(503, exc.code, str(exc)) from exc
     except MonthlyBudgetError as exc:
@@ -66,7 +68,7 @@ def save_monthly_budget(
     service: MonthlyBudgetService = Depends(get_budget_service),
 ):
     try:
-        return service.save(month, request.currency, [item.model_dump() for item in request.items])
+        return service.save(month, [item.model_dump() for item in request.items])
     except LedgerProjectionDirtyError as exc:
         raise ApiError(503, exc.code, str(exc)) from exc
     except MonthlyBudgetError as exc:
@@ -78,12 +80,11 @@ def save_monthly_budget(
 @router.post("/{month}/copy")
 def copy_previous_budget(
     month: str,
-    currency: str = "CNY",
     overwrite: bool = False,
     service: MonthlyBudgetService = Depends(get_budget_service),
 ):
     try:
-        return service.copy_previous(month, currency.upper(), overwrite)
+        return service.copy_previous(month, overwrite)
     except LedgerProjectionDirtyError as exc:
         raise ApiError(503, exc.code, str(exc)) from exc
     except MonthlyBudgetError as exc:

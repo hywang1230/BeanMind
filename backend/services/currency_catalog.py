@@ -12,7 +12,6 @@ from sqlalchemy.orm import Session
 from backend.infrastructure.persistence.db.models import (
     Currency,
     LedgerPosting,
-    MonthlyBudget,
     RecurringRule,
 )
 
@@ -277,10 +276,6 @@ class CurrencyCatalogService:
         for value in self.db.query(LedgerPosting.price_currency).filter(
             LedgerPosting.price_currency.isnot(None)
         ).distinct():
-            if value[0]:
-                used.add(str(value[0]).strip().upper())
-
-        for value in self.db.query(MonthlyBudget.currency).distinct():
             if value[0]:
                 used.add(str(value[0]).strip().upper())
 

@@ -72,8 +72,8 @@ describe('CurrenciesPage', () => {
 
     const switches = wrapper.findAllComponents({ name: 'VanSwitch' })
     expect(switches.length).toBe(2)
-    expect(switches[0].props('disabled')).toBe(true)
-    expect(switches[1].props('disabled')).toBe(false)
+    expect(switches[0]!.props('disabled')).toBe(true)
+    expect(switches[1]!.props('disabled')).toBe(false)
 
     const deleteButtons = wrapper
       .findAll('button')

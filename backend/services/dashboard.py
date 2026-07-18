@@ -42,7 +42,11 @@ class DashboardService:
         )
         liabilities = -liability_signed
         operating = self.beancount_service.get_operating_currency()
-        budget = MonthlyBudgetService(self.db, self.aggregation).get(month, operating)
+        budget = MonthlyBudgetService(
+            self.db,
+            self.aggregation,
+            self.beancount_service,
+        ).get(month)
         risk_order = {"NORMAL": 0, "WARNING": 1, "EXCEEDED": 2}
         budget_risk = max(
             (item["risk"] for item in budget["items"]),

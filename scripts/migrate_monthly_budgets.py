@@ -8,7 +8,7 @@ import calendar
 import json
 import sqlite3
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -25,7 +25,8 @@ def connect(path: Path, readonly: bool) -> sqlite3.Connection:
     return connection
 
 
-def analyze(path: Path) -> dict:
+def analyze(path: Path, operating_currency: str | None = None) -> dict:
+    operating = operating_currency.strip().upper() if operating_currency else None
     fingerprint = database_preview(path)["sha256"]
     convertible: list[dict] = []
     blocked: list[dict] = []
@@ -85,11 +86,19 @@ def analyze(path: Path) -> dict:
                 "reasons": reasons,
             }
             candidates.append(candidate)
-            by_target.setdefault((month, currency), []).append(budget["id"])
+            target = (month, operating) if operating else (month, currency)
+            by_target.setdefault(target, []).append(budget["id"])
         for candidate in candidates:
-            conflicts = by_target[(candidate["month"], candidate["currency"])]
+            if operating and candidate["currency"].upper() != operating:
+                candidate["reasons"].append("不是经营币种预算")
+            target = (
+                (candidate["month"], operating)
+                if operating
+                else (candidate["month"], candidate["currency"])
+            )
+            conflicts = by_target[target]
             if len(conflicts) > 1:
-                candidate["reasons"].append("同月同币种存在多个旧预算")
+                candidate["reasons"].append("目标月份存在多个旧预算")
             (blocked if candidate["reasons"] else convertible).append(candidate)
     if database_preview(path)["sha256"] != fingerprint:
         raise RuntimeError("预算预览期间数据库发生变化")
@@ -101,8 +110,8 @@ def analyze(path: Path) -> dict:
     }
 
 
-def apply(path: Path, backup: Path) -> dict:
-    report = analyze(path)
+def apply(path: Path, backup: Path, operating_currency: str) -> dict:
+    report = analyze(path, operating_currency)
     if report["blocked"]:
         raise ValueError("存在无法唯一映射的旧预算，拒绝迁移")
     if database_preview(path)["remove"] != database_preview(backup)["remove"]:
@@ -111,21 +120,22 @@ def apply(path: Path, backup: Path) -> dict:
         try:
             database.execute("BEGIN IMMEDIATE")
             database.execute(
-                "CREATE TABLE IF NOT EXISTS monthly_budgets (id TEXT PRIMARY KEY, month TEXT NOT NULL, currency TEXT NOT NULL, created_at TEXT, updated_at TEXT, UNIQUE(month, currency))"
+                "CREATE TABLE IF NOT EXISTS monthly_budgets (id TEXT PRIMARY KEY, month TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(month))"
             )
             database.execute(
-                "CREATE TABLE IF NOT EXISTS monthly_budget_items (id TEXT PRIMARY KEY, budget_id TEXT NOT NULL, name TEXT NOT NULL, account_pattern TEXT NOT NULL, amount_text TEXT NOT NULL, display_order INTEGER NOT NULL, created_at TEXT, updated_at TEXT)"
+                "CREATE TABLE IF NOT EXISTS monthly_budget_items (id TEXT PRIMARY KEY, budget_id TEXT NOT NULL, name TEXT NOT NULL, account_pattern TEXT NOT NULL, amount_text TEXT NOT NULL, display_order INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
             )
             for candidate in report["convertible"]:
                 budget_id = uuid.uuid4().hex
+                now = datetime.now().isoformat()
                 database.execute(
-                    "INSERT INTO monthly_budgets(id, month, currency) VALUES (?, ?, ?)",
-                    (budget_id, candidate["month"], candidate["currency"]),
+                    "INSERT INTO monthly_budgets(id, month, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                    (budget_id, candidate["month"], now, now),
                 )
                 for order, item in enumerate(candidate["items"]):
                     database.execute(
-                        "INSERT INTO monthly_budget_items(id, budget_id, name, account_pattern, amount_text, display_order) VALUES (?, ?, ?, ?, ?, ?)",
-                        (uuid.uuid4().hex, budget_id, item["name"], item["account_pattern"], item["amount"], order),
+                        "INSERT INTO monthly_budget_items(id, budget_id, name, account_pattern, amount_text, display_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (uuid.uuid4().hex, budget_id, item["name"], item["account_pattern"], item["amount"], order, now, now),
                     )
             database.commit()
         except Exception:
@@ -137,15 +147,16 @@ def apply(path: Path, backup: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("database", type=Path)
+    parser.add_argument("--operating-currency", required=True)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--backup", type=Path)
     args = parser.parse_args()
     if args.apply:
         if args.backup is None:
             parser.error("--apply 必须同时提供 --backup")
-        result = apply(args.database, args.backup)
+        result = apply(args.database, args.backup, args.operating_currency)
     else:
-        result = analyze(args.database)
+        result = analyze(args.database, args.operating_currency)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 

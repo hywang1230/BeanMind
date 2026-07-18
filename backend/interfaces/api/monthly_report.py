@@ -22,10 +22,11 @@ class GenerateRequest(BaseModel):
 
 def build_service(db: Session) -> MonthlyReviewService:
     aggregation = LedgerAggregationService(db, settings.LEDGER_FILE)
+    beancount_service = get_beancount_service()
     return MonthlyReviewService(
         db,
         aggregation,
-        MonthlyBudgetService(db, aggregation),
+        MonthlyBudgetService(db, aggregation, beancount_service),
         OpenAICompatibleClient(
             enabled=settings.LLM_ENABLED,
             base_url=settings.LLM_BASE_URL,
@@ -33,7 +34,7 @@ def build_service(db: Session) -> MonthlyReviewService:
             model=settings.LLM_MODEL,
             timeout_seconds=settings.LLM_TIMEOUT_SECONDS,
         ),
-        get_beancount_service().get_operating_currency(),
+        beancount_service.get_operating_currency(),
     )
 
 
