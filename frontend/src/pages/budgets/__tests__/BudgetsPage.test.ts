@@ -170,6 +170,61 @@ describe('BudgetsPage', () => {
     expect(wrapper.text()).toContain('Travel')
   })
 
+
+  it('enables parent category selection and strips overlapping child patterns', async () => {
+    vi.mocked(accountsApi.getAccounts).mockResolvedValue([
+      {
+        name: 'Expenses:JT-交通:地铁',
+        account_type: 'Expenses',
+        currencies: ['CNY'],
+      },
+      {
+        name: 'Expenses:JT-交通:打车',
+        account_type: 'Expenses',
+        currencies: ['CNY'],
+      },
+    ])
+    vi.mocked(budgetsApi.save).mockResolvedValue({
+      ...emptyBudget,
+      total: '300',
+      items: [{
+        name: 'JT-交通',
+        account_pattern: 'Expenses:JT-交通',
+        amount: '300',
+        spent: '0',
+        remaining: '300',
+        risk: 'NORMAL',
+      }],
+    })
+    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text().includes('新增分类'))!.trigger('click')
+    const picker = wrapper.findComponent({ name: 'AccountPicker' })
+    expect(picker.props('allowParentSelect')).toBe(true)
+    // 先选子账户再选大类：范围折叠为大类；名称仅在为空时自动填充，保留首次叶子名
+    await picker.vm.$emit('update:modelValue', 'Expenses:JT-交通:地铁')
+    await wrapper.vm.$nextTick()
+    await picker.vm.$emit('update:modelValue', 'Expenses:JT-交通:打车')
+    await wrapper.vm.$nextTick()
+    await picker.vm.$emit('update:modelValue', 'Expenses:JT-交通')
+    await wrapper.vm.$nextTick()
+    expect(picker.props('selectedAccounts')).toEqual(['Expenses:JT-交通'])
+    const nameInput = wrapper.findAll('input').find(input => input.attributes('placeholder') === '例如：餐饮')!
+    expect(nameInput.element.value).toBe('地铁')
+    await nameInput.setValue('JT-交通')
+    await wrapper.findAll('input').find(input => input.attributes('inputmode') === 'decimal')!.setValue('300')
+    await wrapper.findAll('button').find(button => button.text().includes('保存预算'))!.trigger('click')
+    await flushPromises()
+    expect(budgetsApi.save).toHaveBeenCalledWith(
+      expect.any(String),
+      [expect.objectContaining({
+        name: 'JT-交通',
+        account_pattern: 'Expenses:JT-交通',
+        amount: '300',
+      })],
+    )
+  })
+
   it('copies the previous month without sending a currency', async () => {
     vi.mocked(budgetsApi.copyPrevious).mockResolvedValue({
       ...emptyBudget,

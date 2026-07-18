@@ -416,11 +416,21 @@ def calculate_percentages(items: List[IncomeExpenseItem], total: Decimal):
     def process_item(item: IncomeExpenseItem):
         if total > 0:
             item.percentage = (item.total_cny / total) * Decimal("100")
+        else:
+            item.percentage = Decimal("0")
         for child in item.children:
             process_item(child)
     
     for item in items:
         process_item(item)
+
+
+def sort_income_expense_by_share(items: List[IncomeExpenseItem]) -> None:
+    """同一层级按金额/占比降序；账户名升序保证稳定次序。"""
+    items.sort(key=lambda item: (-item.total_cny, item.account))
+    for item in items:
+        if item.children:
+            sort_income_expense_by_share(item.children)
 
 
 @router.get("/balance-sheet", response_model=BalanceSheetResponse)
@@ -566,9 +576,11 @@ def get_income_statement(
     expense_items = build_income_expense_tree(transactions, "Expenses", exchange_rates)
     expenses_total_cny, expenses_totals_by_currency = calculate_income_expense_total(expense_items)
     
-    # 计算占比
+    # 计算占比，并按占比（金额）降序排列同级明细
     calculate_percentages(income_items, income_total_cny)
     calculate_percentages(expense_items, expenses_total_cny)
+    sort_income_expense_by_share(income_items)
+    sort_income_expense_by_share(expense_items)
     
     # 计算净利润
     net_profit_cny = income_total_cny - expenses_total_cny

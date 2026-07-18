@@ -21,7 +21,8 @@
           :accounts="accounts"
           label="账户"
           :prefixes="['Expenses']"
-          placeholder="请选择账户（可多选）"
+          placeholder="请选择大类或账户（可多选）"
+          allow-parent-select
           :error="accountError"
           @update:model-value="addPattern(item, $event)"
           @remove="removePattern(item, $event)"
@@ -96,11 +97,20 @@ function patternsOf(item: BudgetItem) {
 function setPatterns(item: BudgetItem, patterns: string[]) {
   item.account_pattern = patterns.join(',')
 }
+function patternsOverlap(first: string, second: string): boolean {
+  return first === second || first.startsWith(`${second}:`) || second.startsWith(`${first}:`)
+}
+
 function addPattern(item: BudgetItem, name: string) {
   if (!name) return
-  const list = patternsOf(item)
-  if (!list.includes(name)) list.push(name)
-  setPatterns(item, list)
+  // 选择大类时自动去掉其子/祖先范围，避免保存时 OVERLAPPING_BUDGET_PATTERN
+  const next = patternsOf(item).filter((pattern) => !patternsOverlap(pattern, name))
+  next.push(name)
+  setPatterns(item, next)
+  if (!item.name.trim()) {
+    const parts = name.split(':').filter(Boolean)
+    item.name = parts[parts.length - 1] || name
+  }
 }
 function removePattern(item: BudgetItem, name: string) {
   setPatterns(item, patternsOf(item).filter((pattern) => pattern !== name))
