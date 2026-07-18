@@ -44,7 +44,12 @@
   --van-button-round-radius: var(--bm-button-radius);
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar { display: none; }
 html, body, #app { margin: 0; min-width: 320px; min-height: 100%; }
 body { background: var(--bm-bg); }
 button, input, select, textarea { font: inherit; }

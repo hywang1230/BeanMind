@@ -38,7 +38,7 @@ describe('TransactionsPage', () => {
     })
   })
 
-  it('restores URL filters and appends the next cursor page', async () => {
+  it('restores URL filters and appends the next cursor page when scrolling near the bottom', async () => {
     vi.mocked(transactionsApi.getTransactions)
       .mockResolvedValueOnce({ items: [item], next_cursor: 'next', has_more: true })
       .mockResolvedValueOnce({ items: [{ ...item, id: 'txn-2', description: '购买日用品', payee: '超市' }], next_cursor: null, has_more: false })
@@ -46,7 +46,13 @@ describe('TransactionsPage', () => {
     await flushPromises()
     expect(transactionsApi.getTransactions).toHaveBeenCalledWith(expect.objectContaining({ transaction_type: 'expense', account: 'Expenses:Food', start_date: '2026-07-01', end_date: '2026-07-31' }))
     expect(transactionsApi.getTransactions).not.toHaveBeenCalledWith(expect.objectContaining({ tags: 'food' }))
-    await wrapper.findAll('button').find(button => button.text().includes('加载更多'))!.trigger('click')
+    const scroll = wrapper.find('.page-scroll').element
+    Object.defineProperties(scroll, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, value: 380 },
+    })
+    await wrapper.find('.page-scroll').trigger('scroll')
     await flushPromises()
     expect(wrapper.text()).toContain('午餐')
     expect(wrapper.text()).toContain('购买日用品')
@@ -61,7 +67,13 @@ describe('TransactionsPage', () => {
       .mockResolvedValueOnce({ items: [{ ...item, id: 'txn-2', description: '第二页交易' }], next_cursor: null, has_more: false })
     const wrapper = mount(TransactionsPage, { global: { plugins: [Vant] } })
     await flushPromises()
-    await wrapper.findAll('button').find(button => button.text().includes('加载更多'))!.trigger('click')
+    const scroll = wrapper.find('.page-scroll').element
+    Object.defineProperties(scroll, {
+      scrollHeight: { configurable: true, value: 1000 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, value: 500 },
+    })
+    await wrapper.find('.page-scroll').trigger('scroll')
     await flushPromises()
 
     route.path = '/transactions/txn-2'
