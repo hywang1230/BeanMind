@@ -149,10 +149,14 @@ def test_build_facts_uses_operating_currency_scalars(db_session, ledger_path) ->
     assert facts["changes"]["income_delta"] == "10000"
     assert facts["changes"]["expense_delta"] == "-81.456789123456789"
     assert facts["changes"]["income_change_rate"] is None
+    # 50 / 131.456789123456789 - 1 = -0.6196...，比例固定 4 位小数
+    assert facts["changes"]["expense_change_rate"] == "-0.6196"
     assert facts["top_expense_categories"][0]["name"] == "Food"
     assert facts["top_expense_categories"][0]["amount"] == "50"
+    assert facts["top_expense_categories"][0]["share"] == "1.0000"
     assert facts["top_income_categories"][0]["name"] == "Salary"
     assert facts["top_income_categories"][0]["amount"] == "10000"
+    assert facts["top_income_categories"][0]["share"] == "1.0000"
     assert facts["missing_exchange_rates"] == []
     assert isinstance(Decimal(facts["current"]["income"]), Decimal)
 

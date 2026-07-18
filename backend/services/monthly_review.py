@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.orm import Session
 
@@ -22,10 +22,21 @@ def previous_month(month: str) -> str:
     return f"{start.year - 1}-12" if start.month == 1 else f"{start.year}-{start.month - 1:02d}"
 
 
+RATIO_QUANT = Decimal("0.0001")
+
+
+def _format_ratio(value: Decimal | str | int) -> str:
+    """比例/变化率保留 4 位小数，避免 LLM 与页面直接引用超长小数。"""
+    number = Decimal(str(value))
+    if not number.is_finite():
+        raise ValueError("比例必须是有限 Decimal")
+    return format(number.quantize(RATIO_QUANT, rounding=ROUND_HALF_UP), "f")
+
+
 def _change_rate(current: Decimal, previous: Decimal) -> str | None:
     if previous == 0:
         return None
-    return normalize_decimal(current / previous - 1)
+    return _format_ratio(current / previous - 1)
 
 
 class MonthlyReviewService:
@@ -107,7 +118,7 @@ class MonthlyReviewService:
         base = sum((amount for _, amount in converted), Decimal("0"))
         output: list[dict[str, str | None]] = []
         for name, amount in top:
-            share = None if base == 0 else normalize_decimal(amount / base)
+            share = None if base == 0 else _format_ratio(amount / base)
             output.append(
                 {
                     "name": name,
@@ -127,16 +138,17 @@ class MonthlyReviewService:
             remaining_text = normalize_decimal(total - spent)
         else:
             remaining_text = str(remaining)
-        usage_rate = None if total == 0 else normalize_decimal(spent / total)
+        usage_rate = None if total == 0 else _format_ratio(spent / total)
         risk_items = []
         slim_items = []
         for item in items:
             risk = item.get("risk") or "NORMAL"
+            item_usage = item.get("usage_rate")
             slim = {
                 "name": item["name"],
                 "amount": item.get("amount"),
                 "spent": item.get("spent"),
-                "usage_rate": item.get("usage_rate"),
+                "usage_rate": None if item_usage is None else _format_ratio(item_usage),
                 "risk": risk,
             }
             if risk != "NORMAL":
