@@ -43,6 +43,17 @@ describe('transactionDraft', () => {
     ])
   })
 
+
+  it('builds expense with negative amount (refund-style reverse postings)', () => {
+    const draft = baseDraft({ amount: '-8.00' })
+    expect(sideIsBalanced('-8.00', [], ['Assets:Cash'])).toBe(true)
+    const postings = buildPostingsFromDraft(draft)
+    expect(postings).toEqual([
+      { account: 'Expenses:Food', amount: '-8.00', currency: 'CNY' },
+      { account: 'Assets:Cash', amount: '8.00', currency: 'CNY' },
+    ])
+  })
+
   it('requires distribute and balances multi category with decimal strings', () => {
     const draft = baseDraft({
       amount: '0.30',

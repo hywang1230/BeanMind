@@ -46,7 +46,7 @@
         :placeholder="currencyPlaceholder"
         :error="currencyError"
       />
-      <MoneyInput v-model="form.amount" :currency="form.currency" :error="amountError" />
+      <MoneyInput v-model="form.amount" :currency="form.currency" :error="amountError" :allow-negative="true" />
 
       <van-field
         v-model="form.payee"
@@ -111,7 +111,7 @@ import {
   type TransactionDraft,
   type TransactionType,
 } from '../stores/transactionDraft'
-import { isPositive, isValidAmount } from '../utils/decimal'
+import { isValidAmount } from '../utils/decimal'
 import AccountPicker from './AccountPicker.vue'
 import DatePickerField from './DatePickerField.vue'
 import MoneyInput from './MoneyInput.vue'
@@ -148,7 +148,7 @@ const form = reactive({
 
 const amountError = computed(() => {
   if (!submitted.value && !form.amount) return ''
-  if (!isValidAmount(form.amount, { allowZero: false }) || !isPositive(form.amount)) return '请输入有效金额'
+  if (!isValidAmount(form.amount, { allowZero: false, allowNegative: true })) return '请输入有效金额'
   return ''
 })
 

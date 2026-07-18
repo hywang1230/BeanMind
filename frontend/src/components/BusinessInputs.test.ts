@@ -10,14 +10,99 @@ import MonthPicker from './MonthPicker.vue'
 import SelectPickerField from './SelectPickerField.vue'
 
 describe('business inputs', () => {
-  it('keeps money as a normalized string without Number conversion', async () => {
+  it('opens a calc keypad and commits decimal-string results', async () => {
     const wrapper = mount(MoneyInput, {
       props: { modelValue: '', currency: 'CNY' },
-      global: { plugins: [Vant] },
+      global: {
+        plugins: [Vant],
+        stubs: {
+          // Keep popup content in-tree for unit tests.
+          VanPopup: { template: '<div class="van-popup-stub"><slot /></div>', props: ['show'] },
+        },
+      },
     })
-    await wrapper.find('input').setValue('123.456789123456789x')
+
+    await wrapper.find('.money-display').trigger('click')
+    expect(wrapper.find('.money-display').classes()).toContain('focused')
+
+    const press = async (label: string) => {
+      const btn = wrapper.findAll('button.key-btn').find((node) => node.text() === label)
+      expect(btn).toBeTruthy()
+      await btn!.trigger('click')
+    }
+
+    await press('1')
+    await press('2')
+    await press('+')
+    await press('3')
+    expect(wrapper.find('.keypad-preview-value').text()).toBe('12+3')
+
+    await wrapper.find('.confirm-key').trigger('click')
     const events = wrapper.emitted('update:modelValue') || []
-    expect(events[events.length - 1]).toEqual(['123.456789123456789'])
+    expect(events[events.length - 1]).toEqual(['15.00'])
+    expect(typeof events[events.length - 1]![0]).toBe('string')
+  })
+
+  it('keeps negative keypad results by default', async () => {
+    const wrapper = mount(MoneyInput, {
+      props: { modelValue: '', currency: 'CNY' },
+      global: {
+        plugins: [Vant],
+        stubs: { VanPopup: { template: '<div><slot /></div>', props: ['show'] } },
+      },
+    })
+    await wrapper.find('.money-display').trigger('click')
+    for (const label of ['1', '-', '5']) {
+      const btn = wrapper.findAll('button.key-btn').find((node) => node.text() === label)
+      await btn!.trigger('click')
+    }
+    await wrapper.find('.confirm-key').trigger('click')
+    const events = wrapper.emitted('update:modelValue') || []
+    expect(events[events.length - 1]).toEqual(['-4.00'])
+  })
+
+  it('clamps negative keypad results when allowNegative is false', async () => {
+    const wrapper = mount(MoneyInput, {
+      props: { modelValue: '', currency: 'CNY', allowNegative: false },
+      global: {
+        plugins: [Vant],
+        stubs: { VanPopup: { template: '<div><slot /></div>', props: ['show'] } },
+      },
+    })
+    await wrapper.find('.money-display').trigger('click')
+    for (const label of ['1', '-', '5']) {
+      const btn = wrapper.findAll('button.key-btn').find((node) => node.text() === label)
+      await btn!.trigger('click')
+    }
+    await wrapper.find('.confirm-key').trigger('click')
+    const events = wrapper.emitted('update:modelValue') || []
+    expect(events[events.length - 1]).toEqual(['0.00'])
+  })
+
+  it('commits the expression when the keypad is closed without confirm', async () => {
+    const wrapper = mount(MoneyInput, {
+      props: { modelValue: '', currency: 'CNY' },
+      global: {
+        plugins: [Vant],
+        stubs: {
+          VanPopup: {
+            name: 'VanPopup',
+            props: ['show'],
+            emits: ['update:show', 'closed'],
+            template: '<div class="popup-stub"><slot /></div>',
+          },
+        },
+      },
+    })
+    await wrapper.find('.money-display').trigger('click')
+    for (const label of ['8', '+', '2']) {
+      const btn = wrapper.findAll('button.key-btn').find((node) => node.text() === label)
+      await btn!.trigger('click')
+    }
+    // Simulate popup close (backdrop / swipe).
+    await wrapper.findComponent({ name: 'VanPopup' }).vm.$emit('closed')
+    const events = wrapper.emitted('update:modelValue') || []
+    expect(events[events.length - 1]).toEqual(['10.00'])
   })
 
   it('renders a searchable account tree and keeps full account values', async () => {

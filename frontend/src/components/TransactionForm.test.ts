@@ -89,6 +89,39 @@ describe('TransactionForm', () => {
     })
   })
 
+
+  it('submits single-account expense with negative amount', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(TransactionForm, {
+      props: { mode: 'create', loading: false },
+      global: { plugins: [Vant, pinia] },
+    })
+    await flushPromises()
+
+    const money = wrapper.findComponent({ name: 'MoneyInput' })
+    await money.vm.$emit('update:modelValue', '-8.00')
+    const pickers = wrapper.findAllComponents({ name: 'AccountPicker' })
+    await pickers[0]!.vm.$emit('update:modelValue', 'Assets:Cash')
+    await pickers[1]!.vm.$emit('update:modelValue', 'Expenses:Food')
+    await wrapper.vm.$nextTick()
+
+    // negative amount is valid; no error banner after model update
+    expect(wrapper.text()).not.toContain('请输入有效金额')
+    await wrapper.find('.transaction-submit .van-button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({
+      date: expect.any(String),
+      payee: undefined,
+      description: undefined,
+      postings: [
+        { account: 'Expenses:Food', amount: '-8.00', currency: 'CNY' },
+        { account: 'Assets:Cash', amount: '8.00', currency: 'CNY' },
+      ],
+    })
+  })
+
   it('navigates to distribute when multiple categories selected', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

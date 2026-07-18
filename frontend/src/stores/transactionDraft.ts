@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import type { CreateTransactionRequest, Posting } from '../api/transactions'
-import { addAmounts, isPositive, isValidAmount, isZero, negateAmount, quantizeAmount, subAmounts } from '../utils/decimal'
+import { addAmounts, isValidAmount, isZero, negateAmount, quantizeAmount, subAmounts } from '../utils/decimal'
 
 export type TransactionType = 'expense' | 'income' | 'transfer'
 export type DraftMode = 'create' | `edit:${string}`
@@ -168,7 +168,7 @@ export function sideRemaining(total: string, lines: DraftLine[]): string {
 
 export function sideIsBalanced(total: string, lines: DraftLine[], accounts: string[]): boolean {
   if (!accounts.length) return false
-  if (accounts.length === 1) return isValidAmount(total, { allowZero: false }) && isPositive(total)
+  if (accounts.length === 1) return isValidAmount(total, { allowZero: false, allowNegative: true })
   if (lines.length !== accounts.length) return false
   if (!lines.every((l) => accounts.includes(l.account) && isValidAmount(l.amount, { allowZero: false }))) return false
   return isZero(sideRemaining(total, lines))
