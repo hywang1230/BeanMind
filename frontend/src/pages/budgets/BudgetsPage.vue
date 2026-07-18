@@ -263,6 +263,6 @@ onMounted(async () => {
 .budget-summary{padding:4px 16px 18px}.budget-total{display:grid;gap:8px;padding:14px 0}.budget-total span{color:var(--bm-muted)}.budget-total strong{font-size:30px}.budget-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;border-top:1px solid var(--bm-border);padding-top:16px}.budget-stats span{display:grid;gap:6px;color:var(--bm-muted);font-size:13px}.budget-stats strong{color:var(--bm-text);font-size:16px}.budget-item{border-left:3px solid var(--bm-primary)}.budget-item.risk-warning{border-left-color:var(--bm-warn)}.budget-item.risk-exceeded{border-left-color:var(--bm-expense)}.budget-progress{display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px;padding:2px 16px 14px}.budget-progress span{min-width:64px;text-align:right;font-weight:700}.budget-actions{display:grid;gap:12px;margin:16px 0;width:100%;box-sizing:border-box}
 .budget-actions-edit{gap:10px}
 .budget-actions-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.budget-actions-row :deep(.van-button),.budget-actions :deep(.van-button){height:44px;border-radius:10px}
+.budget-actions-row :deep(.van-button),.budget-actions :deep(.van-button){height:44px}
 .budget-actions-row :deep(.van-button){width:100%}
 </style>

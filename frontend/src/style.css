@@ -23,6 +23,8 @@
   --bm-warn-soft: #fff7e6;
   --bm-card-shadow: 0 2px 12px rgba(31, 35, 41, .025);
   --bm-radius: 12px;
+  /* 全站按钮统一圆角（含默认/round，避免 4px vs 胶囊不一致） */
+  --bm-button-radius: 10px;
   --app-primary: var(--bm-primary);
   --app-danger: var(--bm-expense);
   --app-success: var(--bm-income);
@@ -37,6 +39,8 @@
   --van-text-color-2: var(--bm-muted);
   --van-border-color: var(--bm-border);
   --van-radius-lg: var(--bm-radius);
+  --van-button-radius: var(--bm-button-radius);
+  --van-button-round-radius: var(--bm-button-radius);
 }
 
 * { box-sizing: border-box; }
@@ -106,7 +110,10 @@ button, input, select, textarea { font: inherit; }
 .van-cell { background: var(--bm-surface); }
 .van-cell__label { color: var(--bm-muted); }
 .van-cell__right-icon { color: var(--bm-faint); }
-.van-button--round { border-radius: 10px; }
+/* 默认与 round 按钮使用同一圆角，square 仍保持直角 */
+.van-button:not(.van-button--square) { border-radius: var(--bm-button-radius); }
+.van-button--round { border-radius: var(--bm-button-radius); }
+.van-button--hairline:not(.van-button--square):after { border-radius: calc(var(--bm-button-radius) * 2); }
 .finance-note { padding: 14px 16px; border: 1px solid var(--bm-primary-border); border-radius: var(--bm-radius); background: var(--bm-primary-soft); color: var(--bm-primary-note-text); font-size: 13px; line-height: 1.6; }
 .finance-note strong { display: block; margin-bottom: 4px; color: var(--bm-primary); }
 @media (min-width: 760px) { .page { max-width: 760px; margin: 0 auto; } }
