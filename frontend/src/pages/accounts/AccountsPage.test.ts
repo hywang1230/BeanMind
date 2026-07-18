@@ -14,17 +14,6 @@ vi.mock('../../api/currencies', () => ({
   currenciesApi: { listEnabledCodes: vi.fn(), list: vi.fn() },
 }))
 
-function mountAccountsPage() {
-  return mount(AccountsPage, {
-    global: {
-      plugins: [Vant],
-      stubs: {
-        VanNavBar: { template: '<div><slot name="right" /></div>' },
-      },
-    },
-  })
-}
-
 describe('AccountsPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -37,7 +26,7 @@ describe('AccountsPage', () => {
       { name: 'Assets:Cash', account_type: 'Assets', currencies: ['CNY'] },
       { name: 'Expenses:Food:Lunch', account_type: 'Expenses', currencies: ['CNY'] },
     ])
-    const wrapper = mountAccountsPage()
+    const wrapper = mount(AccountsPage, { global: { plugins: [Vant] } })
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('账本账户')
@@ -59,7 +48,7 @@ describe('AccountsPage', () => {
     vi.mocked(accountsApi.getAccounts).mockResolvedValue([
       { name: 'Liabilities:CreditCard:CMB', account_type: 'Liabilities', currencies: ['CNY'] },
     ])
-    const wrapper = mountAccountsPage()
+    const wrapper = mount(AccountsPage, { global: { plugins: [Vant] } })
     await flushPromises()
 
     await wrapper.find('[aria-label="展开Liabilities:CreditCard"]').trigger('click')
@@ -72,7 +61,7 @@ describe('AccountsPage', () => {
       { name: 'Equity:OpeningBalances', account_type: 'Equity', currencies: ['CNY'] },
       { name: 'Equity:OpeningBalances:Cash', account_type: 'Equity', currencies: ['CNY'] },
     ])
-    const wrapper = mountAccountsPage()
+    const wrapper = mount(AccountsPage, { global: { plugins: [Vant] } })
     await flushPromises()
 
     expect(wrapper.text()).toContain('权益账户')
@@ -90,7 +79,7 @@ describe('AccountsPage', () => {
 
   it('renders a retryable error', async () => {
     vi.mocked(accountsApi.getAccounts).mockRejectedValue({ message: '加载失败' })
-    const wrapper = mountAccountsPage()
+    const wrapper = mount(AccountsPage, { global: { plugins: [Vant] } })
     await flushPromises()
     expect(wrapper.text()).toContain('加载失败')
     expect(wrapper.text()).toContain('重试')
@@ -110,7 +99,7 @@ describe('AccountsPage', () => {
       account_type: 'Assets',
       currencies: ['CNY', 'USD'],
     } as never)
-    const wrapper = mountAccountsPage()
+    const wrapper = mount(AccountsPage, { global: { plugins: [Vant] } })
     await flushPromises()
     await wrapper.findAll('button').find(b => b.text() === '新建')!.trigger('click')
     expect(wrapper.text()).toContain('新建账户')
@@ -147,7 +136,7 @@ describe('AccountsPage', () => {
     vi.mocked(accountsApi.getAccounts).mockResolvedValue([
       { name: 'Assets:Cash', account_type: 'Assets', currencies: ['CNY'] },
     ])
-    const wrapper = mountAccountsPage()
+    const wrapper = mount(AccountsPage, { global: { plugins: [Vant] } })
     await flushPromises()
     const group = wrapper.find('.account-group')
     expect(group.exists()).toBe(true)
