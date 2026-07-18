@@ -2,7 +2,7 @@
   <section class="page page-with-pull budgets-page">
     <div class="page-scroll">
     <van-pull-refresh v-model="refreshing" class="page-pull-refresh" pulling-text="下拉刷新" loosing-text="释放刷新" loading-text="刷新中..." success-text="刷新成功" @refresh="onRefresh">
-    <header class="page-header"><h1>月度预算</h1><MonthPicker v-model="month" @change="() => load()" /></header>
+    <header class="page-header"><h1>月度预算</h1><MonthPicker v-model="month" @change="onMonthChange" /></header>
     <div v-if="loading" class="state-card"><van-loading>加载中</van-loading></div>
     <van-empty v-else-if="error && !budget" image="error" :description="error"><van-button size="small" type="primary" @click="() => load()">重试</van-button></van-empty>
     <template v-else>
@@ -13,36 +13,66 @@
           <span>剩余<strong class="income">{{ currency }} {{ budget.remaining || total }}</strong></span>
         </div>
       </div>
-      <van-cell-group v-for="(item, index) in items" :key="index" inset class="page-section budget-item" :class="`risk-${(item.risk || 'NORMAL').toLowerCase()}`">
-        <van-field v-model="item.name" label="分类" placeholder="例如：餐饮" />
-        <AccountPicker
-          :model-value="''"
-          :selected-accounts="patternsOf(item)"
-          :accounts="accounts"
-          label="账户"
-          :prefixes="['Expenses']"
-          placeholder="请选择大类或账户（可多选）"
-          allow-parent-select
-          :error="accountError"
-          @update:model-value="addPattern(item, $event)"
-          @remove="removePattern(item, $event)"
-        />
-        <van-field v-model="item.amount" label="额度" inputmode="decimal" />
-        <van-cell v-if="item.spent !== undefined" title="执行" :label="`${item.spent} / ${item.amount}`">
-          <template #value><van-tag :type="riskType(item.risk)">{{ riskText(item.risk) }}</van-tag></template>
-        </van-cell>
-        <div v-if="item.usage_rate !== undefined && item.usage_rate !== null" class="budget-progress">
-          <van-progress :percentage="progress(item.usage_rate)" :color="riskColor(item.risk)" :show-pivot="false" stroke-width="8" />
-          <span :class="item.risk === 'EXCEEDED' ? 'expense' : item.risk === 'WARNING' ? 'warning' : 'income'">{{ percentage(item.usage_rate) }}%</span>
+
+      <!-- 查看态：只读展示 -->
+      <template v-if="!editing">
+        <van-cell-group v-for="(item, index) in items" :key="`view-${index}`" inset class="page-section budget-item" :class="`risk-${(item.risk || 'NORMAL').toLowerCase()}`">
+          <van-cell :title="item.name || '未命名'" :label="patternsLabel(item)">
+            <template #value><strong>{{ currency }} {{ item.amount }}</strong></template>
+          </van-cell>
+          <van-cell v-if="item.spent !== undefined" title="执行" :label="`${item.spent} / ${item.amount}`">
+            <template #value><van-tag :type="riskType(item.risk)">{{ riskText(item.risk) }}</van-tag></template>
+          </van-cell>
+          <div v-if="item.usage_rate !== undefined && item.usage_rate !== null" class="budget-progress">
+            <van-progress :percentage="progress(item.usage_rate)" :color="riskColor(item.risk)" :show-pivot="false" stroke-width="8" />
+            <span :class="item.risk === 'EXCEEDED' ? 'expense' : item.risk === 'WARNING' ? 'warning' : 'income'">{{ percentage(item.usage_rate) }}%</span>
+          </div>
+        </van-cell-group>
+        <van-empty v-if="!items.length" description="本月尚未设置预算" />
+        <div class="budget-actions">
+          <van-button block type="primary" @click="startEdit">编辑预算</van-button>
         </div>
-        <van-button block plain type="danger" size="small" @click="items.splice(index, 1)">删除分类</van-button>
-      </van-cell-group>
-      <van-empty v-if="!items.length" description="本月尚未设置预算" />
-      <div class="budget-actions">
-        <van-button plain type="primary" @click="addItem">新增分类</van-button>
-        <van-button plain @click="copyPrevious">复制上月</van-button>
-        <van-button type="primary" :loading="saving" @click="save">保存预算</van-button>
-      </div>
+      </template>
+
+      <!-- 编辑态：表单操作 -->
+      <template v-else>
+        <van-cell-group v-for="(item, index) in items" :key="`edit-${index}`" inset class="page-section budget-item" :class="`risk-${(item.risk || 'NORMAL').toLowerCase()}`">
+          <van-field v-model="item.name" label="分类" placeholder="例如：餐饮" />
+          <AccountPicker
+            :model-value="''"
+            :selected-accounts="patternsOf(item)"
+            :accounts="accounts"
+            label="账户"
+            :prefixes="['Expenses']"
+            placeholder="请选择大类或账户（可多选）"
+            allow-parent-select
+            :error="accountError"
+            @update:model-value="addPattern(item, $event)"
+            @remove="removePattern(item, $event)"
+          />
+          <van-field v-model="item.amount" label="额度" inputmode="decimal" />
+          <van-cell v-if="item.spent !== undefined" title="执行" :label="`${item.spent} / ${item.amount}`">
+            <template #value><van-tag :type="riskType(item.risk)">{{ riskText(item.risk) }}</van-tag></template>
+          </van-cell>
+          <div v-if="item.usage_rate !== undefined && item.usage_rate !== null" class="budget-progress">
+            <van-progress :percentage="progress(item.usage_rate)" :color="riskColor(item.risk)" :show-pivot="false" stroke-width="8" />
+            <span :class="item.risk === 'EXCEEDED' ? 'expense' : item.risk === 'WARNING' ? 'warning' : 'income'">{{ percentage(item.usage_rate) }}%</span>
+          </div>
+          <van-button block plain type="danger" size="small" @click="removeItem(index)">删除分类</van-button>
+        </van-cell-group>
+        <van-empty v-if="!items.length" description="本月尚未设置预算" />
+        <div class="budget-actions budget-actions-edit">
+          <div class="budget-actions-row">
+            <van-button plain type="primary" @click="addItem">新增分类</van-button>
+            <van-button plain @click="copyPrevious">复制上月</van-button>
+          </div>
+          <div class="budget-actions-row">
+            <van-button plain @click="cancelEdit">取消</van-button>
+            <van-button type="primary" :loading="saving" @click="save">保存预算</van-button>
+          </div>
+        </div>
+      </template>
+
       <van-notice-bar v-if="error" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ error }}</van-notice-bar>
     </template>
     </van-pull-refresh>
@@ -65,6 +95,8 @@ const budget = ref<MonthlyBudget|null>(null); const items = ref<BudgetItem[]>([]
 const currency = computed(() => budget.value?.currency || '')
 const accounts = ref<Account[]>([])
 const loading = ref(false); const refreshing = ref(false); const saving = ref(false); const error = ref(''); const accountError = ref('')
+const editing = ref(false)
+
 function addDecimalStrings(values: string[]): string {
   const normalized = values.map((value) => value.trim() || '0')
   const scale = Math.max(0, ...normalized.map((value) => value.split('.')[1]?.length ?? 0))
@@ -94,6 +126,10 @@ function patternsOf(item: BudgetItem) {
     .map((part) => part.trim().replace(/^:+|:+$/g, ''))
     .filter(Boolean)
 }
+function patternsLabel(item: BudgetItem) {
+  const patterns = patternsOf(item)
+  return patterns.length ? patterns.join(' · ') : '未选账户'
+}
 function setPatterns(item: BudgetItem, patterns: string[]) {
   item.account_pattern = patterns.join(',')
 }
@@ -116,6 +152,37 @@ function removePattern(item: BudgetItem, name: string) {
   setPatterns(item, patternsOf(item).filter((pattern) => pattern !== name))
 }
 function addItem(){items.value.push({name:'',account_pattern:'',amount:'0',display_order:items.value.length})}
+function isItemConfigured(item: BudgetItem): boolean {
+  if (item.id) return true
+  if (item.name.trim()) return true
+  if (patternsOf(item).length > 0) return true
+  const amount = (item.amount ?? '').trim()
+  if (amount && !/^0+(\.0+)?$/.test(amount)) return true
+  if (item.spent !== undefined || item.usage_rate !== undefined || item.risk) return true
+  return false
+}
+async function removeItem(index: number) {
+  const item = items.value[index]
+  if (!item) return
+  if (isItemConfigured(item)) {
+    try {
+      await showConfirmDialog({
+        title: '删除分类',
+        message: `确定删除「${item.name.trim() || '未命名'}」？删除后需保存才会生效。`,
+      })
+    } catch {
+      return
+    }
+  }
+  items.value.splice(index, 1)
+}
+function startEdit() {
+  editing.value = true
+}
+async function cancelEdit() {
+  editing.value = false
+  await load()
+}
 function riskText(risk?:string){return ({NORMAL:'正常',WARNING:'接近额度',EXCEEDED:'已超支'} as Record<string,string>)[risk||'NORMAL']}
 function riskType(risk?:string){return risk==='EXCEEDED'?'danger':risk==='WARNING'?'warning':'success'}
 function riskColor(risk?:string){return risk==='EXCEEDED'?'var(--bm-expense)':risk==='WARNING'?'var(--bm-warn)':'var(--bm-primary)'}
@@ -149,13 +216,43 @@ async function load(options: { silent?: boolean } = {}){
     if (!options.silent) loading.value = false
   }
 }
+async function onMonthChange() {
+  editing.value = false
+  await load()
+}
 async function loadAccounts(){accountError.value='';try{accounts.value=await accountsApi.getAccounts()}catch(reason){accountError.value=(reason as ApiError).message}}
 async function onRefresh() {
   try { await Promise.all([load({ silent: true }), loadAccounts()]) }
   finally { refreshing.value = false }
 }
-async function save(){saving.value=true;error.value='';try{budget.value=await budgetsApi.save(month.value,items.value.map((item,index)=>({...item,display_order:index})));items.value=budget.value.items.map(item=>({...item}));showSuccessToast('预算已保存')}catch(reason){error.value=(reason as ApiError).message}finally{saving.value=false}}
-async function copyPrevious(){error.value='';try{if(items.value.length){await showConfirmDialog({title:'覆盖预算',message:'当前分类会被上月配置替换，是否继续？'});budget.value=await budgetsApi.copyPrevious(month.value,true)}else{budget.value=await budgetsApi.copyPrevious(month.value)}items.value=budget.value.items.map(item=>({...item}))}catch(reason){if((reason as string)!=='cancel'&&typeof reason==='object')error.value=(reason as ApiError).message}}
+async function save(){
+  saving.value=true
+  error.value=''
+  try{
+    budget.value=await budgetsApi.save(month.value,items.value.map((item,index)=>({...item,display_order:index})))
+    items.value=budget.value.items.map(item=>({...item}))
+    editing.value=false
+    showSuccessToast('预算已保存')
+  }catch(reason){
+    error.value=(reason as ApiError).message
+  }finally{
+    saving.value=false
+  }
+}
+async function copyPrevious(){
+  error.value=''
+  try{
+    if(items.value.length){
+      await showConfirmDialog({title:'覆盖预算',message:'当前分类会被上月配置替换，是否继续？'})
+      budget.value=await budgetsApi.copyPrevious(month.value,true)
+    }else{
+      budget.value=await budgetsApi.copyPrevious(month.value)
+    }
+    items.value=budget.value.items.map(item=>({...item}))
+  }catch(reason){
+    if((reason as string)!=='cancel'&&typeof reason==='object')error.value=(reason as ApiError).message
+  }
+}
 onMounted(async () => {
   load()
   loadAccounts()
@@ -163,5 +260,9 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.budget-summary{padding:4px 16px 18px}.budget-total{display:grid;gap:8px;padding:14px 0}.budget-total span{color:var(--bm-muted)}.budget-total strong{font-size:30px}.budget-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;border-top:1px solid var(--bm-border);padding-top:16px}.budget-stats span{display:grid;gap:6px;color:var(--bm-muted);font-size:13px}.budget-stats strong{color:var(--bm-text);font-size:16px}.budget-item{border-left:3px solid var(--bm-primary)}.budget-item.risk-warning{border-left-color:var(--bm-warn)}.budget-item.risk-exceeded{border-left-color:var(--bm-expense)}.budget-progress{display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px;padding:2px 16px 14px}.budget-progress span{min-width:64px;text-align:right;font-weight:700}.budget-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin:16px}
+.budget-summary{padding:4px 16px 18px}.budget-total{display:grid;gap:8px;padding:14px 0}.budget-total span{color:var(--bm-muted)}.budget-total strong{font-size:30px}.budget-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;border-top:1px solid var(--bm-border);padding-top:16px}.budget-stats span{display:grid;gap:6px;color:var(--bm-muted);font-size:13px}.budget-stats strong{color:var(--bm-text);font-size:16px}.budget-item{border-left:3px solid var(--bm-primary)}.budget-item.risk-warning{border-left-color:var(--bm-warn)}.budget-item.risk-exceeded{border-left-color:var(--bm-expense)}.budget-progress{display:grid;grid-template-columns:1fr auto;align-items:center;gap:12px;padding:2px 16px 14px}.budget-progress span{min-width:64px;text-align:right;font-weight:700}.budget-actions{display:grid;gap:12px;margin:16px 0;width:100%;box-sizing:border-box}
+.budget-actions-edit{gap:10px}
+.budget-actions-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.budget-actions-row :deep(.van-button),.budget-actions :deep(.van-button){height:44px;border-radius:10px}
+.budget-actions-row :deep(.van-button){width:100%}
 </style>

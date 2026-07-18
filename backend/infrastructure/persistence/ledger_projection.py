@@ -166,26 +166,37 @@ def _fingerprint(path: Path) -> tuple[int, int, str]:
     return stat.st_mtime_ns, stat.st_size, digest
 
 
-def encode_transaction_cursor(txn_date: date, transaction_id: str) -> str:
+def encode_transaction_cursor(
+    txn_date: date, source_lineno: int, transaction_id: str
+) -> str:
+    """编码列表游标：date + source_lineno + id。"""
     payload = json.dumps(
-        {"v": 1, "date": txn_date.isoformat(), "id": transaction_id},
+        {
+            "v": 2,
+            "date": txn_date.isoformat(),
+            "lineno": int(source_lineno),
+            "id": transaction_id,
+        },
         separators=(",", ":"),
     ).encode("utf-8")
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 
 
-def decode_transaction_cursor(cursor: str) -> tuple[date, str]:
+def decode_transaction_cursor(cursor: str) -> tuple[date, int, str]:
     try:
         padding = "=" * (-len(cursor) % 4)
         raw = base64.b64decode(cursor + padding, altchars=b"-_", validate=True)
         payload = json.loads(raw.decode("utf-8"))
-        if set(payload) != {"v", "date", "id"} or payload["v"] != 1:
+        if set(payload) != {"v", "date", "lineno", "id"} or payload["v"] != 2:
             raise ValueError("unsupported cursor")
         if not isinstance(payload["id"], str) or not payload["id"]:
             raise ValueError("missing id")
-        return date.fromisoformat(payload["date"]), payload["id"]
+        lineno = payload["lineno"]
+        if not isinstance(lineno, int) or isinstance(lineno, bool) or lineno < 0:
+            raise ValueError("invalid lineno")
+        return date.fromisoformat(payload["date"]), lineno, payload["id"]
     except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
-        raise InvalidTransactionCursorError("交易游标无效或版本不受支持") from exc
+        raise InvalidTransactionCursorError("交易游标无效") from exc
 
 
 class LedgerProjectionService:
@@ -565,18 +576,28 @@ class TransactionQueryService:
                 )
             )
         if cursor:
-            cursor_date, cursor_id = decode_transaction_cursor(cursor)
+            cursor_date, cursor_lineno, cursor_id = decode_transaction_cursor(cursor)
+            # 排序：date DESC, source_lineno DESC, id DESC
             query = query.filter(
                 or_(
                     LedgerTransaction.date < cursor_date,
                     and_(
                         LedgerTransaction.date == cursor_date,
+                        LedgerTransaction.source_lineno < cursor_lineno,
+                    ),
+                    and_(
+                        LedgerTransaction.date == cursor_date,
+                        LedgerTransaction.source_lineno == cursor_lineno,
                         LedgerTransaction.id < cursor_id,
                     ),
                 )
             )
         rows = (
-            query.order_by(LedgerTransaction.date.desc(), LedgerTransaction.id.desc())
+            query.order_by(
+                LedgerTransaction.date.desc(),
+                LedgerTransaction.source_lineno.desc(),
+                LedgerTransaction.id.desc(),
+            )
             .limit(limit + 1)
             .all()
         )
@@ -585,7 +606,9 @@ class TransactionQueryService:
         next_cursor = None
         if has_more and page_rows:
             last = page_rows[-1]
-            next_cursor = encode_transaction_cursor(last.date, last.id)
+            next_cursor = encode_transaction_cursor(
+                last.date, last.source_lineno, last.id
+            )
         return {
             "items": [self._to_dto(row) for row in page_rows],
             "next_cursor": next_cursor,

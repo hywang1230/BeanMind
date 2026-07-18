@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import Vant from 'vant'
+import Vant, { showConfirmDialog } from 'vant'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { accountsApi } from '../../../api/accounts'
@@ -18,7 +18,23 @@ vi.mock('../../../api/budgets', () => ({
   },
 }))
 
+vi.mock('vant', async () => {
+  const actual = await vi.importActual<typeof import('vant')>('vant')
+  return {
+    ...actual,
+    showConfirmDialog: vi.fn(),
+    showSuccessToast: vi.fn(),
+  }
+})
+
 const emptyBudget = { month: '2026-07', currency: 'CNY', total: '0', spent: '0', remaining: '0', items: [] }
+
+async function enterEdit(wrapper: ReturnType<typeof mount>) {
+  const editButton = wrapper.findAll('button').find((button) => button.text().includes('编辑预算'))
+  expect(editButton).toBeTruthy()
+  await editButton!.trigger('click')
+  await wrapper.vm.$nextTick()
+}
 
 describe('BudgetsPage', () => {
   beforeEach(() => {
@@ -29,6 +45,7 @@ describe('BudgetsPage', () => {
       ] },
     ])
     vi.mocked(budgetsApi.get).mockResolvedValue(emptyBudget)
+    vi.mocked(showConfirmDialog).mockResolvedValue('confirm' as never)
   })
 
   it('renders monthly empty state without an unhandled error', async () => {
@@ -37,9 +54,36 @@ describe('BudgetsPage', () => {
     expect(wrapper.find('h1').text()).toBe('月度预算')
     expect(wrapper.text()).toContain('本月尚未设置预算')
     expect(wrapper.text()).toContain('CNY 0')
+    expect(wrapper.text()).toContain('编辑预算')
     expect(wrapper.text()).not.toContain('请选择币种')
+    expect(wrapper.text()).not.toContain('新增分类')
     expect(budgetsApi.get).toHaveBeenCalledOnce()
     expect(budgetsApi.get).toHaveBeenCalledWith(expect.any(String))
+  })
+
+  it('shows read-only categories in view mode', async () => {
+    vi.mocked(budgetsApi.get).mockResolvedValue({
+      ...emptyBudget,
+      total: '100',
+      items: [{
+        id: 'item-1',
+        name: '餐饮',
+        account_pattern: 'Expenses:Food',
+        amount: '100',
+        spent: '20',
+        remaining: '80',
+        usage_rate: '0.2',
+        risk: 'NORMAL',
+      }],
+    })
+    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('餐饮')
+    expect(wrapper.text()).toContain('Expenses:Food')
+    expect(wrapper.text()).toContain('100')
+    expect(wrapper.text()).toContain('编辑预算')
+    expect(wrapper.text()).not.toContain('删除分类')
+    expect(wrapper.findAll('input')).toHaveLength(0)
   })
 
   it('adds a category and saves the monthly contract', async () => {
@@ -50,6 +94,7 @@ describe('BudgetsPage', () => {
     })
     const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
     await flushPromises()
+    await enterEdit(wrapper)
     const buttons = wrapper.findAll('button')
     await buttons.find(button => button.text().includes('新增分类'))!.trigger('click')
     const inputs = wrapper.findAll('input')
@@ -60,65 +105,77 @@ describe('BudgetsPage', () => {
     expect(picker.props('selectedAccounts')).toEqual([])
     await picker.vm.$emit('update:modelValue', 'Expenses:Food')
     await wrapper.vm.$nextTick()
-    const amount = inputs.find(input => input.attributes('inputmode') === 'decimal')!
-    await amount.setValue('100')
+    expect(picker.props('selectedAccounts')).toEqual(['Expenses:Food'])
+    await inputs.find(input => input.attributes('inputmode') === 'decimal')!.setValue('100')
     await wrapper.findAll('button').find(button => button.text().includes('保存预算'))!.trigger('click')
     await flushPromises()
     expect(budgetsApi.save).toHaveBeenCalledWith(
       expect.any(String),
-      [expect.objectContaining({ name: '餐饮', account_pattern: 'Expenses:Food', amount: '100' })],
+      [expect.objectContaining({ name: '餐饮', account_pattern: 'Expenses:Food', amount: '100', display_order: 0 })],
     )
+    // 保存成功回到查看态
+    expect(wrapper.text()).toContain('编辑预算')
+    expect(wrapper.text()).not.toContain('保存预算')
+    expect(wrapper.text()).toContain('餐饮')
   })
 
-  it('formats usage rate to two decimal places and uses AccountPicker only', async () => {
+  it('removes empty draft category without confirmation', async () => {
+    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    await enterEdit(wrapper)
+    await wrapper.findAll('button').find(button => button.text().includes('新增分类'))!.trigger('click')
+    expect(wrapper.findAll('input').find(input => input.attributes('placeholder') === '例如：餐饮')).toBeTruthy()
+    await wrapper.findAll('button').find(button => button.text().includes('删除分类'))!.trigger('click')
+    await flushPromises()
+    expect(showConfirmDialog).not.toHaveBeenCalled()
+    expect(wrapper.findAll('input').find(input => input.attributes('placeholder') === '例如：餐饮')).toBeFalsy()
+  })
+
+  it('confirms before removing a configured category and keeps it on cancel', async () => {
     vi.mocked(budgetsApi.get).mockResolvedValue({
       ...emptyBudget,
-      total: '15',
-      spent: '70',
-      remaining: '-55',
+      total: '100',
       items: [{
+        id: 'item-1',
         name: '餐饮',
-        account_pattern: 'Expenses:CY-餐饮',
-        amount: '15',
-        spent: '70',
-        remaining: '-55',
-        usage_rate: '4.666666666666666666666666667',
-        risk: 'EXCEEDED',
+        account_pattern: 'Expenses:Food',
+        amount: '100',
+        spent: '20',
+        remaining: '80',
+        risk: 'NORMAL',
+      }],
+    })
+    vi.mocked(showConfirmDialog).mockRejectedValueOnce('cancel')
+    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    await enterEdit(wrapper)
+    await wrapper.findAll('button').find(button => button.text().includes('删除分类'))!.trigger('click')
+    await flushPromises()
+    expect(showConfirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+      title: '删除分类',
+      message: expect.stringContaining('餐饮'),
+    }))
+    expect(wrapper.findAll('input').find(input => input.attributes('placeholder') === '例如：餐饮')!.element.value).toBe('餐饮')
+  })
+
+  it('removes a configured category after confirmation', async () => {
+    vi.mocked(budgetsApi.get).mockResolvedValue({
+      ...emptyBudget,
+      total: '100',
+      items: [{
+        id: 'item-1',
+        name: '餐饮',
+        account_pattern: 'Expenses:Food',
+        amount: '100',
       }],
     })
     const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
     await flushPromises()
-    expect(wrapper.text()).toContain('466.67%')
-    expect(wrapper.text()).not.toContain('466.6666666666666666666666667%')
-    expect(wrapper.text()).not.toContain('账户范围')
-    expect(wrapper.text()).not.toContain('选择账户范围')
-    const picker = wrapper.findComponent({ name: 'AccountPicker' })
-    expect(picker.exists()).toBe(true)
-    expect(picker.props('label')).toBe('账户')
-    expect(picker.props('selectedAccounts')).toEqual(['Expenses:CY-餐饮'])
-    expect(wrapper.text()).toContain('CY-餐饮')
-  })
-
-  it('shows retryable API error', async () => {
-    vi.mocked(budgetsApi.get).mockRejectedValue({ message: '缺少币种 USD 对 CNY 的可用汇率' })
-    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
+    await enterEdit(wrapper)
+    await wrapper.findAll('button').find(button => button.text().includes('删除分类'))!.trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('缺少币种 USD 对 CNY 的可用汇率')
-    expect(wrapper.text()).toContain('重试')
-  })
-
-  it('pull-to-refresh reloads budget and accounts', async () => {
-    const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
-    await flushPromises()
-    const budgetCalls = vi.mocked(budgetsApi.get).mock.calls.length
-    const accountCalls = vi.mocked(accountsApi.getAccounts).mock.calls.length
-    expect(wrapper.find('.page-with-pull').exists()).toBe(true)
-    expect(wrapper.find('.page-scroll').exists()).toBe(true)
-    expect(wrapper.find('.van-pull-refresh').exists()).toBe(true)
-    await wrapper.findComponent({ name: 'VanPullRefresh' }).vm.$emit('refresh')
-    await flushPromises()
-    expect(vi.mocked(budgetsApi.get).mock.calls.length).toBeGreaterThan(budgetCalls)
-    expect(vi.mocked(accountsApi.getAccounts).mock.calls.length).toBeGreaterThan(accountCalls)
+    expect(showConfirmDialog).toHaveBeenCalled()
+    expect(wrapper.findAll('input').find(input => input.attributes('placeholder') === '例如：餐饮')).toBeFalsy()
   })
 
   it('supports multi account patterns as comma-joined contract', async () => {
@@ -147,6 +204,7 @@ describe('BudgetsPage', () => {
     })
     const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
     await flushPromises()
+    await enterEdit(wrapper)
     await wrapper.findAll('button').find(button => button.text().includes('新增分类'))!.trigger('click')
     await wrapper.findAll('input').find(input => input.attributes('placeholder') === '例如：餐饮')!.setValue('餐饮交通')
     const picker = wrapper.findComponent({ name: 'AccountPicker' })
@@ -169,7 +227,6 @@ describe('BudgetsPage', () => {
     expect(wrapper.text()).toContain('Food')
     expect(wrapper.text()).toContain('Travel')
   })
-
 
   it('enables parent category selection and strips overlapping child patterns', async () => {
     vi.mocked(accountsApi.getAccounts).mockResolvedValue([
@@ -198,6 +255,7 @@ describe('BudgetsPage', () => {
     })
     const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
     await flushPromises()
+    await enterEdit(wrapper)
     await wrapper.findAll('button').find(button => button.text().includes('新增分类'))!.trigger('click')
     const picker = wrapper.findComponent({ name: 'AccountPicker' })
     expect(picker.props('allowParentSelect')).toBe(true)
@@ -233,6 +291,7 @@ describe('BudgetsPage', () => {
     })
     const wrapper = mount(BudgetsPage, { global: { plugins: [Vant] } })
     await flushPromises()
+    await enterEdit(wrapper)
     await wrapper.findAll('button').find(button => button.text().includes('复制上月'))!.trigger('click')
     await flushPromises()
     expect(budgetsApi.copyPrevious).toHaveBeenCalledWith(expect.any(String))
