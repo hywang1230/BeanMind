@@ -1,9 +1,6 @@
 <template>
   <section class="page secondary-page reports-page">
     <van-nav-bar title="报表" left-arrow @click-left="router.back()" />
-    <div class="report-month">
-      <MonthPicker v-model="month" />
-    </div>
 
     <h2 class="section-title">报表入口</h2>
     <van-cell-group inset class="entry-group">
@@ -11,6 +8,60 @@
       <van-cell title="利润表" label="查看指定期间的收入、支出与结余" is-link :to="incomeStatementLink" />
       <van-cell title="月度复盘" label="总结本月收支并生成下月建议" is-link :to="`/reviews/${month}`" />
     </van-cell-group>
+
+    <div class="report-month" data-testid="report-month-picker">
+      <MonthPicker v-model="month" />
+    </div>
+
+    <section class="trend-card" data-testid="daily-net-calendar-card">
+      <div class="section-head">
+        <h2>每日收支</h2>
+        <span class="muted">{{ month }}</span>
+      </div>
+
+      <van-notice-bar
+        v-if="calendarData?.missing_exchange_rates?.length"
+        class="trend-warning"
+        color="var(--bm-warn)"
+        background="var(--bm-warn-soft)"
+        left-icon="warning-o"
+        data-testid="daily-net-calendar-missing-rates"
+      >
+        部分日期缺少汇率，日历不完整
+      </van-notice-bar>
+
+      <div v-if="calendarLoading && !calendarData" class="state-card" data-testid="daily-net-calendar-loading">
+        <van-loading size="20px">加载日历…</van-loading>
+      </div>
+      <van-empty
+        v-else-if="calendarError && !calendarData"
+        image="error"
+        :description="calendarError"
+        data-testid="daily-net-calendar-error"
+      >
+        <van-button size="small" type="primary" @click="loadCalendar">重试日历</van-button>
+      </van-empty>
+      <template v-else-if="calendarData">
+        <van-notice-bar
+          v-if="calendarError"
+          color="var(--bm-expense)"
+          background="var(--bm-danger-soft)"
+          data-testid="daily-net-calendar-soft-error"
+        >
+          {{ calendarError }}
+          <template #right-icon>
+            <van-button size="mini" plain type="primary" @click="loadCalendar">重试</van-button>
+          </template>
+        </van-notice-bar>
+        <DailyNetSpendingCalendar
+          :key="calendarData.month"
+          :month="calendarData.month"
+          :days="calendarData.days"
+          :currency="calendarData.currency"
+          :missing-exchange-rates="calendarData.missing_exchange_rates"
+        />
+      </template>
+    </section>
 
     <section class="trend-card" data-testid="cashflow-trend-card">
       <div class="section-head">
@@ -88,9 +139,11 @@ import type { ApiError } from '../../api/client'
 import {
   reportsApi,
   type BalanceSheetResponse,
+  type DailyNetSpendingResponse,
   type IncomeStatementResponse,
   type MonthlyCashflowTrendResponse,
 } from '../../api/reports'
+import DailyNetSpendingCalendar from '../../components/DailyNetSpendingCalendar.vue'
 import MonthPicker from '../../components/MonthPicker.vue'
 import MonthlyCashflowTrendChart from '../../components/MonthlyCashflowTrendChart.vue'
 import { formatAmountDisplay } from '../../utils/decimal'
@@ -125,6 +178,11 @@ const trendData = ref<MonthlyCashflowTrendResponse | null>(null)
 const trendLoading = ref(false)
 const trendError = ref('')
 
+const calendarData = ref<DailyNetSpendingResponse | null>(null)
+const calendarLoading = ref(false)
+const calendarError = ref('')
+let calendarRequestSeq = 0
+
 const incomeStatementLink = computed(() => {
   const dates = monthDates(month.value)
   return `/reports/income-statement?start_date=${dates.start_date}&end_date=${dates.end_date}`
@@ -151,6 +209,29 @@ async function loadTrend() {
   }
 }
 
+async function loadCalendar() {
+  const requestSeq = ++calendarRequestSeq
+  const requestMonth = month.value
+  calendarLoading.value = true
+  calendarError.value = ''
+  try {
+    const data = await reportsApi.getDailyNetSpending({ month: requestMonth })
+    if (requestSeq !== calendarRequestSeq || requestMonth !== month.value) return
+    calendarData.value = data
+  } catch (reason) {
+    if (requestSeq !== calendarRequestSeq || requestMonth !== month.value) return
+    const err = reason as ApiError
+    calendarError.value = err.code === 'LEDGER_PROJECTION_DIRTY'
+      ? '账本投影未就绪，请稍后重试日历'
+      : (err.message || '日历加载失败')
+    if (!calendarData.value) calendarData.value = null
+  } finally {
+    if (requestSeq === calendarRequestSeq) {
+      calendarLoading.value = false
+    }
+  }
+}
+
 async function load() {
   loading.value = true
   error.value = ''
@@ -173,15 +254,19 @@ async function load() {
 }
 
 watch(month, () => {
-  // 切换月份时清空旧趋势选中态（通过 key 重置组件）并独立刷新
+  // 切换月份时清空旧趋势/日历选中态（通过 key 重置组件）并独立刷新
   trendData.value = null
+  calendarData.value = null
+  calendarError.value = ''
   void load()
   void loadTrend()
+  void loadCalendar()
 })
 
 onMounted(() => {
   void load()
   void loadTrend()
+  void loadCalendar()
 })
 </script>
 
@@ -189,7 +274,7 @@ onMounted(() => {
 .report-month {
   display: flex;
   justify-content: center;
-  margin: 4px 0 14px;
+  margin: 12px 12px 4px;
 }
 .entry-group, .van-cell-group { margin-bottom: 12px; }
 .trend-card {

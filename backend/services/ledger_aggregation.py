@@ -217,6 +217,72 @@ class LedgerAggregationService:
             bucket[currency] = bucket.get(currency, Decimal("0")) + amount
         return result
 
+    def daily_cashflow_by_currency(
+        self, month: str
+    ) -> dict[str, dict[str, object]]:
+        """一次 SQL 聚合指定自然月内按日/收支根/币种的流量。
+
+        返回结构：
+        {
+          "YYYY-MM-DD": {
+            "income": {currency: Decimal},   # Income 分录合计的相反数
+            "expense": {currency: Decimal},  # Expenses 保留原符号
+            "has_activity": bool,            # 当日是否存在 Income/Expenses 分录
+          }
+        }
+        缺日会补齐为零币种字典与 has_activity=False。
+        """
+        self.projection.assert_ready()
+        start, end = month_range(month)
+
+        flow_type = case(
+            (self._pattern_filter("Income"), "income"),
+            (self._pattern_filter("Expenses"), "expense"),
+            else_="other",
+        )
+
+        rows = (
+            self.db.query(
+                LedgerTransaction.date.label("txn_date"),
+                flow_type.label("flow_type"),
+                LedgerPosting.currency,
+                func.decimal_sum(LedgerPosting.amount_text),
+            )
+            .join(LedgerTransaction, LedgerTransaction.id == LedgerPosting.transaction_id)
+            .filter(LedgerTransaction.date >= start)
+            .filter(LedgerTransaction.date <= end)
+            .filter(or_(self._pattern_filter("Income"), self._pattern_filter("Expenses")))
+            .group_by(LedgerTransaction.date, flow_type, LedgerPosting.currency)
+            .all()
+        )
+
+        result: dict[str, dict[str, object]] = {}
+        day = start
+        while day <= end:
+            result[day.isoformat()] = {
+                "income": {},
+                "expense": {},
+                "has_activity": False,
+            }
+            day = date.fromordinal(day.toordinal() + 1)
+
+        for txn_date, flow, currency, total in rows:
+            if hasattr(txn_date, "isoformat"):
+                day_key = txn_date.isoformat()
+            else:
+                day_key = str(txn_date)
+            bucket = result.get(day_key)
+            if bucket is None or flow not in ("income", "expense"):
+                continue
+            amount = Decimal(str(total or 0))
+            if flow == "income":
+                amount = -amount
+            currency_map = bucket[flow]  # type: ignore[index]
+            assert isinstance(currency_map, dict)
+            currency_map[currency] = currency_map.get(currency, Decimal("0")) + amount
+            bucket["has_activity"] = True
+        return result
+
     def frequent_items(
         self,
         *,

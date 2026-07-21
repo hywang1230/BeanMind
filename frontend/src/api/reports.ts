@@ -117,6 +117,29 @@ export type MonthlyCashflowTrendResponse = {
   missing_exchange_rates: MissingExchangeRateMonth[]
 }
 
+
+// 每日收支：收入为正、支出为负；net_spending = income + expense；仅 Income/Expenses
+export type DailyNetSpendingDay = {
+  date: string
+  income: string
+  expense: string
+  net_spending: string
+  has_activity: boolean
+}
+
+export type MissingExchangeRateDay = {
+  date: string
+  currencies: string[]
+}
+
+// GET /api/reports/daily-net-spending?month=YYYY-MM
+export type DailyNetSpendingResponse = {
+  month: string
+  currency: string
+  days: DailyNetSpendingDay[]
+  missing_exchange_rates: MissingExchangeRateDay[]
+}
+
 export const reportsApi = {
   getBalanceSheet(params?: {
     as_of_date?: string
@@ -146,6 +169,14 @@ export const reportsApi = {
   }): Promise<MonthlyCashflowTrendResponse> {
     return apiClient.get('/api/reports/monthly-cashflow-trend', {
       params: params?.end_month ? { end_month: params.end_month } : undefined,
+    })
+  },
+
+  getDailyNetSpending(params?: {
+    month?: string
+  }): Promise<DailyNetSpendingResponse> {
+    return apiClient.get('/api/reports/daily-net-spending', {
+      params: params?.month ? { month: params.month } : undefined,
     })
   },
 }
