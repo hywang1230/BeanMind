@@ -257,3 +257,180 @@ def test_income_statement_items_sorted_by_share(core_api_client: TestClient):
     assert_sorted_desc(body["income"]["items"])
     assert_sorted_desc(body["expenses"]["items"])
 
+
+def test_daily_net_spending_month_contract(core_api_client: TestClient):
+    response = core_api_client.get(
+        "/api/reports/daily-net-spending",
+        params={"month": "2025-01"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["month"] == "2025-01"
+    assert body["currency"] == "CNY"
+    days = body["days"]
+    assert len(days) == 31
+    assert [item["date"] for item in days] == [f"2025-01-{d:02d}" for d in range(1, 32)]
+    by_date = {item["date"]: item for item in days}
+    salary_day = by_date["2025-01-15"]
+    assert salary_day["has_activity"] is True
+    assert Decimal(str(salary_day["income"])) == Decimal("10000")
+    # core fixture: 30 + 20 expense on 2025-01-16, salary on 15
+    lunch = by_date["2025-01-16"]
+    assert lunch["has_activity"] is True
+    assert Decimal(str(lunch["expense"])) == Decimal("-50")
+    assert Decimal(str(lunch["net_spending"])) == Decimal("-50")
+    # salary day net_spending = 10000 + 0
+    assert Decimal(str(salary_day["net_spending"])) == Decimal("10000")
+    empty = by_date["2025-01-01"]
+    assert empty["has_activity"] is False
+    assert Decimal(str(empty["income"])) == Decimal("0")
+    assert Decimal(str(empty["expense"])) == Decimal("0")
+    assert Decimal(str(empty["net_spending"])) == Decimal("0")
+    # transfer month day should not count as activity when only Assets transfer
+    march = core_api_client.get(
+        "/api/reports/daily-net-spending",
+        params={"month": "2025-03"},
+    )
+    assert march.status_code == 200, march.text
+    march_days = {item["date"]: item for item in march.json()["days"]}
+    assert march_days["2025-03-01"]["has_activity"] is False
+    assert march_days["2025-03-10"]["has_activity"] is True
+    assert Decimal(str(march_days["2025-03-10"]["expense"])) == Decimal("-0.30")
+
+
+def test_daily_net_spending_multi_currency_and_day_rate(core_api_client: TestClient):
+    response = core_api_client.get(
+        "/api/reports/daily-net-spending",
+        params={"month": "2025-02"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert len(body["days"]) == 28
+    feb1 = next(item for item in body["days"] if item["date"] == "2025-02-01")
+    assert feb1["has_activity"] is True
+    # as_of 2025-02-01 uses 2025-01-01 price 7.2
+    assert Decimal(str(feb1["expense"])) == -(Decimal("99.99") * Decimal("7.2"))
+    assert Decimal(str(feb1["net_spending"])) == -(Decimal("99.99") * Decimal("7.2"))
+
+
+def test_daily_net_spending_leap_february(core_api_client: TestClient):
+    response = core_api_client.get(
+        "/api/reports/daily-net-spending",
+        params={"month": "2024-02"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["month"] == "2024-02"
+    assert len(body["days"]) == 29
+    assert body["days"][0]["date"] == "2024-02-01"
+    assert body["days"][-1]["date"] == "2024-02-29"
+    assert all(item["has_activity"] is False for item in body["days"])
+
+
+def test_daily_net_spending_invalid_month(core_api_client: TestClient):
+    response = core_api_client.get(
+        "/api/reports/daily-net-spending",
+        params={"month": "2025-13"},
+    )
+    assert response.status_code == 400, response.text
+    detail = response.json()
+    code = detail.get("code") or (detail.get("detail") or {}).get("code")
+    assert code == "INVALID_REPORT_MONTH"
+
+
+def test_daily_net_spending_default_month_and_dirty(
+    temp_ledger_env, db_session, monkeypatch
+):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from backend.config import settings
+
+    client = build_api_client(
+        temp_ledger_env["ledger_path"],
+        db_session,
+        rebuild_projection=True,
+    )
+    fixed = datetime(2025, 3, 15, 12, 0, tzinfo=ZoneInfo(settings.SCHEDULER_TIMEZONE))
+
+    class _FixedDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed.replace(tzinfo=None)
+            return fixed.astimezone(tz)
+
+    monkeypatch.setattr(
+        "backend.services.daily_net_spending.datetime",
+        _FixedDateTime,
+    )
+    default_resp = client.get("/api/reports/daily-net-spending")
+    assert default_resp.status_code == 200, default_resp.text
+    assert default_resp.json()["month"] == "2025-03"
+    assert len(default_resp.json()["days"]) == 31
+
+    projection = LedgerProjectionService(db_session, temp_ledger_env["ledger_path"])
+    projection.mark_dirty(temp_ledger_env["ledger_path"], RuntimeError("broken"))
+    dirty = client.get(
+        "/api/reports/daily-net-spending",
+        params={"month": "2025-01"},
+    )
+    assert dirty.status_code == 503, dirty.text
+    detail = dirty.json()
+    code = detail.get("code") or (detail.get("detail") or {}).get("code")
+    assert code == "LEDGER_PROJECTION_DIRTY" or "DIRTY" in dirty.text
+
+    db_session.expire_all()
+    projection.rebuild_all()
+    recovered = client.get(
+        "/api/reports/daily-net-spending",
+        params={"month": "2025-01"},
+    )
+    assert recovered.status_code == 200, recovered.text
+    assert len(recovered.json()["days"]) == 31
+
+
+def test_daily_net_spending_partial_missing_exchange_rate(temp_ledger_env, db_session):
+    ledger_dir = temp_ledger_env["ledger_path"].parent
+    accounts = ledger_dir / "accounts.beancount"
+    accounts.write_text(
+        accounts.read_text(encoding="utf-8")
+        + "\n2020-01-01 open Expenses:TravelEUR EUR\n"
+        + "2020-01-01 open Assets:EuroCash EUR\n",
+        encoding="utf-8",
+    )
+    txns = ledger_dir / "transactions.beancount"
+    txns.write_text(
+        txns.read_text(encoding="utf-8")
+        + """
+2025-01-18 * "EUR lunch" "euro spend"
+  Expenses:TravelEUR  10.00 EUR
+  Assets:EuroCash    -10.00 EUR
+""",
+        encoding="utf-8",
+    )
+    from backend.infrastructure.persistence.beancount.beancount_provider import (
+        BeancountServiceProvider,
+    )
+
+    BeancountServiceProvider.clear()
+    LedgerProjectionService(db_session, temp_ledger_env["ledger_path"]).rebuild_all()
+    client = build_api_client(
+        temp_ledger_env["ledger_path"],
+        db_session,
+        rebuild_projection=False,
+    )
+    response = client.get(
+        "/api/reports/daily-net-spending",
+        params={"month": "2025-01"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    missing = body["missing_exchange_rates"]
+    assert any(item["date"] == "2025-01-18" and "EUR" in item["currencies"] for item in missing)
+    by_date = {item["date"]: item for item in body["days"]}
+    # EUR missing: partial result keeps convertible CNY amounts on other days
+    assert Decimal(str(by_date["2025-01-16"]["expense"])) == Decimal("-50")
+    assert by_date["2025-01-18"]["has_activity"] is True
+    assert Decimal(str(by_date["2025-01-18"]["expense"])) == Decimal("0")
+

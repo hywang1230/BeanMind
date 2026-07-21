@@ -15,6 +15,7 @@ vi.mock('../../../api/reports', () => ({
     getBalanceSheet: vi.fn(),
     getIncomeStatement: vi.fn(),
     getMonthlyCashflowTrend: vi.fn(),
+    getDailyNetSpending: vi.fn(),
   },
 }))
 
@@ -34,6 +35,40 @@ function zeroTrend(endMonth = '2026-07') {
     currency: 'CNY',
     points,
     missing_exchange_rates: [] as { month: string; currencies: string[] }[],
+  }
+}
+
+function calendarFor(month: string, options?: {
+  empty?: boolean
+  missing?: { date: string; currencies: string[] }[]
+}) {
+  const [y, m] = month.split('-').map(Number)
+  const last = new Date(y!, m!, 0).getDate()
+  const days = Array.from({ length: last }, (_, idx) => {
+    const day = idx + 1
+    const date = `${month}-${String(day).padStart(2, '0')}`
+    if (!options?.empty && day === 15) {
+      return {
+        date,
+        income: '0',
+        expense: '-88.88',
+        net_spending: '-88.88',
+        has_activity: true,
+      }
+    }
+    return {
+      date,
+      income: '0',
+      expense: '0',
+      net_spending: '0',
+      has_activity: false,
+    }
+  })
+  return {
+    month,
+    currency: 'CNY',
+    days,
+    missing_exchange_rates: options?.missing || [],
   }
 }
 
@@ -61,9 +96,13 @@ describe('ReportsPage', () => {
           : point,
       ),
     })
+    vi.mocked(reportsApi.getDailyNetSpending).mockImplementation(async (params?: { month?: string }) => {
+      const month = params?.month || '2026-07'
+      return calendarFor(month)
+    })
   })
 
-  it('loads month summary and 12-month trend on first paint', async () => {
+  it('loads month summary, calendar and 12-month trend on first paint', async () => {
     const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
     await flushPromises()
     expect(reportsApi.getBalanceSheet).toHaveBeenCalled()
@@ -71,14 +110,26 @@ describe('ReportsPage', () => {
     expect(reportsApi.getMonthlyCashflowTrend).toHaveBeenCalledWith(
       expect.objectContaining({ end_month: expect.stringMatching(/^\d{4}-\d{2}$/) }),
     )
+    expect(reportsApi.getDailyNetSpending).toHaveBeenCalledWith(
+      expect.objectContaining({ month: expect.stringMatching(/^\d{4}-\d{2}$/) }),
+    )
     expect(wrapper.text()).toContain('80.12')
     expect(wrapper.text()).toContain('0.12')
     expect(wrapper.text()).toContain('999.88')
+    expect(wrapper.text()).toContain('每日收支')
     expect(wrapper.text()).toContain('近 12 个月收支趋势')
+    expect(wrapper.find('[data-testid="daily-net-calendar"]').exists()).toBe(true)
+    // 月份选择器在报表入口（月度复盘）之后、数据区之前
+    const html = wrapper.html()
+    expect(html.indexOf('月度复盘')).toBeGreaterThan(-1)
+    expect(html.indexOf('data-testid="report-month-picker"')).toBeGreaterThan(html.indexOf('月度复盘'))
+    expect(html.indexOf('data-testid="daily-net-calendar-card"')).toBeGreaterThan(
+      html.indexOf('data-testid="report-month-picker"'),
+    )
     expect(wrapper.find('[data-testid="cashflow-trend-chart"]').exists()).toBe(true)
   })
 
-  it('refreshes trend when month changes', async () => {
+  it('refreshes trend and calendar when month changes', async () => {
     const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
     await flushPromises()
     const monthInput = wrapper.findComponent(MonthPicker)
@@ -86,6 +137,7 @@ describe('ReportsPage', () => {
     await monthInput.vm.$emit('update:modelValue', '2025-12')
     await flushPromises()
     expect(reportsApi.getMonthlyCashflowTrend).toHaveBeenCalledWith({ end_month: '2025-12' })
+    expect(reportsApi.getDailyNetSpending).toHaveBeenCalledWith({ month: '2025-12' })
   })
 
   it('keeps summary visible when trend fails', async () => {
@@ -95,6 +147,84 @@ describe('ReportsPage', () => {
     expect(wrapper.text()).toContain('80.12')
     expect(wrapper.text()).toContain('趋势加载失败')
     expect(wrapper.text()).toContain('重试趋势')
+    expect(wrapper.find('[data-testid="daily-net-calendar"]').exists()).toBe(true)
+  })
+
+  it('keeps summary and trend visible when calendar fails first load', async () => {
+    vi.mocked(reportsApi.getDailyNetSpending).mockRejectedValue({ message: '日历加载失败' })
+    const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('80.12')
+    expect(wrapper.find('[data-testid="cashflow-trend-chart"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="daily-net-calendar-error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('重试日历')
+  })
+
+  it('retries calendar independently', async () => {
+    vi.mocked(reportsApi.getDailyNetSpending)
+      .mockRejectedValueOnce({ message: '日历暂时不可用' })
+      .mockResolvedValueOnce(calendarFor('2026-07'))
+    const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('日历暂时不可用')
+    const retry = wrapper.findAll('button').find((btn) => btn.text().includes('重试日历'))
+    expect(retry).toBeTruthy()
+    await retry!.trigger('click')
+    await flushPromises()
+    expect(reportsApi.getDailyNetSpending).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="daily-net-calendar"]').exists()).toBe(true)
+  })
+
+  it('shows soft error while keeping previous calendar data', async () => {
+    vi.mocked(reportsApi.getDailyNetSpending)
+      .mockResolvedValueOnce(calendarFor('2026-07'))
+      .mockRejectedValueOnce({ message: '刷新失败' })
+
+    const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="daily-net-calendar"]').exists()).toBe(true)
+
+    const setupState = (wrapper.vm as any).$.setupState
+    expect(setupState?.loadCalendar).toBeTypeOf('function')
+    await setupState.loadCalendar()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="daily-net-calendar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="daily-net-calendar-soft-error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('刷新失败')
+    expect(wrapper.find('[data-testid="cashflow-trend-chart"]').exists()).toBe(true)
+  })
+
+  it('shows empty calendar state when month has no activity', async () => {
+    vi.mocked(reportsApi.getDailyNetSpending).mockResolvedValue(calendarFor('2026-07', { empty: true }))
+    const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="daily-net-calendar-empty"]').exists()).toBe(true)
+  })
+
+  it('discards stale calendar response after month switch', async () => {
+    let resolveSlow!: (value: any) => void
+    const slow = new Promise((resolve) => {
+      resolveSlow = resolve
+    })
+    vi.mocked(reportsApi.getDailyNetSpending)
+      .mockReturnValueOnce(slow as any)
+      .mockResolvedValueOnce(calendarFor('2025-12'))
+
+    const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
+    const monthInput = wrapper.findComponent(MonthPicker)
+    await monthInput.vm.$emit('update:modelValue', '2025-12')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="daily-net-calendar"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('2025-12')
+
+    // 晚到的旧月份响应不得覆盖
+    resolveSlow(calendarFor('2026-07'))
+    await flushPromises()
+    expect(reportsApi.getDailyNetSpending).toHaveBeenCalledWith({ month: '2025-12' })
+    // 仍展示 12 月数据：活动日 15 号 expense 88.88
+    expect(wrapper.find('[data-testid="daily-net-calendar"]').exists()).toBe(true)
+    expect(wrapper.find('button[data-date="2025-12-15"]').exists()).toBe(true)
+    expect(wrapper.find('button[data-date="2026-07-15"]').exists()).toBe(false)
   })
 
   it('retries trend independently', async () => {
@@ -142,6 +272,16 @@ describe('ReportsPage', () => {
     expect(wrapper.find('[data-testid="cashflow-trend-chart"]').exists()).toBe(true)
   })
 
+  it('shows calendar missing exchange rate warning', async () => {
+    vi.mocked(reportsApi.getDailyNetSpending).mockResolvedValue(
+      calendarFor('2026-07', { missing: [{ date: '2026-07-15', currencies: ['EUR'] }] }),
+    )
+    const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="daily-net-calendar-missing-rates"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('部分日期缺少汇率，日历不完整')
+  })
+
   it('shows a retryable error for monthly summary', async () => {
     vi.mocked(reportsApi.getBalanceSheet).mockRejectedValue({ message: '报表加载失败' })
     vi.mocked(reportsApi.getIncomeStatement).mockRejectedValue({ message: '报表加载失败' })
@@ -150,6 +290,7 @@ describe('ReportsPage', () => {
     expect(wrapper.text()).toContain('报表加载失败')
     expect(wrapper.text()).toContain('重试')
   })
+
   it('shows secondary nav bar with back action', async () => {
     const wrapper = mount(ReportsPage, { global: { plugins: [Vant] } })
     await flushPromises()
@@ -181,5 +322,4 @@ describe('ReportsPage', () => {
     expect(wrapper.text()).toContain('资产概览')
     expect(wrapper.text()).toContain('收支概览')
   })
-
 })

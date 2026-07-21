@@ -134,3 +134,68 @@ def test_frequent_items_dirty_projection_blocked(db_session, ledger_path) -> Non
             end=date(2025, 12, 31),
             limit=3,
         )
+
+
+def test_daily_cashflow_fills_month_and_excludes_transfers(db_session, ledger_path) -> None:
+    LedgerProjectionService(db_session, ledger_path).rebuild_all()
+    aggregation = LedgerAggregationService(db_session, ledger_path)
+
+    result = aggregation.daily_cashflow_by_currency("2025-01")
+    assert list(result.keys()) == [f"2025-01-{day:02d}" for day in range(1, 32)]
+    assert result["2025-01-01"] == {
+        "income": {},
+        "expense": {},
+        "has_activity": False,
+    }
+    # salary + lunch same day
+    assert result["2025-01-15"]["has_activity"] is True
+    assert result["2025-01-15"]["income"]["CNY"] == Decimal("10000")
+    assert result["2025-01-15"]["expense"]["CNY"] == Decimal("50")
+
+    # August transfer-only activity must not appear as income/expense days
+    august = aggregation.daily_cashflow_by_currency("2024-08")
+    assert all(day["has_activity"] is False for day in august.values())
+    assert all(day["income"] == {} and day["expense"] == {} for day in august.values())
+
+
+def test_daily_cashflow_preserves_refund_sign_and_zero_cancel(db_session, ledger_path, tmp_path) -> None:
+    # Extend projection fixture with refund and zero cancel-out day.
+    ledger_dir = ledger_path.parent
+    extra = ledger_dir / "transactions_2025.beancount"
+    extra.write_text(
+        extra.read_text(encoding="utf-8")
+        + """
+2025-01-20 * "退款" "餐厅退款"
+  Expenses:Food  -20 CNY
+  Assets:Cash     20 CNY
+
+2025-01-21 * "冲销对冲" "同日正负抵消"
+  Expenses:Travel  15 CNY
+  Assets:Cash     -15 CNY
+
+2025-01-21 * "冲销对冲" "同日正负抵消回冲"
+  Expenses:Travel  -15 CNY
+  Assets:Cash      15 CNY
+""",
+        encoding="utf-8",
+    )
+    LedgerProjectionService(db_session, ledger_path).rebuild_all()
+    aggregation = LedgerAggregationService(db_session, ledger_path)
+    result = aggregation.daily_cashflow_by_currency("2025-01")
+
+    # lunch 50 + refund -20
+    assert result["2025-01-15"]["expense"]["CNY"] == Decimal("50")
+    assert result["2025-01-20"]["has_activity"] is True
+    assert result["2025-01-20"]["expense"]["CNY"] == Decimal("-20")
+
+    # cancel-out day still has activity with zero expense
+    assert result["2025-01-21"]["has_activity"] is True
+    assert result["2025-01-21"]["expense"].get("CNY", Decimal("0")) == Decimal("0")
+
+
+def test_daily_cashflow_dirty_blocks(db_session, ledger_path) -> None:
+    projection = LedgerProjectionService(db_session, ledger_path)
+    projection.rebuild_all()
+    projection.mark_dirty(ledger_path, RuntimeError("broken"))
+    with pytest.raises(LedgerProjectionDirtyError):
+        LedgerAggregationService(db_session, ledger_path).daily_cashflow_by_currency("2025-01")

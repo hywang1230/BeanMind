@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "risk_tags": {
+    "backend": {
+      "fast_any": [["backend-targeted", "backend-full"]],
+      "full_all": ["backend-full"]
+    },
+    "frontend": {
+      "fast_any": [["frontend-targeted", "frontend-full"]],
+      "full_all": ["frontend-full", "frontend-build"]
+    },
+    "pwa": {
+      "full_all": ["frontend-full", "frontend-build", "pwa-verify"],
+      "required_manual": ["real-device-https"]
+    },
+    "ledger-write": {
+      "fast_any": [["backend-targeted", "backend-full"]],
+      "full_all": ["backend-full"],
+      "required_scenarios": [
+        "decimal-precision",
+        "temporary-ledger",
+        "write-failure",
+        "projection-consistency",
+        "projection-dirty",
+        "projection-recovery"
+      ]
+    },
+    "projection": {
+      "fast_any": [["backend-targeted", "backend-full"]],
+      "full_all": ["backend-full"],
+      "required_scenarios": [
+        "decimal-precision",
+        "projection-consistency",
+        "projection-dirty",
+        "projection-recovery"
+      ]
+    },
+    "migration": {
+      "fast_any": [["backend-targeted", "backend-full"]],
+      "full_all": ["backend-full"],
+      "required_scenarios": ["read-only-preview", "rollback", "idempotency"],
+      "required_manual": ["external-backup-confirmed"]
+    },
+    "performance": {
+      "full_all": ["backend-full"],
+      "required_manual": ["anonymous-ledger-1x-2x"]
+    },
+    "llm": {
+      "fast_any": [["backend-targeted", "backend-full"]],
+      "full_all": ["backend-full"],
+      "required_scenarios": [
+        "deterministic-facts",
+        "local-validation",
+        "model-unavailable-degradation"
+      ]
+    }
+  }
+}

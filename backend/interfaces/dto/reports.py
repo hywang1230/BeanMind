@@ -164,3 +164,31 @@ class MonthlyCashflowTrendResponse(BaseModel):
     missing_exchange_rates: List[MissingExchangeRateMonth] = Field(
         default_factory=list, description="按月缺失汇率"
     )
+
+
+class DailyNetSpendingDay(BaseModel):
+    """单日收支项。"""
+
+    date: str = Field(..., description="日期 YYYY-MM-DD")
+    income: str = Field(..., description="折算后收入（正数为收入，Decimal 字符串）")
+    expense: str = Field(..., description="折算后支出（负数为支出，Decimal 字符串）")
+    net_spending: str = Field(..., description="净收支 = 收入 + 支出（支出为负）")
+    has_activity: bool = Field(..., description="当日是否存在 Income/Expenses 分录")
+
+
+class MissingExchangeRateDay(BaseModel):
+    """某日缺失的折算币种。"""
+
+    date: str = Field(..., description="日期 YYYY-MM-DD")
+    currencies: List[str] = Field(default_factory=list, description="缺失汇率的币种")
+
+
+class DailyNetSpendingResponse(BaseModel):
+    """指定月份每日收支响应。"""
+
+    month: str = Field(..., description="月份 YYYY-MM")
+    currency: str = Field(..., description="经营币种")
+    days: List[DailyNetSpendingDay] = Field(..., description="当月全部自然日，按日期升序")
+    missing_exchange_rates: List[MissingExchangeRateDay] = Field(
+        default_factory=list, description="按日缺失汇率"
+    )

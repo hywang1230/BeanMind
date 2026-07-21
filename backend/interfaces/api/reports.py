@@ -21,6 +21,7 @@ from backend.interfaces.dto.reports import (
     AccountDetailResponse,
     AccountTransactionItem,
     MonthlyCashflowTrendResponse,
+    DailyNetSpendingResponse,
 )
 from backend.config import settings, get_db
 from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
@@ -34,6 +35,7 @@ from beancount.core.data import Transaction, Open
 
 from backend.services.ledger_aggregation import LedgerAggregationService
 from backend.services.monthly_cashflow_trend import MonthlyCashflowTrendService
+from backend.services.daily_net_spending import DailyNetSpendingService
 
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -66,6 +68,40 @@ def get_monthly_cashflow_trend(
             timezone=settings.SCHEDULER_TIMEZONE,
         ).get(end_month)
         return MonthlyCashflowTrendResponse(**payload)
+    except LedgerProjectionDirtyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "INVALID_REPORT_MONTH", "message": str(exc)},
+        ) from exc
+
+
+@router.get("/daily-net-spending", response_model=DailyNetSpendingResponse)
+def get_daily_net_spending(
+    month: Optional[str] = Query(None, description="月份 YYYY-MM，默认部署时区当前月"),
+    db: Session = Depends(get_db),
+    beancount_service: BeancountService = Depends(get_beancount_service),
+):
+    """指定自然月每日收入/支出/净收支。
+
+    口径：
+    - 仅聚合 `Income:*` 与 `Expenses:*`，不含转账。
+    - 收入为正、支出为负；`net_spending = income + expense`；退款/冲销保留原符号。
+    - 按日补齐整月自然日；金额为经营币种 Decimal 字符串。
+    - 非法月份：400 `INVALID_REPORT_MONTH`；投影 DIRTY：503 `LEDGER_PROJECTION_DIRTY`。
+    """
+    try:
+        payload = DailyNetSpendingService(
+            db,
+            LedgerAggregationService(db, settings.LEDGER_FILE),
+            beancount_service,
+            timezone=settings.SCHEDULER_TIMEZONE,
+        ).get(month)
+        return DailyNetSpendingResponse(**payload)
     except LedgerProjectionDirtyError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

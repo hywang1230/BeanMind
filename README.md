@@ -98,6 +98,32 @@ LLM_TIMEOUT_SECONDS=30
 
 ## 验证
 
+### OpenSpec 变更 Harness
+
+OpenSpec 负责描述变更意图与可观察行为，harness 负责运行受控检查并保存证据。新 change 在 `openspec/changes/<change>/verification.json` 中声明风险标签、`fast`/`full` 检查、规格场景映射和人工验收项；清单只能引用 `harness/checks.json` 中登记的检查，不能嵌入任意 shell 命令。
+
+```bash
+# 只校验 OpenSpec 状态、清单、风险规则和将要执行的命令
+python scripts/change_harness.py check --change <change> --mode fast
+
+# 开发迭代：严格 OpenSpec 校验、定向测试和基础检查
+python scripts/change_harness.py run --change <change> --mode fast
+
+# 交付门禁：风险策略要求的全量测试、构建和人工验收状态
+python scripts/change_harness.py run --change <change> --mode full
+
+# 将最新证据摘要显式发布到当前 change，不自动归档
+python scripts/change_harness.py report --change <change> --publish
+```
+
+状态含义：`PASS` 表示本次要求全部满足，`FAIL` 表示自动检查失败，`BLOCKED` 表示必需环境或人工验收尚未满足，`NOT_RUN` 表示未执行。`fast PASS` 不能替代 `full`；`full PASS` 也只表示具备人工复核和归档条件，harness 不会自动修改 tasks、提交代码或执行 `openspec archive`。
+
+运行证据保存在被 Git 忽略的 `.harness/runs/`。当前 `openspec/` 同样是本地控制面，CI 无法读取 change 清单，因此 CI 只通过 `baseline` 执行不依赖 OpenSpec 的后端测试、前端测试与生产构建。
+
+账本写入、投影、迁移或性能变更必须使用临时账本、账本副本或匿名化数据。不得把默认真实账本或生产 SQLite 作为可写测试目标；缺少匿名化真实账本 1×/2× 或外部备份核对时，完整验证必须保持 `BLOCKED`。
+
+### 直接运行底层检查
+
 ```bash
 ~/.local/bin/uv run pytest tests/ -v
 cd frontend && npm run test:run && npm run build
