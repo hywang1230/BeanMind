@@ -53,5 +53,3 @@ frontend/dist/
 frontend/.nuxt/
 docs
 .harness
-harness
-/scripts/change_harness.py

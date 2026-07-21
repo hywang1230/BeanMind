@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "checks": {
+    "openspec-change-strict": {
+      "argv": [
+        "openspec",
+        "validate",
+        "{change}",
+        "--type",
+        "change",
+        "--strict",
+        "--no-interactive"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "modes": ["fast", "full"]
+    },
+    "backend-targeted": {
+      "argv": ["uv", "run", "pytest", "-q"],
+      "cwd": ".",
+      "timeout_seconds": 300,
+      "modes": ["fast"],
+      "argument_root": "tests"
+    },
+    "backend-full": {
+      "argv": ["uv", "run", "--frozen", "pytest", "-q"],
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "modes": ["full", "baseline"]
+    },
+    "frontend-targeted": {
+      "argv": ["npm", "run", "test:run", "--"],
+      "cwd": "frontend",
+      "timeout_seconds": 300,
+      "modes": ["fast"],
+      "argument_root": "frontend/src"
+    },
+    "frontend-full": {
+      "argv": ["npm", "run", "test:run"],
+      "cwd": "frontend",
+      "timeout_seconds": 600,
+      "modes": ["full", "baseline"]
+    },
+    "frontend-build": {
+      "argv": ["npm", "run", "build"],
+      "cwd": "frontend",
+      "timeout_seconds": 600,
+      "modes": ["full", "baseline"]
+    },
+    "pwa-verify": {
+      "argv": ["npm", "run", "verify:pwa"],
+      "cwd": "frontend",
+      "timeout_seconds": 120,
+      "modes": ["full"]
+    },
+    "diff-check": {
+      "argv": ["git", "diff", "--check"],
+      "cwd": ".",
+      "timeout_seconds": 60,
+      "modes": ["fast", "full", "baseline"]
+    }
+  }
+}
