@@ -5,15 +5,24 @@
 import logging
 import json
 from datetime import date
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from sqlalchemy.orm import Session
 
+from backend.application.services.transaction_service import TransactionApplicationService
+from backend.config import settings
 from backend.domain.recurring.entities.recurring_rule import RecurringRule as RecurringRuleDomain
 from backend.domain.recurring.services.recurring_execution_service import RecurringExecutionService
 from backend.domain.recurring.value_objects.frequency_config import FrequencyConfig, FrequencyType
-from backend.infrastructure.persistence.db.models import RecurringRule, RecurringExecution
-from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
+from backend.infrastructure.persistence.beancount.beancount_provider import (
+    BeancountServiceProvider,
+)
+from backend.infrastructure.persistence.beancount.repositories import (
+    AccountRepositoryImpl,
+    TransactionRepositoryImpl,
+)
+from backend.infrastructure.persistence.db.models import RecurringExecution, RecurringRule
+from backend.infrastructure.persistence.ledger_projection import LedgerProjectionService
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +33,35 @@ class RecurringApplicationService:
     协调领域服务和基础设施，执行周期记账任务
     """
     
-    def __init__(self, db: Session):
+    def __init__(
+        self,
+        db: Session,
+        transaction_service: Optional[TransactionApplicationService] = None,
+    ):
         """初始化服务
         
         Args:
             db: 数据库会话
+            transaction_service: 可选的交易应用服务，测试时可绑定临时账本
         """
         self.db = db
         self.execution_service = RecurringExecutionService()
+        self.transaction_service = transaction_service or self._build_transaction_service()
+
+    def _build_transaction_service(self) -> TransactionApplicationService:
+        """复用普通记账的 Beancount 写入与投影刷新链路。"""
+        beancount_service = BeancountServiceProvider.get_service(settings.LEDGER_FILE)
+        projection_service = LedgerProjectionService(self.db, settings.LEDGER_FILE)
+        transaction_repository = TransactionRepositoryImpl(
+            beancount_service,
+            self.db,
+            projection_service,
+            load_transactions=False,
+        )
+        return TransactionApplicationService(
+            transaction_repository,
+            AccountRepositoryImpl(beancount_service),
+        )
     
     def execute_due_rules(self, execution_date: date) -> List[Dict[str, Any]]:
         """执行当天应该执行的所有周期规则
@@ -101,7 +131,7 @@ class RecurringApplicationService:
                 return result
             
             # 执行交易
-            transaction_id = self._execute_transaction(rule, execution_date)
+            transaction_id = self.execute_transaction(rule, execution_date)
             
             # 记录执行成功
             execution = RecurringExecution(
@@ -182,18 +212,23 @@ class RecurringApplicationService:
             updated_at=rule.updated_at.date() if rule.updated_at else None,
         )
     
-    def _execute_transaction(self, rule: RecurringRule, execution_date: date) -> str:
+    def execute_transaction(
+        self,
+        rule: RecurringRule,
+        execution_date: date,
+        *,
+        add_recurring_tag: bool = True,
+    ) -> str:
         """执行交易
         
         Args:
             rule: 周期规则
             execution_date: 执行日期
+            add_recurring_tag: 是否附加 recurring 标签
             
         Returns:
             交易ID
         """
-        from backend.config import get_beancount_service
-        
         # 解析交易模板
         template = json.loads(rule.transaction_template)
         
@@ -206,19 +241,19 @@ class RecurringApplicationService:
                 "currency": posting["currency"]
             })
         
-        transaction_data = {
-            "date": execution_date.isoformat(),
-            "description": template.get("description", "周期记账"),
-            "postings": postings,
-            "payee": template.get("payee"),
-            "tags": (template.get("tags") or []) + ["recurring"],  # 添加 recurring 标签
-        }
-        
-        # 创建交易
-        beancount_service = get_beancount_service()
-        transaction_id = beancount_service.append_transaction(transaction_data)
-        
-        return transaction_id
+        tags = list(template.get("tags") or [])
+        if add_recurring_tag:
+            tags.append("recurring")
+
+        transaction = self.transaction_service.create_transaction(
+            txn_date=execution_date.isoformat(),
+            description=template.get("description", "周期记账"),
+            postings=postings,
+            payee=template.get("payee"),
+            tags=tags,
+        )
+
+        return transaction["id"]
     
     def get_pending_rules(self, check_date: date) -> List[Dict[str, Any]]:
         """获取指定日期待执行的规则列表

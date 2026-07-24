@@ -4,7 +4,8 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
-from backend.config import get_db, get_beancount_service
+from backend.application.services.recurring_service import RecurringApplicationService
+from backend.config import get_db
 from backend.interfaces.errors import ApiError
 from backend.services.currency_catalog import CurrencyCatalogError, CurrencyCatalogService
 from backend.infrastructure.persistence.db.models import RecurringRule, RecurringExecution
@@ -253,40 +254,17 @@ def execute_recurring_rule(
     
     # 获取交易模板
     try:
-        template = json.loads(rule.transaction_template)
+        json.loads(rule.transaction_template)
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="交易模板格式错误")
     
-    # 构建交易
-    beancount_service = get_beancount_service()
-    
-    postings = []
-    for posting in template.get("postings", []):
-        postings.append({
-            "account": posting["account"],
-            "amount": str(posting["amount"]),
-            "currency": posting["currency"]
-        })
-    
     try:
-        # 构建交易数据字典
-        transaction_data = {
-            "date": request.date.isoformat(),
-            "description": template.get("description", ""),
-            "postings": [
-                {
-                    "account": p["account"],
-                    "amount": p["amount"],
-                    "currency": p["currency"]
-                }
-                for p in postings
-            ],
-            "payee": template.get("payee"),
-            "tags": template.get("tags")
-        }
-        
-        # 创建交易
-        transaction_id = beancount_service.append_transaction(transaction_data)
+        service = RecurringApplicationService(db)
+        transaction_id = service.execute_transaction(
+            rule,
+            request.date,
+            add_recurring_tag=False,
+        )
         
         # 记录执行历史
         execution = RecurringExecution(
@@ -378,8 +356,6 @@ def get_scheduler_status():
 @router.post("/scheduler/execute")
 def trigger_scheduler_execution(db: Session = Depends(get_db)):
     """手动触发调度器执行当天的周期任务"""
-    from backend.application.services.recurring_service import RecurringApplicationService
-    
     today = date.today()
     service = RecurringApplicationService(db)
     
@@ -405,8 +381,6 @@ def trigger_scheduler_execution(db: Session = Depends(get_db)):
 @router.get("/scheduler/pending")
 def get_pending_rules(db: Session = Depends(get_db)):
     """获取今天待执行的规则列表"""
-    from backend.application.services.recurring_service import RecurringApplicationService
-    
     today = date.today()
     service = RecurringApplicationService(db)
     
