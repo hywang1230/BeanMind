@@ -23,21 +23,17 @@
       </van-cell-group>
 
       <van-cell-group inset class="lines-card">
-        <van-field
+        <MoneyInput
           v-for="account in accounts"
           :key="account"
           :label="shortName(account)"
           :model-value="amounts[account] || ''"
-          type="text"
-          inputmode="decimal"
-          placeholder="0.00"
-          :error-message="fieldError(account)"
+          :currency="draft.currency"
+          variant="field"
+          :allow-negative="draft.amount.trim().startsWith('-')"
+          :error="fieldError(account)"
           @update:model-value="onAmountInput(account, $event)"
-        >
-          <template #extra>
-            <span class="account-path">{{ account }}</span>
-          </template>
-        </van-field>
+        />
       </van-cell-group>
 
       <van-notice-bar v-if="error" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ error }}</van-notice-bar>
@@ -52,6 +48,7 @@ import { showSuccessToast } from 'vant'
 import { useRoute, useRouter } from 'vue-router'
 import type { ApiError } from '../../api/client'
 import { transactionsApi } from '../../api/transactions'
+import MoneyInput from '../../components/MoneyInput.vue'
 import {
   sideIsBalanced,
   sideRemaining,
@@ -60,7 +57,14 @@ import {
   type DistributeSide,
   type DraftLine,
 } from '../../stores/transactionDraft'
-import { formatAmountDisplay, isZero, normalizeAmountInput } from '../../utils/decimal'
+import {
+  addAmounts,
+  compareAmount,
+  formatAmountDisplay,
+  isZero,
+  quantizeAmount,
+  subAmounts,
+} from '../../utils/decimal'
 
 const route = useRoute()
 const router = useRouter()
@@ -69,6 +73,7 @@ const draft = computed(() => draftStore.draft)
 const saving = ref(false)
 const error = ref('')
 const amounts = reactive<Record<string, string>>({})
+const manuallyEdited = reactive(new Set<string>())
 const submitted = ref(false)
 
 const side = computed<DistributeSide>(() => (route.query.side === 'from' ? 'from' : 'to'))
@@ -98,6 +103,7 @@ const remaining = computed(() => {
 const isValid = computed(() => {
   if (!draft.value) return false
   return sideIsBalanced(draft.value.amount, lines.value, accounts.value)
+    && linesFollowTotalDirection(draft.value.amount, lines.value)
 })
 
 const isLastStep = computed(() => {
@@ -133,7 +139,9 @@ function fieldError(account: string) {
 }
 
 function onAmountInput(account: string, value: string) {
-  amounts[account] = normalizeAmountInput(value)
+  amounts[account] = value
+  manuallyEdited.add(account)
+  redistributeUntouched()
 }
 
 function initAmounts() {
@@ -149,45 +157,88 @@ function initAmounts() {
     return
   }
 
-  // Equal split with last residual via string math
   if (list.length === 1) {
     const only = list[0]
-    if (only) amounts[only] = total
+    if (only) amounts[only] = quantizeAmount(total, 2)
     return
   }
-  // simple equal: divide by count using integer cents if possible, else leave empty for user
-  // Use equal integer division on scaled digits when total looks like decimal with <= 2 places
+
   try {
-    const n = list.length
-    // fallback equal split via repeated sub for residual on last
-    // approximate: use floor of (total * 100 / n) / 100 when 2dp
-    const scaled = total.includes('.') ? total : `${total}.00`
-    const [intPart, frac = ''] = scaled.replace(/^-/, '').split('.')
-    const scale = Math.max(frac.length, 2)
-    const digits = `${intPart}${frac.padEnd(scale, '0')}`
-    const totalInt = BigInt(digits)
-    const base = totalInt / BigInt(n)
-    let used = 0n
-    list.forEach((account, index) => {
-      let share = base
-      if (index === n - 1) share = totalInt - used
-      used += share
-      const neg = total.startsWith('-')
-      const raw = fromScaled(share, scale)
-      amounts[account] = neg ? `-${raw}` : raw
-    })
+    const shares = splitAmountEvenly(total, list.length)
+    list.forEach((account, index) => { amounts[account] = shares[index] || '' })
   } catch {
     for (const account of list) amounts[account] = ''
   }
 }
 
-function fromScaled(value: bigint, scale: number): string {
-  let digits = value.toString()
-  if (scale === 0) return digits
-  if (digits.length <= scale) digits = digits.padStart(scale + 1, '0')
-  const cut = digits.length - scale
-  const frac = digits.slice(cut).replace(/0+$/, '')
-  return frac ? `${digits.slice(0, cut)}.${frac}` : digits.slice(0, cut)
+function amountToCents(value: string): bigint {
+  const amount = quantizeAmount(value, 2)
+  const negative = amount.startsWith('-')
+  const unsigned = negative ? amount.slice(1) : amount
+  const [whole = '0', fraction = ''] = unsigned.split('.')
+  const cents = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0').slice(0, 2) || '0')
+  return negative ? -cents : cents
+}
+
+function centsToAmount(value: bigint): string {
+  const negative = value < 0n
+  const unsigned = negative ? -value : value
+  const whole = unsigned / 100n
+  const fraction = (unsigned % 100n).toString().padStart(2, '0')
+  return `${negative ? '-' : ''}${whole}.${fraction}`
+}
+
+function splitAmountEvenly(total: string, count: number): string[] {
+  if (count <= 0) return []
+  const totalCents = amountToCents(total)
+  const base = totalCents / BigInt(count)
+  let used = 0n
+  return Array.from({ length: count }, (_, index) => {
+    const share = index === count - 1 ? totalCents - used : base
+    used += share
+    return centsToAmount(share)
+  })
+}
+
+function linesFollowTotalDirection(total: string, currentLines: DraftLine[]): boolean {
+  try {
+    const totalDirection = compareAmount(total, '0')
+    return totalDirection !== 0
+      && currentLines.every((line) => compareAmount(line.amount || '0', '0') === totalDirection)
+  } catch {
+    return false
+  }
+}
+
+function clearUntouched(accountsToClear: string[]) {
+  for (const account of accountsToClear) amounts[account] = ''
+}
+
+function redistributeUntouched() {
+  if (!draft.value) return
+  const untouched = accounts.value.filter((account) => !manuallyEdited.has(account))
+  if (!untouched.length) return
+
+  try {
+    const lockedValues = accounts.value
+      .filter((account) => manuallyEdited.has(account))
+      .map((account) => amounts[account] || '0')
+    const lockedTotal = lockedValues.length ? addAmounts(...lockedValues) : '0'
+    const total = quantizeAmount(draft.value.amount, 2)
+    const remainingForUntouched = quantizeAmount(subAmounts(total, lockedTotal), 2)
+    const totalDirection = compareAmount(total, '0')
+    const remainingDirection = compareAmount(remainingForUntouched, '0')
+
+    if (remainingDirection === 0 || remainingDirection !== totalDirection) {
+      clearUntouched(untouched)
+      return
+    }
+
+    const shares = splitAmountEvenly(remainingForUntouched, untouched.length)
+    untouched.forEach((account, index) => { amounts[account] = shares[index] || '' })
+  } catch {
+    clearUntouched(untouched)
+  }
 }
 
 function persistSide() {
@@ -246,7 +297,10 @@ async function handleNext() {
 
 watch(
   () => [draft.value?.mode, side.value, accounts.value.join('|')],
-  () => initAmounts(),
+  () => {
+    manuallyEdited.clear()
+    initAmounts()
+  },
   { immediate: true },
 )
 </script>
@@ -255,5 +309,4 @@ watch(
 .summary-card, .lines-card { margin-top: 12px; }
 .ok { color: var(--van-success-color, #07c160); font-weight: 700; }
 .bad { color: var(--bm-expense, #ee0a24); font-weight: 700; }
-.account-path { display: none; }
 </style>

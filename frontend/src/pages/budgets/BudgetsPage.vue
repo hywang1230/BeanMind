@@ -50,7 +50,13 @@
             @update:model-value="addPattern(item, $event)"
             @remove="removePattern(item, $event)"
           />
-          <van-field v-model="item.amount" label="额度" inputmode="decimal" />
+          <MoneyInput
+            v-model="item.amount"
+            label="额度"
+            :currency="currency"
+            variant="field"
+            :allow-negative="false"
+          />
           <van-cell v-if="item.spent !== undefined" title="执行" :label="`${item.spent} / ${item.amount}`">
             <template #value><van-tag :type="riskType(item.risk)">{{ riskText(item.risk) }}</van-tag></template>
           </van-cell>
@@ -88,6 +94,7 @@ import { accountsApi, type Account } from '../../api/accounts'
 import { budgetsApi, type BudgetItem, type MonthlyBudget } from '../../api/budgets'
 import type { ApiError } from '../../api/client'
 import AccountPicker from '../../components/AccountPicker.vue'
+import MoneyInput from '../../components/MoneyInput.vue'
 import MonthPicker from '../../components/MonthPicker.vue'
 
 const month = ref(new Date().toISOString().slice(0, 7))

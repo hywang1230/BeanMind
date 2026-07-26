@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { currenciesApi } from '../../../api/currencies'
 import { accountsApi } from '../../../api/accounts'
 import { recurringApi } from '../../../api/recurring'
+import MoneyInput from '../../../components/MoneyInput.vue'
 import RecurringPage from '../RecurringPage.vue'
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ back: vi.fn() }) }))
@@ -126,12 +127,21 @@ describe('RecurringPage', () => {
     wrapper.unmount()
   })
 
-  it('uses SelectPickerField for posting currency in the create form', async () => {
+  it('uses compact MoneyInput for signed postings and SelectPickerField for currency', async () => {
     const wrapper = mount(RecurringPage, { global: { plugins: [Vant] }, attachTo: document.body })
     await flushPromises()
     const createButtons = wrapper.findAll('button').filter(button => button.text().includes('创建规则'))
     await createButtons[0]!.trigger('click')
     await flushPromises()
+
+    const moneyInputs = wrapper.findAllComponents(MoneyInput)
+    expect(moneyInputs).toHaveLength(2)
+    expect(moneyInputs.every(input => input.props('variant') === 'field')).toBe(true)
+    expect(moneyInputs.every(input => input.props('allowNegative') === true)).toBe(true)
+    expect(moneyInputs.every(input => input.find('input').attributes('readonly') !== undefined)).toBe(true)
+    await moneyInputs[0]!.vm.$emit('update:modelValue', '-4.00')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.findAllComponents(MoneyInput)[0]!.props('modelValue')).toBe('-4.00')
 
     // 币种字段应为只读选择器，而不是可自由输入的 van-field
     const currencyLabels = Array.from(document.body.querySelectorAll('.van-field')).filter((field) => {

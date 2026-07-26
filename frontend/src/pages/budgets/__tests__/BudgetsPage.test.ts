@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { accountsApi } from '../../../api/accounts'
 import { budgetsApi } from '../../../api/budgets'
+import MoneyInput from '../../../components/MoneyInput.vue'
 import BudgetsPage from '../BudgetsPage.vue'
 
 vi.mock('../../../api/accounts', () => ({
@@ -33,6 +34,13 @@ async function enterEdit(wrapper: ReturnType<typeof mount>) {
   const editButton = wrapper.findAll('button').find((button) => button.text().includes('编辑预算'))
   expect(editButton).toBeTruthy()
   await editButton!.trigger('click')
+  await wrapper.vm.$nextTick()
+}
+
+async function setBudgetAmount(wrapper: ReturnType<typeof mount>, value: string, index = 0) {
+  const input = wrapper.findAllComponents(MoneyInput)[index]
+  expect(input).toBeTruthy()
+  await input!.vm.$emit('update:modelValue', value)
   await wrapper.vm.$nextTick()
 }
 
@@ -106,12 +114,16 @@ describe('BudgetsPage', () => {
     await picker.vm.$emit('update:modelValue', 'Expenses:Food')
     await wrapper.vm.$nextTick()
     expect(picker.props('selectedAccounts')).toEqual(['Expenses:Food'])
-    await inputs.find(input => input.attributes('inputmode') === 'decimal')!.setValue('100')
+    const moneyInput = wrapper.findComponent(MoneyInput)
+    expect(moneyInput.props('variant')).toBe('field')
+    expect(moneyInput.props('allowNegative')).toBe(false)
+    expect(moneyInput.find('input').attributes('readonly')).toBeDefined()
+    await setBudgetAmount(wrapper, '100.00')
     await wrapper.findAll('button').find(button => button.text().includes('保存预算'))!.trigger('click')
     await flushPromises()
     expect(budgetsApi.save).toHaveBeenCalledWith(
       expect.any(String),
-      [expect.objectContaining({ name: '餐饮', account_pattern: 'Expenses:Food', amount: '100', display_order: 0 })],
+      [expect.objectContaining({ name: '餐饮', account_pattern: 'Expenses:Food', amount: '100.00', display_order: 0 })],
     )
     // 保存成功回到查看态
     expect(wrapper.text()).toContain('编辑预算')
@@ -213,7 +225,7 @@ describe('BudgetsPage', () => {
     await picker.vm.$emit('update:modelValue', 'Expenses:Travel')
     await wrapper.vm.$nextTick()
     expect(picker.props('selectedAccounts')).toEqual(['Expenses:Food', 'Expenses:Travel'])
-    await wrapper.findAll('input').find(input => input.attributes('inputmode') === 'decimal')!.setValue('200')
+    await setBudgetAmount(wrapper, '200.00')
     await wrapper.findAll('button').find(button => button.text().includes('保存预算'))!.trigger('click')
     await flushPromises()
     expect(budgetsApi.save).toHaveBeenCalledWith(
@@ -221,7 +233,7 @@ describe('BudgetsPage', () => {
       [expect.objectContaining({
         name: '餐饮交通',
         account_pattern: 'Expenses:Food,Expenses:Travel',
-        amount: '200',
+        amount: '200.00',
       })],
     )
     expect(wrapper.text()).toContain('Food')
@@ -270,7 +282,7 @@ describe('BudgetsPage', () => {
     const nameInput = wrapper.findAll('input').find(input => input.attributes('placeholder') === '例如：餐饮')!
     expect(nameInput.element.value).toBe('地铁')
     await nameInput.setValue('JT-交通')
-    await wrapper.findAll('input').find(input => input.attributes('inputmode') === 'decimal')!.setValue('300')
+    await setBudgetAmount(wrapper, '300.00')
     await wrapper.findAll('button').find(button => button.text().includes('保存预算'))!.trigger('click')
     await flushPromises()
     expect(budgetsApi.save).toHaveBeenCalledWith(
@@ -278,7 +290,7 @@ describe('BudgetsPage', () => {
       [expect.objectContaining({
         name: 'JT-交通',
         account_pattern: 'Expenses:JT-交通',
-        amount: '300',
+        amount: '300.00',
       })],
     )
   })
