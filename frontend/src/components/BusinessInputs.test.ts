@@ -122,6 +122,30 @@ describe('business inputs', () => {
     expect(events[events.length - 1]).toEqual(['10.00'])
   })
 
+  it('renders a readonly compact field and rounds its value to two decimals on confirm', async () => {
+    const wrapper = mount(MoneyInput, {
+      props: { modelValue: '12.345', currency: 'CNY', label: '额度', variant: 'field' },
+      global: {
+        plugins: [Vant],
+        stubs: { VanPopup: { template: '<div><slot /></div>', props: ['show'] } },
+      },
+    })
+
+    expect(wrapper.find('.money-display').exists()).toBe(false)
+    const input = wrapper.find('.money-field input')
+    expect(input.attributes('readonly')).toBeDefined()
+    expect(input.attributes('inputmode')).toBe('none')
+    expect((input.element as HTMLInputElement).value).toBe('CNY 12.35')
+
+    await wrapper.find('.money-field').trigger('click')
+    expect(wrapper.find('.money-field').classes()).toContain('focused')
+    expect(wrapper.find('.keypad-preview-value').text()).toBe('12.345')
+
+    await wrapper.find('.confirm-key').trigger('click')
+    const events = wrapper.emitted('update:modelValue') || []
+    expect(events[events.length - 1]).toEqual(['12.35'])
+  })
+
   it('renders a searchable account tree and keeps full account values', async () => {
     const wrapper = mount(AccountPicker, {
       props: {

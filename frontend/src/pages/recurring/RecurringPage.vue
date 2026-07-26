@@ -67,7 +67,13 @@
             <van-cell title="交易分录" :value="`${draft.transaction_template.postings.length} 条`" />
             <div v-for="(posting, index) in draft.transaction_template.postings" :key="index" class="posting-editor">
               <AccountPicker v-model="posting.account" :accounts="accounts" :label="`账户 ${index + 1}`" clearable :error="accountError" />
-              <van-field v-model="posting.amount" label="金额" inputmode="decimal" placeholder="正负金额" />
+              <MoneyInput
+                v-model="posting.amount"
+                label="金额"
+                :currency="posting.currency"
+                variant="field"
+                :allow-negative="true"
+              />
               <SelectPickerField
                 v-model="posting.currency"
                 label="币种"
@@ -134,6 +140,7 @@ import type { ApiError } from '../../api/client'
 import { recurringApi, type CreateRecurringRuleRequest, type RecurringRule } from '../../api/recurring'
 import AccountPicker from '../../components/AccountPicker.vue'
 import DatePickerField from '../../components/DatePickerField.vue'
+import MoneyInput from '../../components/MoneyInput.vue'
 import SelectPickerField from '../../components/SelectPickerField.vue'
 import { currenciesApi } from '../../api/currencies'
 

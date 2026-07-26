@@ -1,6 +1,7 @@
 <template>
-  <div class="money-input">
+  <div class="money-input" :class="`money-input--${variant}`">
     <button
+      v-if="variant === 'hero'"
       type="button"
       class="money-display"
       :class="{ focused: keypadOpen, 'has-error': Boolean(error) }"
@@ -13,7 +14,20 @@
         <span v-if="keypadOpen" class="money-cursor">|</span>
       </span>
     </button>
-    <div v-if="error" class="money-error">{{ error }}</div>
+    <van-field
+      v-else
+      class="money-field"
+      :class="{ focused: keypadOpen }"
+      :model-value="fieldDisplayValue"
+      :label="label"
+      :error-message="error"
+      readonly
+      clickable
+      inputmode="none"
+      input-align="right"
+      @click="openKeypad"
+    />
+    <div v-if="variant === 'hero' && error" class="money-error">{{ error }}</div>
 
     <van-popup
       v-model:show="keypadOpen"
@@ -69,11 +83,13 @@ const props = withDefaults(defineProps<{
   currency?: string
   error?: string
   allowNegative?: boolean
+  variant?: 'hero' | 'field'
 }>(), {
   label: '金额',
   currency: 'CNY',
   error: '',
   allowNegative: true,
+  variant: 'hero',
 })
 
 const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>()
@@ -91,6 +107,10 @@ const displayValue = computed(() => {
     return props.modelValue
   }
 })
+
+const fieldDisplayValue = computed(() => (
+  props.currency ? `${props.currency} ${displayValue.value}` : displayValue.value
+))
 
 watch(() => props.modelValue, (value) => {
   if (!keypadOpen.value) {
@@ -134,8 +154,24 @@ function onKey(key: AmountKey) {
 </script>
 
 <style scoped>
-.money-input {
+.money-input--hero {
   padding: 12px 16px 4px;
+}
+
+.money-input--field {
+  padding: 0;
+}
+
+.money-field {
+  cursor: pointer;
+}
+
+.money-field.focused {
+  background: var(--bm-primary-soft);
+}
+
+.money-field :deep(input) {
+  cursor: pointer;
 }
 
 .money-display {
