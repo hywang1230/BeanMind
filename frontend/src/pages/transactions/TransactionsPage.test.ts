@@ -1,6 +1,6 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import Vant from 'vant'
-import { reactive } from 'vue'
+import { defineComponent, h, KeepAlive, nextTick, reactive, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { accountsApi } from '../../api/accounts'
@@ -86,6 +86,29 @@ describe('TransactionsPage', () => {
     expect(transactionsApi.getTransactions).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).toContain('午餐')
     expect(wrapper.text()).toContain('第二页交易')
+  })
+
+  it('restores the internal scroll position after KeepAlive activation', async () => {
+    vi.mocked(transactionsApi.getTransactions).mockResolvedValue({ items: [item], next_cursor: null, has_more: false })
+    const show = ref(true)
+    const host = defineComponent({
+      setup: () => () => h(KeepAlive, null, () => show.value ? h(TransactionsPage) : null),
+    })
+    const wrapper = mount(host, { global: { plugins: [Vant] } })
+    await flushPromises()
+    const scroll = wrapper.find('.page-scroll').element as HTMLElement
+    scroll.scrollTop = 420
+    await wrapper.find('.page-scroll').trigger('scroll')
+
+    show.value = false
+    await nextTick()
+    scroll.scrollTop = 0
+    show.value = true
+    await nextTick()
+    await flushPromises()
+
+    expect((wrapper.find('.page-scroll').element as HTMLElement).scrollTop).toBe(420)
+    expect(transactionsApi.getTransactions).toHaveBeenCalledTimes(1)
   })
 
   it('requests the first page after submitting a new search condition', async () => {

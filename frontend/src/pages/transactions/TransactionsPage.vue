@@ -1,6 +1,6 @@
 <template>
   <section class="page page-with-pull transactions-page">
-    <div class="page-scroll" @scroll.passive="onScroll">
+    <div ref="scrollContainer" class="page-scroll" @scroll.passive="onScroll">
     <van-pull-refresh v-model="refreshing" class="page-pull-refresh" pulling-text="下拉刷新" loosing-text="释放刷新" loading-text="刷新中..." success-text="刷新成功" @refresh="onRefresh">
     <header class="page-header"><h1>流水</h1></header>
     <div class="filter-panel page-section">
@@ -43,7 +43,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { nextTick, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { accountsApi, type Account } from '../../api/accounts'
 import { transactionsApi, type Transaction, type TransactionsQuery } from '../../api/transactions'
@@ -76,6 +76,8 @@ const transactionTypeOptions = [
 const items = ref<Transaction[]>([]); const cursor = ref<string | null>(null); const hasMore = ref(false)
 const loading = ref(false); const loadingMore = ref(false); const refreshing = ref(false); const error = ref('')
 const accounts = ref<Account[]>([]); const accountError = ref('')
+const scrollContainer = ref<HTMLElement | null>(null)
+let savedScrollTop = 0
 function query(): TransactionsQuery { return { limit: 20, description: filters.description || undefined, transaction_type: filters.transaction_type as TransactionsQuery['transaction_type'] || undefined, start_date: filters.start_date || undefined, end_date: filters.end_date || undefined, account: filters.account || undefined } }
 async function load(reset = true, options: { silent?: boolean } = {}) {
   if (!options.silent) loading.value = true
@@ -96,6 +98,7 @@ async function loadAccounts() { accountError.value = ''; try { accounts.value = 
 async function loadMore() { if (!cursor.value || loadingMore.value) return; loadingMore.value = true; error.value = ''; try { const page = await transactionsApi.getTransactions({ ...query(), cursor: cursor.value }); items.value.push(...page.items); cursor.value = page.next_cursor; hasMore.value = page.has_more } catch (reason) { error.value = (reason as ApiError).message } finally { loadingMore.value = false } }
 function onScroll(event: Event) {
   const target = event.currentTarget as HTMLElement
+  savedScrollTop = target.scrollTop
   if (target.scrollHeight - target.scrollTop - target.clientHeight <= 120) loadMore()
 }
 async function onRefresh() {
@@ -140,6 +143,10 @@ function amountClass(item: Transaction) {
   return hasNegative === hasPositive ? '' : hasNegative ? 'negative' : 'positive'
 }
 onMounted(() => { load(true); loadAccounts() })
+onActivated(async () => {
+  await nextTick()
+  if (scrollContainer.value) scrollContainer.value.scrollTop = savedScrollTop
+})
 </script>
 
 <style scoped>
