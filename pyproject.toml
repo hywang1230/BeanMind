@@ -1,6 +1,6 @@
 [project]
 name = "beanmind"
-version = "0.1.0"
+version = "3.0.1"
 description = "基于 Beancount 的个人财务管理系统"
 authors = [
     {name = "BeanMind Team"}

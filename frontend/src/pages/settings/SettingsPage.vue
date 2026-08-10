@@ -39,7 +39,7 @@ import { configApi, type PublicConfig } from '../../api/config'
 import { useUIStore, type ThemeMode } from '../../stores/ui'
 
 /** 与 backend/main.py FastAPI version 保持一致 */
-const appVersion = '3.0.0'
+const appVersion = '3.0.1'
 
 const ui = useUIStore()
 const config = ref<PublicConfig | null>(null)
