@@ -91,6 +91,30 @@ describe('transactionDraft', () => {
     expect(buildPostingsFromDraft(draft)).toHaveLength(3)
   })
 
+  it('uses the changed total for the single funding account when editing a split expense', () => {
+    const draft = draftFromTransaction({
+      id: 'tx-1',
+      date: '2025-04-01',
+      transaction_type: 'expense',
+      postings: [
+        { account: 'Expenses:Food', amount: '50.00', currency: 'CNY' },
+        { account: 'Expenses:Daily', amount: '50.00', currency: 'CNY' },
+        { account: 'Assets:Cash', amount: '-100.00', currency: 'CNY' },
+      ],
+    })
+    draft.amount = '101.00'
+    draft.toLines = [
+      { account: 'Expenses:Food', amount: '50.00' },
+      { account: 'Expenses:Daily', amount: '51.00' },
+    ]
+
+    expect(buildPostingsFromDraft(draft)).toEqual([
+      { account: 'Expenses:Food', amount: '50.00', currency: 'CNY' },
+      { account: 'Expenses:Daily', amount: '51.00', currency: 'CNY' },
+      { account: 'Assets:Cash', amount: '-101.00', currency: 'CNY' },
+    ])
+  })
+
   it('builds income with negative income accounts', () => {
     const draft = baseDraft({
       type: 'income',
