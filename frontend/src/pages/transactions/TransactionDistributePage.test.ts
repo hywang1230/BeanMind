@@ -115,6 +115,40 @@ describe('TransactionDistributePage', () => {
     expect(replace).toHaveBeenCalledWith('/transactions/new')
   })
 
+  it('updates the single funding posting after changing the total of an edited split expense', async () => {
+    const { wrapper } = mountWithDraft({
+      mode: 'edit:tx-1',
+      amount: '101.00',
+      toAccounts: ['Expenses:Food', 'Expenses:Daily'],
+      fromLines: [{ account: 'Assets:Cash', amount: '100.00' }],
+      toLines: [
+        { account: 'Expenses:Food', amount: '50.00' },
+        { account: 'Expenses:Daily', amount: '50.00' },
+      ],
+    })
+    vi.mocked(transactionsApi.updateTransaction).mockResolvedValue({ id: 'tx-1' } as never)
+    await flushPromises()
+
+    expect(moneyValues(wrapper)).toEqual(['50.00', '50.00'])
+    await commitAmount(wrapper, 1, '51.00')
+    expect(moneyValues(wrapper)).toEqual(['50.00', '51.00'])
+
+    await wrapper.find('.van-nav-bar__right .van-button').trigger('click')
+    await flushPromises()
+
+    expect(transactionsApi.updateTransaction).toHaveBeenCalledWith(
+      'tx-1',
+      expect.objectContaining({
+        postings: [
+          { account: 'Expenses:Food', amount: '50.00', currency: 'CNY' },
+          { account: 'Expenses:Daily', amount: '51.00', currency: 'CNY' },
+          { account: 'Assets:Cash', amount: '-101.00', currency: 'CNY' },
+        ],
+      }),
+    )
+    expect(replace).toHaveBeenCalledWith('/transactions/tx-1')
+  })
+
   it('locks manually edited categories regardless of list order', async () => {
     const { wrapper } = mountWithDraft()
     await flushPromises()

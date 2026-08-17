@@ -125,8 +125,7 @@ export function buildPostingsFromDraft(draft: TransactionDraft): Posting[] {
     if (accounts.length === 1) {
       const only = accounts[0]
       if (!only) return []
-      const existing = lines.find((l) => l.account === only)
-      return [{ account: only, amount: existing?.amount || total }]
+      return [{ account: only, amount: total }]
     }
     return accounts.map((account) => {
       const existing = lines.find((l) => l.account === account)
