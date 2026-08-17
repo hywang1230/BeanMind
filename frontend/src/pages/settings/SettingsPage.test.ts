@@ -27,7 +27,7 @@ describe('SettingsPage', () => {
   it('shows version and friendly ledger status with cell-aligned theme row', async () => {
     const wrapper = mount(SettingsPage, { global: { plugins: [Vant, createPinia()] } })
     await flushPromises()
-    expect(wrapper.text()).toContain('3.0.1')
+    expect(wrapper.text()).toContain('3.0.2')
     expect(wrapper.text()).toContain('账本状态')
     expect(wrapper.text()).toContain('正常')
     expect(wrapper.text()).toContain('主题')
