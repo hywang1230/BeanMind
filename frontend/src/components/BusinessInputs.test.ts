@@ -34,13 +34,15 @@ describe('business inputs', () => {
         plugins: [Vant],
         stubs: {
           // Keep popup content in-tree for unit tests.
-          VanPopup: { template: '<div class="van-popup-stub"><slot /></div>', props: ['show'] },
+          VanPopup: { name: 'VanPopup', template: '<div class="van-popup-stub"><slot /></div>', props: ['show', 'teleport'] },
         },
       },
     })
 
     await wrapper.find('.money-display').trigger('click')
     expect(wrapper.find('.money-display').classes()).toContain('focused')
+    expect(wrapper.findComponent({ name: 'VanPopup' }).props('teleport')).toBe('body')
+    expect(wrapper.findAll('button.key-btn').map((node) => node.text())).toContain('0')
 
     const press = async (label: string) => {
       const btn = wrapper.findAll('button.key-btn').find((node) => node.text() === label)
@@ -49,14 +51,15 @@ describe('business inputs', () => {
     }
 
     await press('1')
-    await press('2')
+    await press('0')
+    await press('0')
     await press('+')
     await press('3')
-    expect(wrapper.find('.keypad-preview-value').text()).toBe('12+3')
+    expect(wrapper.find('.keypad-preview-value').text()).toBe('100+3')
 
     await wrapper.find('.confirm-key').trigger('click')
     const events = wrapper.emitted('update:modelValue') || []
-    expect(events[events.length - 1]).toEqual(['15.00'])
+    expect(events[events.length - 1]).toEqual(['103.00'])
     expect(typeof events[events.length - 1]![0]).toBe('string')
   })
 
@@ -127,7 +130,7 @@ describe('business inputs', () => {
       props: { modelValue: '12.345', currency: 'CNY', label: '额度', variant: 'field' },
       global: {
         plugins: [Vant],
-        stubs: { VanPopup: { template: '<div><slot /></div>', props: ['show'] } },
+        stubs: { VanPopup: { name: 'VanPopup', template: '<div><slot /></div>', props: ['show', 'teleport'] } },
       },
     })
 
@@ -139,6 +142,8 @@ describe('business inputs', () => {
 
     await wrapper.find('.money-field').trigger('click')
     expect(wrapper.find('.money-field').classes()).toContain('focused')
+    expect(wrapper.findComponent({ name: 'VanPopup' }).props('teleport')).toBe('body')
+    expect(wrapper.findAll('button.key-btn').map((node) => node.text())).toContain('0')
     expect(wrapper.find('.keypad-preview-value').text()).toBe('12.345')
 
     await wrapper.find('.confirm-key').trigger('click')
