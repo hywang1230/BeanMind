@@ -53,3 +53,4 @@ frontend/dist/
 frontend/.nuxt/
 docs
 .harness
+.workflow
