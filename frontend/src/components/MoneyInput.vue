@@ -33,6 +33,7 @@
       v-model:show="keypadOpen"
       position="bottom"
       round
+      teleport="body"
       :safe-area-inset-bottom="true"
       @closed="onPopupClosed"
     >
