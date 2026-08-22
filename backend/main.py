@@ -82,7 +82,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="BeanMind API",
     description="基于 Beancount 的单机个人财务系统",
-    version="3.0.2",
+    version="3.0.3",
     debug=settings.DEBUG,
     lifespan=lifespan,
 )
@@ -131,7 +131,7 @@ for router in (
 
 @app.get("/api")
 def read_root():
-    return {"message": "Welcome to BeanMind API", "version": "3.0.2", "status": "healthy"}
+    return {"message": "Welcome to BeanMind API", "version": "3.0.3", "status": "healthy"}
 
 
 @app.get("/health")
