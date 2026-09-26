@@ -19,6 +19,34 @@ def test_save_benchmark_nearest_rank():
     assert result == {"runs": 30, "median": 15.5, "p95": 29, "max": 30}
 
 
+@pytest.mark.parametrize("mode", ["balance", "pad", "custom", "combined"])
+@pytest.mark.parametrize("position", ["before", "after"])
+def test_global_benchmark_modes_are_valid_and_instrumented(tmp_path, mode, position):
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "--sizes", "4", "--iterations", "1",
+         "--id-mode", "explicit", "--plugin-mode", "none", "--global-mode", mode,
+         "--directive-text-position", position, "--edit-positions", "middle"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    )
+    case = json.loads(result.stdout)["cases"][0]
+    assert case["global_mode"] == mode
+    assert case["directive_text_position"] == position
+    assert case["consistency"]["matched"] is True
+    assert case["consistency"]["compared_rows"]["ledger_transactions"] == (5 if mode in {"pad", "combined"} else 4)
+    for scenario in case["scenarios"].values():
+        for phase in ("candidate_full.mirror_ms", "candidate_full.loader_ms"):
+            assert scenario["phases_ms"][phase]["runs"] == 1
+        if mode in {"balance", "custom"}:
+            assert scenario["projection_modes"] == {"candidate_diff": 1}
+            assert scenario["reuse_status"] == {"used": 1}
+            assert "projection_full.loader_ms" not in scenario["phases_ms"]
+        else:
+            assert scenario["projection_modes"] == {"loader_diff": 1}
+            assert scenario["reuse_status"] == {"not_eligible": 1}
+            for phase in ("projection_full.graph_ms", "projection_full.loader_ms"):
+                assert scenario["phases_ms"][phase]["runs"] == 1
+
+
 @pytest.mark.parametrize("mode", ["explicit", "mixed", "legacy"])
 @pytest.mark.parametrize("plugin_mode", ["none", "auto_accounts"])
 def test_save_benchmark_isolated_api_and_full_equivalence(tmp_path, mode, plugin_mode):

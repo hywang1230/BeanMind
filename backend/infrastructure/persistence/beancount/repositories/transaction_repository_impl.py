@@ -628,7 +628,10 @@ class TransactionRepositoryImpl(TransactionRepository):
                 self.projection_service.mark_dirty_files(changes)
         def after_commit(parsed_files):
             if self.projection_service:
-                self.projection_service.refresh_files(changes, parsed_files=parsed_files)
+                self.projection_service.refresh_files(
+                    changes, parsed_files=parsed_files,
+                    candidate_snapshot=parsed_files.candidate_snapshot,
+                )
         try:
             return commit_ledger_files(
                 self.beancount_service.ledger_path, changes,

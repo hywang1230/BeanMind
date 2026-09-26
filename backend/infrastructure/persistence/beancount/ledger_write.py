@@ -17,6 +17,7 @@ import stat
 import tempfile
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Callable
 import uuid
@@ -32,6 +33,21 @@ _LOCKS: dict[str, threading.RLock] = {}
 _LOCKS_GUARD = threading.Lock()
 Fingerprint = tuple[int, int, str]
 ParsedFiles = dict[str, tuple[list, Fingerprint]]
+
+
+@dataclass(frozen=True)
+class CandidateSnapshot:
+    entries: list
+    source_hashes: dict[Path, str]
+
+
+class ValidatedFiles(dict):
+    def __init__(self, files, candidate_snapshot=None):
+        super().__init__(files)
+        self.candidate_snapshot = candidate_snapshot
+
+    def copy(self):
+        return ValidatedFiles(self, self.candidate_snapshot)
 
 
 class LedgerWriteError(RuntimeError):
@@ -184,6 +200,73 @@ _GLOBAL = re.compile(
 )
 
 
+def _has_global_semantics(content: str) -> bool:
+    return any(match.group(2) not in {"title", "operating_currency"} for match in _GLOBAL.finditer(content))
+
+
+def _pure_transaction_source(content: str) -> bool:
+    return all(
+        not line or line[0].isspace() or line.startswith(";")
+        or re.match(r"\d{4}-\d{2}-\d{2}\s+[*!]\s", line)
+        for line in content.splitlines()
+    )
+
+
+def _reusable_sources(ledger_path: Path, changes: dict[Path, str], sources: dict[Path, str]) -> bool:
+    if len(changes) != 1 or ledger_path in changes:
+        return False
+    changed = next(iter(changes))
+    if changed not in sources or not changed.is_file():
+        return False
+    if not _pure_transaction_source(changes[changed]) or not _pure_transaction_source(changed.read_text(encoding="utf-8")):
+        return False
+    for content in sources.values():
+        for line in content.splitlines():
+            if not line or line[0].isspace() or line.startswith(";"):
+                continue
+            if re.match(r'option\s+"(?:title|operating_currency)"\s', line):
+                continue
+            include = _INCLUDE.fullmatch(line)
+            if include and not glob.has_magic(include.group(1)):
+                continue
+            if re.match(r"\d{4}-\d{2}-\d{2}\s+(?:[*!]|open\b|close\b|balance\b|custom\b|price\b|commodity\b)", line):
+                continue
+            return False
+    # The candidate must have the same physical source graph and unchanged inputs.
+    original = _source_tree(ledger_path, {})
+    return original.keys() == sources.keys() and all(
+        original[path] == content for path, content in sources.items() if path != changed
+    )
+
+
+def _candidate_snapshot(entries, options, mirror: Path, sources: dict[Path, str], ledger_path: Path):
+    included = {mirror / ledger_path.name}
+    for filename in options.get("include", []):
+        path = Path(filename)
+        if not path.is_relative_to(mirror):
+            return None
+        included.add(path)
+    if included != {mirror / path.relative_to(ledger_path.parent) for path in sources}:
+        return None
+    for entry in entries:
+        if not isinstance(entry, data.Transaction):
+            continue
+        filename = entry.meta.get("filename") if entry.meta else None
+        if not filename or not Path(filename).is_relative_to(mirror):
+            return None
+        source = ledger_path.parent / Path(filename).relative_to(mirror)
+        if source not in sources or not isinstance(entry.meta.get("lineno"), int):
+            return None
+        for posting in entry.postings:
+            posting_file = (posting.meta or {}).get("filename")
+            if posting_file is not None and posting_file != filename:
+                return None
+    return CandidateSnapshot(
+        _formal_entries(entries, ledger_path, mirror),
+        {path: hashlib.sha256(text.encode("utf-8")).hexdigest() for path, text in sources.items()},
+    )
+
+
 def _source_tree(ledger_path: Path, changes: dict[Path, str]):
     """Read referenced sources without parsing large unchanged annual files."""
     root = ledger_path.parent
@@ -215,13 +298,7 @@ def supports_local_parse(ledger_path) -> bool:
     """Conservative global-configuration gate shared with projection refresh."""
     try:
         sources = _source_tree(Path(ledger_path).resolve(), {})
-        return all(
-            not any(
-                match.group(2) not in {"title", "operating_currency"}
-                for match in _GLOBAL.finditer(content)
-            )
-            for content in sources.values()
-        )
+        return all(not _has_global_semantics(content) for content in sources.values())
     except (OSError, LedgerWriteError, ValueError):
         return False
 
@@ -229,22 +306,30 @@ def supports_local_parse(ledger_path) -> bool:
 def _validate_candidates(
     ledger_path: Path, changes: dict[Path, str], candidates: dict, validation_context=None
 ):
+    sources = _source_tree(ledger_path, changes)
+    global_semantics = any(_has_global_semantics(text) for text in sources.values())
+    if not global_semantics:
+        # Removing a global directive also changes semantics; stale locked loader
+        # context must not validate the candidate as if the directive remained.
+        global_semantics = any(
+            path.is_file() and _has_global_semantics(path.read_text(encoding="utf-8"))
+            for path in changes
+        )
     parsed = {}
-    pure = ledger_path not in changes
+    full_loader_required = ledger_path in changes or global_semantics or validation_context is None
+    pure = not full_loader_required
+    # With global directives the complete loader below already parses every candidate.
+    # Do not parse large changed files twice; its errors still reject before DIRTY.
     for path, temporary in candidates.items():
+        # A changed file outside the candidate include graph is not read by the
+        # loader; preserve its standalone syntax check before touching the source.
+        if full_loader_required and path in sources:
+            continue
         entries, errors, options = parser.parse_file(str(temporary))
         if errors:
             raise LedgerValidationError("Candidate ledger syntax is invalid")
         parsed[str(path)] = _formal_entries(entries, path)
         pure = pure and _pure_transactions(entries) and not options.get("include")
-    sources = _source_tree(ledger_path, changes)
-    pure = pure and all(
-        not any(
-            match.group(2) not in {"title", "operating_currency"}
-            for match in _GLOBAL.finditer(text)
-        )
-        for text in sources.values()
-    )
     if pure and validation_context is not None:
         context_entries, context_options = validation_context
         # Retain lifecycle/currency/global declarations from the locked valid view,
@@ -257,22 +342,29 @@ def _validate_candidates(
         validation_entries.sort(key=data.entry_sortkey)
         if validation.validate(validation_entries, context_options):
             raise LedgerValidationError("Candidate ledger validation failed")
-        return parsed
+        return parsed, None
     # Validate the complete candidate graph in isolation, including accounts and plugins.
     with tempfile.TemporaryDirectory(prefix=".beanmind-validate-", dir=ledger_path.parent) as name:
         mirror = Path(name)
+        mirror_started = time.perf_counter()
         for path, content in {**sources, **changes}.items():
             target = mirror / path.relative_to(ledger_path.parent)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
             target.chmod(0o600)
-        entries, errors, _ = loader.load_file(str(mirror / ledger_path.name))
+        load_started = time.perf_counter()
+        entries, errors, options = loader.load_file(str(mirror / ledger_path.name))
+        logger.info("ledger_candidate_full mirror_ms=%.1f loader_ms=%.1f",
+                    (load_started - mirror_started) * 1000,
+                    (time.perf_counter() - load_started) * 1000)
         if errors:
             raise LedgerValidationError("Candidate ledger validation failed")
-        formal = _formal_entries(entries, ledger_path, mirror)
+        reusable = _reusable_sources(ledger_path, changes, sources)
+        snapshot = _candidate_snapshot(entries, options, mirror, sources, ledger_path) if reusable else None
+        formal = snapshot.entries if snapshot else _formal_entries(entries, ledger_path, mirror)
         return {
             str(path): [e for e in formal if e.meta["filename"] == str(path)] for path in changes
-        }
+        }, snapshot
 
 
 def _read_manifest(ledger_path: Path):
@@ -396,7 +488,8 @@ def commit_ledger_files(
 ) -> bool:
     """Validate and commit candidates; False means source committed, projection deferred.
 
-    ``before_commit`` must durably mark the projection DIRTY. A caller must recover a
+    ``before_commit`` must durably mark the projection DIRTY and may be called again
+    after projection if an external source conflict is detected. A caller must recover a
     pending operation before starting this one. All source paths stay under the ledger
     directory and callbacks execute under the common reentrant lock. ``validation_context``
     must be a complete valid loader view obtained by the caller under this same lock;
@@ -454,7 +547,7 @@ def commit_ledger_files(
                     if not _matches(file_fingerprint(workspace / backup_name), before):
                         raise LedgerWriteConflict("Ledger changed during candidate preparation")
             validation_started = time.perf_counter()
-            parsed = _validate_candidates(ledger_path, changes, candidates, validation_context)
+            parsed, snapshot = _validate_candidates(ledger_path, changes, candidates, validation_context)
             logger.info("ledger_candidate_validate duration_ms=%.1f files=%d",
                         (time.perf_counter() - validation_started) * 1000, len(changes))
             for item in manifest["files"]:
@@ -499,13 +592,22 @@ def commit_ledger_files(
                 raise
             logger.info("ledger_files_commit duration_ms=%.1f files=%d",
                         (time.perf_counter() - files_started) * 1000, len(changes))
-            parsed_files = {
+            parsed_files = ValidatedFiles({
                 path: (entries, file_fingerprint(Path(path))) for path, entries in parsed.items()
-            }
+            }, snapshot)
             try:
                 after_commit(parsed_files)
             except Exception:
                 logger.error("Ledger files committed; projection recovery required")
+                return False
+            try:
+                assert_ledger_readable(ledger_path)
+            except Exception:
+                logger.error("Ledger changed after projection; recovery required")
+                try:
+                    before_commit()
+                except Exception:
+                    logger.exception("Unable to mark projection DIRTY after ledger conflict")
                 return False
             _cleanup(ledger_path, workspace, manifest)
             return True
