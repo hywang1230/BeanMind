@@ -185,6 +185,8 @@ export function toCreateRequest(draft: TransactionDraft): CreateTransactionReque
 export const useTransactionDraftStore = defineStore('transactionDraft', {
   state: () => ({
     draft: null as TransactionDraft | null,
+    unconfirmed: null as string | null,
+    pendingWrite: false,
   }),
   getters: {
     hasDraft: (state) => Boolean(state.draft),

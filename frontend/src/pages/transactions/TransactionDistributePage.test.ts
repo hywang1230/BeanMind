@@ -21,6 +21,7 @@ vi.mock('vue-router', () => ({
   useRoute: () => ({ query }),
 }))
 vi.mock('../../api/transactions', () => ({
+  UNCONFIRMED_TRANSACTION_MESSAGE: '未能确认操作结果，请刷新核对，勿重复提交',
   transactionsApi: {
     createTransaction: vi.fn(),
     updateTransaction: vi.fn(),
@@ -147,6 +148,22 @@ describe('TransactionDistributePage', () => {
       }),
     )
     expect(replace).toHaveBeenCalledWith('/transactions/tx-1')
+  })
+
+  it.each(['create', 'edit:tx-1'] as const)('keeps a %s split draft after an unknown result without replay', async mode => {
+    const { wrapper, draft } = mountWithDraft({ mode })
+    const method = mode === 'create' ? transactionsApi.createTransaction : transactionsApi.updateTransaction
+    vi.mocked(method).mockRejectedValue({ code: 'TRANSACTION_RESULT_UNCONFIRMED', message: '结果未确认' })
+    await flushPromises()
+    await wrapper.find('.van-nav-bar__right .van-button').trigger('click')
+    await flushPromises()
+    expect(draft.draft?.mode).toBe(mode)
+    expect(draft.draft?.toLines).toHaveLength(3)
+    expect(draft.unconfirmed).toBe(mode)
+    expect(wrapper.text()).toContain('只读核对结果')
+    expect(replace).not.toHaveBeenCalled()
+    await wrapper.find('.van-nav-bar__right .van-button').trigger('click')
+    expect(method).toHaveBeenCalledTimes(1)
   })
 
   it('locks manually edited categories regardless of list order', async () => {

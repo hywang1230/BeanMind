@@ -20,7 +20,9 @@ apiClient.interceptors.response.use(
     const detail = typeof payload.detail === 'object' ? payload.detail : undefined
     const normalized: ApiError = {
       status: error.response?.status,
-      code: payload.code || detail?.code || 'REQUEST_FAILED',
+      code: error.code === 'ERR_CANCELED' ? 'REQUEST_CANCELED'
+        : !error.response && (error.request || ['ECONNABORTED', 'ETIMEDOUT', 'ERR_NETWORK'].includes(error.code || ''))
+          ? 'REQUEST_NO_RESPONSE' : payload.code || detail?.code || 'REQUEST_FAILED',
       message: payload.message || detail?.message || payload.detail || error.message || '请求失败',
       details: payload.details || detail?.details || null,
     }

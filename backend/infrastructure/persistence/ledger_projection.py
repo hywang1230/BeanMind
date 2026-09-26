@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import glob
 import json
 import logging
 import re
@@ -167,6 +168,27 @@ def _fingerprint(path: Path) -> tuple[int, int, str]:
     stat = path.stat()
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     return stat.st_mtime_ns, stat.st_size, digest
+
+
+def _source_fingerprints(ledger_path: Path) -> dict[Path, tuple[int, int, str]]:
+    """Snapshot the include graph, including wildcard membership, without plugins."""
+    pending = [ledger_path]
+    fingerprints = {}
+    while pending:
+        path = pending.pop().resolve()
+        if path in fingerprints:
+            continue
+        before = _fingerprint(path)
+        content = path.read_text(encoding="utf-8")
+        if _fingerprint(path) != before:
+            raise ValueError("投影解析期间源文件发生变化")
+        fingerprints[path] = before
+        for pattern in re.findall(r'^\s*include\s+"([^"\n]+)"', content, re.MULTILINE):
+            matches = glob.glob(str(path.parent / pattern), recursive=True)
+            if not matches:
+                raise ValueError("账本 include 没有匹配的文件")
+            pending.extend(Path(name) for name in matches)
+    return fingerprints
 
 
 def encode_transaction_cursor(
@@ -350,7 +372,8 @@ class LedgerProjectionService:
                 Path(path).resolve() for path in options.get("include", []) if Path(path).exists()
             )
             files.update(
-                _source_path(entry) for entry in entries if isinstance(entry, BeancountTransaction)
+                _source_path(entry) for entry in entries
+                if isinstance(entry, BeancountTransaction) and _source_path(entry).is_file()
             )
 
             self.db.query(LedgerPosting).delete(synchronize_session=False)
@@ -411,14 +434,24 @@ class LedgerProjectionService:
     @_locked_write
     def refresh_files(self, paths: Iterable[Path | str], *, parsed_files=None) -> dict:
         """Parse affected files and commit only changed rows in one transaction."""
+        from backend.infrastructure.persistence.beancount.ledger_write import (
+            assert_ledger_readable, has_pending_write,
+        )
+
+        # A write callback supplies parsed_files while owning the current manifest.
+        # Independent refreshes must recover older interrupted operations first.
+        if has_pending_write(self.ledger_path):
+            if parsed_files is None:
+                return self.full_rebuild()
+            assert_ledger_readable(self.ledger_path)
         started = time.perf_counter()
         targets = {Path(path).resolve() for path in paths}
         if not targets:
             return {"status": PROJECTION_READY, "transactions": 0, "files": 0}
         try:
             if self.ledger_path in targets or not self._fast_path_safe(targets):
-                logger.info("投影刷新回退全量重建: global_or_unindexed")
-                return self.full_rebuild()
+                logger.info("投影刷新使用完整 loader 差异: global_or_unindexed")
+                return self._refresh_loaded_ledger(started)
             expected = {}
             fingerprints = {}
             resolved_sources = {}
@@ -445,8 +478,8 @@ class LedgerProjectionService:
                         or (posting.price is not None and not isinstance(posting.price.number, Decimal))
                         for posting in getattr(entry, "postings", [])
                     ):
-                        logger.info("投影刷新回退全量重建: booking_or_directive")
-                        return self.full_rebuild()
+                        logger.info("投影刷新使用完整 loader 差异: booking_or_directive")
+                        return self._refresh_loaded_ledger(started)
                     source_name = entry.meta.get("filename") if entry.meta else None
                     if source_name not in resolved_sources:
                         resolved_sources[source_name] = _source_path(entry)
@@ -455,8 +488,8 @@ class LedgerProjectionService:
                     digest = _content_hash(entry)
                     transaction_id = _transaction_id(entry, digest, target)
                     if transaction_id in expected:
-                        logger.info("投影刷新回退全量重建: duplicate_id")
-                        return self.full_rebuild()
+                        logger.info("投影刷新使用完整 loader 差异: duplicate_id")
+                        return self._refresh_loaded_ledger(started)
                     expected[transaction_id] = (entry, digest, str(target), int(entry.meta.get("lineno", 0)))
             existing = {}
             for batch in _chunks(str(target) for target in targets):
@@ -467,61 +500,9 @@ class LedgerProjectionService:
                 existing.update((row.id, row) for row in rows)
             for batch in _chunks(expected.keys() - existing.keys()):
                 if self.db.query(LedgerTransaction.id).filter(LedgerTransaction.id.in_(batch)).first():
-                    logger.info("投影刷新回退全量重建: cross_file_id")
-                    return self.full_rebuild()
-            compared_at = time.perf_counter()
-            removed = existing.keys() - expected.keys()
-            for batch in _chunks(removed):
-                self._delete_transaction_ids(batch)
-            added = changed = relocated = 0
-            positions = []
-            for transaction_id, (entry, digest, source_file, lineno) in expected.items():
-                old = existing.get(transaction_id)
-                if old is not None and old.content_hash == digest:
-                    if (old.source_file, old.source_lineno) != (source_file, lineno):
-                        positions.append({"id": transaction_id, "source_file": source_file, "source_lineno": lineno})
-                    continue
-                model = self._model_from_entry(entry)
-                if old is None:
-                    self.db.add(model)
-                    added += 1
-                else:
-                    # Core updates preserve created_at and never load old children.
-                    self.db.query(LedgerTransaction).filter(LedgerTransaction.id == transaction_id).update({
-                        column: getattr(model, column) for column in (
-                            "date", "flag", "payee", "narration", "transaction_type",
-                            "source_file", "source_lineno", "content_hash", "links_json",
-                        )
-                    }, synchronize_session=False)
-                    for child in (LedgerPosting, LedgerTag):
-                        self.db.query(child).filter(child.transaction_id == transaction_id).delete(synchronize_session=False)
-                    for child_type, children in ((LedgerPosting, model.postings), (LedgerTag, model.tags)):
-                        values = [{
-                            **{column.name: getattr(child, column.name)
-                               for column in child_type.__table__.columns
-                               if column.name not in ("id", "transaction_id")},
-                            "transaction_id": transaction_id,
-                        } for child in children]
-                        if values:
-                            self.db.execute(child_type.__table__.insert(), values)
-                    changed += 1
-            for batch in _chunks(positions):
-                self.db.execute(update(LedgerTransaction), batch)
-                relocated += len(batch)
-            for target in sorted(targets):
-                if _fingerprint(target) != fingerprints[target]:
-                    raise ValueError("投影提交前源文件发生变化")
-                self._record_file(target)
-            commit_started = time.perf_counter()
-            self.db.commit()
-            committed_at = time.perf_counter()
-            self.db.expire_all()
-            logger.info(
-                "ledger_projection compare_ms=%.1f apply_ms=%.1f commit_ms=%.1f added=%d changed=%d relocated=%d removed=%d",
-                (compared_at - started) * 1000, (commit_started - compared_at) * 1000,
-                (committed_at - commit_started) * 1000, added, changed, relocated, len(removed),
-            )
-            return {"status": PROJECTION_READY, "transactions": len(expected), "files": len(targets)}
+                    logger.info("投影刷新使用完整 loader 差异: cross_file_id")
+                    return self._refresh_loaded_ledger(started)
+            return self._apply_difference(expected, existing, fingerprints, started)
         except Exception as exc:
             self.db.rollback()
             try:
@@ -529,6 +510,125 @@ class LedgerProjectionService:
             except Exception:
                 logger.exception("无法记录账本投影 DIRTY 状态")
             raise
+
+    def _refresh_loaded_ledger(self, started: float) -> dict:
+        """Use final loader output across all sources, without destructive rebuilding."""
+        graph_fingerprints = _source_fingerprints(self.ledger_path)
+        # Preserve existing physical provenance outside include directives. Plugins
+        # may use it as an input, so it must stay tracked until no output refers to it.
+        fingerprints = dict(graph_fingerprints)
+        for row in self.db.query(LedgerIndexFile.path).all():
+            path = Path(row.path)
+            if path not in fingerprints and path.is_file():
+                fingerprints[path] = _fingerprint(path)
+        entries, errors, options = loader.load_file(str(self.ledger_path))
+        if errors:
+            raise ValueError("完整账本解析或校验失败")
+        loaded_files = {self.ledger_path} | {Path(path).resolve() for path in options.get("include", [])}
+        if loaded_files != set(graph_fingerprints) or _source_fingerprints(self.ledger_path) != graph_fingerprints:
+            raise ValueError("投影解析期间账本包含关系或源文件发生变化")
+        expected = {}
+        sources = {}
+        for entry in entries:
+            if not isinstance(entry, BeancountTransaction):
+                continue
+            filename = entry.meta.get("filename") if entry.meta else None
+            if filename not in sources:
+                sources[filename] = _source_path(entry)
+            source = sources[filename]
+            if source.is_file():
+                if source not in fingerprints:
+                    raise ValueError("插件引入未验证的源文件，请完整重建投影")
+                loaded_files.add(source)
+            digest = _content_hash(entry)
+            transaction_id = _transaction_id(entry, digest, source)
+            if transaction_id in expected:
+                transaction_id = uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"duplicate:{source}:{entry.meta.get('lineno', 0)}:{digest}:{transaction_id}",
+                ).hex
+            if transaction_id in expected:
+                raise ValueError("无法唯一标识插件生成的交易")
+            expected[transaction_id] = (entry, digest, str(source), int(entry.meta.get("lineno", 0)))
+        rows = self.db.query(
+            LedgerTransaction.id, LedgerTransaction.source_file,
+            LedgerTransaction.source_lineno, LedgerTransaction.content_hash,
+        ).all()
+        return self._apply_difference(
+            expected, {row.id: row for row in rows},
+            {path: fingerprints[path] for path in loaded_files}, started,
+            graph_fingerprints=graph_fingerprints, verified_fingerprints=fingerprints,
+        )
+
+    def _apply_difference(
+        self, expected, existing, fingerprints, started, *,
+        graph_fingerprints=None, verified_fingerprints=None,
+    ):
+        complete = graph_fingerprints is not None
+        targets = set(fingerprints)
+        compared_at = time.perf_counter()
+        removed = existing.keys() - expected.keys()
+        for batch in _chunks(removed):
+            self._delete_transaction_ids(batch)
+        added = changed = relocated = 0
+        positions = []
+        for transaction_id, (entry, digest, source_file, lineno) in expected.items():
+            old = existing.get(transaction_id)
+            if old is not None and old.content_hash == digest:
+                if (old.source_file, old.source_lineno) != (source_file, lineno):
+                    positions.append({"id": transaction_id, "source_file": source_file, "source_lineno": lineno})
+                continue
+            model = self._model_from_entry(entry)
+            model.id = transaction_id
+            if old is None:
+                self.db.add(model)
+                added += 1
+            else:
+                # Core updates preserve created_at and never load old children.
+                self.db.query(LedgerTransaction).filter(LedgerTransaction.id == transaction_id).update({
+                    column: getattr(model, column) for column in (
+                        "date", "flag", "payee", "narration", "transaction_type",
+                        "source_file", "source_lineno", "content_hash", "links_json",
+                    )
+                }, synchronize_session=False)
+                for child in (LedgerPosting, LedgerTag):
+                    self.db.query(child).filter(child.transaction_id == transaction_id).delete(synchronize_session=False)
+                for child_type, children in ((LedgerPosting, model.postings), (LedgerTag, model.tags)):
+                    values = [{
+                        **{column.name: getattr(child, column.name)
+                           for column in child_type.__table__.columns
+                           if column.name not in ("id", "transaction_id")},
+                        "transaction_id": transaction_id,
+                    } for child in children]
+                    if values:
+                        self.db.execute(child_type.__table__.insert(), values)
+                changed += 1
+        for batch in _chunks(positions):
+            self.db.execute(update(LedgerTransaction), batch)
+            relocated += len(batch)
+        if complete and _source_fingerprints(self.ledger_path) != graph_fingerprints:
+            raise ValueError("投影提交前账本包含关系或源文件发生变化")
+        for source, before in (verified_fingerprints or fingerprints).items():
+            if _fingerprint(source) != before:
+                raise ValueError("投影提交前源文件发生变化")
+        for target in sorted(targets):
+            if _fingerprint(target) != fingerprints[target]:
+                raise ValueError("投影提交前源文件发生变化")
+            self._record_file(target)
+        if complete:
+            for batch in _chunks({row.path for row in self.db.query(LedgerIndexFile.path).all()} - {str(p) for p in targets}):
+                self.db.query(LedgerIndexFile).filter(LedgerIndexFile.path.in_(batch)).delete(synchronize_session="fetch")
+        commit_started = time.perf_counter()
+        self.db.commit()
+        committed_at = time.perf_counter()
+        self.db.expire_all()
+        logger.info(
+            "ledger_projection mode=%s compare_ms=%.1f apply_ms=%.1f commit_ms=%.1f added=%d changed=%d relocated=%d removed=%d",
+            "loader_diff" if complete else "file_diff",
+            (compared_at - started) * 1000, (commit_started - compared_at) * 1000,
+            (committed_at - commit_started) * 1000, added, changed, relocated, len(removed),
+        )
+        return {"status": PROJECTION_READY, "transactions": len(expected), "files": len(targets)}
 
     def _delete_transaction_ids(self, ids):
         for child in (LedgerPosting, LedgerTag):

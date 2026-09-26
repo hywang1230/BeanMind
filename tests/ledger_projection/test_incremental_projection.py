@@ -92,20 +92,20 @@ def test_cross_file_move_and_delete_are_atomic(simple):
 
 
 @pytest.mark.parametrize("directive", ['option "booking_method" "FIFO"\n', 'plugin "beancount.plugins.auto_accounts"\n'])
-def test_global_semantics_falls_back(simple, monkeypatch, directive):
+def test_global_semantics_uses_loader_difference(simple, monkeypatch, directive):
     service, year, _ = simple
     service.ledger_path.write_text(directive + service.ledger_path.read_text())
     calls = []
-    monkeypatch.setattr(service, "full_rebuild", lambda: calls.append(1) or {"fallback": True})
+    monkeypatch.setattr(service, "_refresh_loaded_ledger", lambda started: calls.append(1) or {"fallback": True})
     assert service.refresh_files([year]) == {"fallback": True}
     assert calls == [1]
 
 
-def test_duplicate_id_falls_back(simple, monkeypatch):
+def test_duplicate_id_uses_loader_difference(simple, monkeypatch):
     service, year, other = simple
     other.write_text(txn(1))
     calls = []
-    monkeypatch.setattr(service, "full_rebuild", lambda: calls.append(1) or {"fallback": True})
+    monkeypatch.setattr(service, "_refresh_loaded_ledger", lambda started: calls.append(1) or {"fallback": True})
     assert service.refresh_files([other]) == {"fallback": True}
     assert calls == [1]
 
@@ -192,8 +192,8 @@ def test_interpolated_amount_uses_loader(simple, monkeypatch):
     service, year, _ = simple
     year.write_text(txn(1).replace("Assets:Cash  -1 CNY", "Assets:Cash"))
     calls = []
-    original = service.full_rebuild
-    monkeypatch.setattr(service, "full_rebuild", lambda: (calls.append(1), original())[1])
+    original = service._refresh_loaded_ledger
+    monkeypatch.setattr(service, "_refresh_loaded_ledger", lambda started: (calls.append(1), original(started))[1])
     service.refresh_files([year])
     assert calls == [1]
     assert service.db.query(LedgerPosting.amount_text).filter_by(account="Assets:Cash").scalar() == "-1"
@@ -223,9 +223,243 @@ def test_existing_balance_assertion_forces_full_validation(simple, monkeypatch):
     service.full_rebuild()
     year.write_text(txn(1, amount=2) + txn(2))
     calls = []
-    original = service.full_rebuild
-    monkeypatch.setattr(service, "full_rebuild", lambda: (calls.append(1), original())[1])
+    original = service._refresh_loaded_ledger
+    monkeypatch.setattr(service, "_refresh_loaded_ledger", lambda started: (calls.append(1), original(started))[1])
     with pytest.raises(ValueError):
         service.refresh_files([year])
     assert calls == [1]
+    assert service.status()["status"] == "DIRTY"
+
+
+@pytest.mark.parametrize("operation", ["create", "edit", "delete"])
+def test_default_plugin_writes_only_changed_transactions(simple, monkeypatch, operation):
+    service, year, _ = simple
+    service.ledger_path.write_text('plugin "beancount.plugins.auto_accounts"\n' + service.ledger_path.read_text())
+    service.full_rebuild()
+    original = service._model_from_entry
+    constructed = []
+    monkeypatch.setattr(service, "_model_from_entry", lambda e, *a: (constructed.append(e.meta.get("id")), original(e, *a))[1])
+    created = service.db.get(LedgerTransaction, "item-2").created_at
+    child_ids = service.db.query(LedgerPosting.id).filter_by(transaction_id="item-2").all()
+    if operation == "create":
+        year.write_text(year.read_text() + txn(3))
+    elif operation == "edit":
+        year.write_text(txn(1, amount=2) + txn(2))
+    else:
+        year.write_text(txn(2))
+    statements = []
+    def track(conn, cursor, stmt, params, ctx, many):
+        statements.append(stmt.upper())
+    event.listen(service.db.bind, "before_cursor_execute", track)
+    try:
+        service.refresh_files([year])
+    finally:
+        event.remove(service.db.bind, "before_cursor_execute", track)
+    assert constructed == {"create": ["item-3"], "edit": ["item-1"], "delete": []}[operation]
+    assert all("WHERE" in stmt for stmt in statements if stmt.lstrip().startswith("DELETE"))
+    assert service.db.get(LedgerTransaction, "item-2").created_at == created
+    assert service.db.query(LedgerPosting.id).filter_by(transaction_id="item-2").all() == child_ids
+    assert_full_equivalent(service)
+
+
+@pytest.mark.parametrize("explicit", [True, False])
+def test_loader_difference_duplicate_and_legacy_ids(simple, explicit):
+    service, year, other = simple
+    service.ledger_path.write_text('plugin "beancount.plugins.auto_accounts"\n' + service.ledger_path.read_text())
+    other.write_text(txn(1, explicit=explicit))
+    service.full_rebuild()
+    year.write_text(txn(1, extra='  note: "position shift"\n', amount=2) + txn(2, explicit=explicit))
+    service.refresh_files([year])
+    assert_full_equivalent(service)
+    other.write_text("")
+    service.refresh_files([other])
+    assert_full_equivalent(service)
+
+
+def test_loader_difference_tracks_include_addition_and_removal(simple):
+    from backend.infrastructure.persistence.db.models import LedgerIndexFile
+    service, year, other = simple
+    new = year.with_name("2026.beancount")
+    new.write_text(txn(3))
+    service.ledger_path.write_text(service.ledger_path.read_text() + 'include "2026.beancount"\n')
+    service.refresh_files([service.ledger_path, new])
+    assert service.db.get(LedgerTransaction, "item-3") is not None
+    assert_full_equivalent(service)
+    service.ledger_path.write_text(service.ledger_path.read_text().replace('include "2026.beancount"\n', ''))
+    service.refresh_files([service.ledger_path])
+    assert service.db.get(LedgerTransaction, "item-3") is None
+    assert service.db.get(LedgerIndexFile, str(new)) is None
+    assert_full_equivalent(service)
+
+
+def test_plugin_changes_other_file_and_generates_virtual_transactions(simple, monkeypatch):
+    import sys
+    import types
+    from beancount.core.data import Transaction
+
+    service, year, other = simple
+    other.write_text(txn(9))
+    plugin = types.ModuleType("beanmind_projection_test_plugin")
+    plugin.__plugins__ = ("transform",)
+    def transform(entries, options):
+        source = next((e for e in entries if isinstance(e, Transaction) and e.meta.get("id") == "item-1"), None)
+        result = []
+        for entry in entries:
+            if isinstance(entry, Transaction) and entry.meta.get("id") == "item-9":
+                entry = entry._replace(narration="source present" if source else "source absent")
+            result.append(entry)
+        if source:
+            result.append(source._replace(meta={"filename": "<generated>", "lineno": 0, "id": "generated"}))
+        return result, []
+    plugin.transform = transform
+    monkeypatch.setitem(sys.modules, plugin.__name__, plugin)
+    service.ledger_path.write_text(f'plugin "{plugin.__name__}"\n' + service.ledger_path.read_text())
+    service.full_rebuild()
+    year.write_text(txn(2))
+    service.refresh_files([year])
+    assert service.db.get(LedgerTransaction, "item-9").narration == "source absent"
+    assert service.db.get(LedgerTransaction, "generated") is None
+    assert_full_equivalent(service)
+    year.write_text(txn(1) + txn(2))
+    service.refresh_files([year])
+    assert service.db.get(LedgerTransaction, "item-9").narration == "source present"
+    assert service.db.get(LedgerTransaction, "generated") is not None
+    assert_full_equivalent(service)
+
+
+def test_loader_difference_rejects_changed_source_during_load(simple, monkeypatch):
+    from backend.infrastructure.persistence import ledger_projection
+    service, year, _ = simple
+    service.ledger_path.write_text('plugin "beancount.plugins.auto_accounts"\n' + service.ledger_path.read_text())
+    service.full_rebuild()
+    before = snapshot(service.db)
+    original = ledger_projection.loader.load_file
+    def changing_load(*args, **kwargs):
+        result = original(*args, **kwargs)
+        year.write_text(year.read_text() + txn(3))
+        return result
+    monkeypatch.setattr(ledger_projection.loader, "load_file", changing_load)
+    with pytest.raises(ValueError, match="发生变化"):
+        service.refresh_files([year])
+    assert snapshot(service.db) == before
+    assert service.status()["status"] == "DIRTY"
+
+
+def test_loader_difference_commit_failure_preserves_projection(simple, monkeypatch):
+    service, year, _ = simple
+    service.ledger_path.write_text('plugin "beancount.plugins.auto_accounts"\n' + service.ledger_path.read_text())
+    service.full_rebuild()
+    before = snapshot(service.db)
+    year.write_text(txn(2))
+    original = service.db.commit
+    calls = []
+    def commit():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("commit fault")
+        return original()
+    monkeypatch.setattr(service.db, "commit", commit)
+    with pytest.raises(RuntimeError, match="commit fault"):
+        service.refresh_files([year])
+    assert snapshot(service.db) == before
+    assert service.status()["status"] == "DIRTY"
+
+
+def test_loader_difference_recursive_wildcard_and_membership_change(simple, monkeypatch):
+    from backend.infrastructure.persistence import ledger_projection
+    service, year, _ = simple
+    nested = year.parent / "nested" / "a" / "b"
+    nested.mkdir(parents=True)
+    included = nested / "one.beancount"
+    included.write_text(txn(3))
+    service.ledger_path.write_text(service.ledger_path.read_text() + 'include "nested/**/*.beancount"\n')
+    service.refresh_files([service.ledger_path])
+    assert service.db.get(LedgerTransaction, "item-3") is not None
+    assert_full_equivalent(service)
+    service.ledger_path.write_text('plugin "beancount.plugins.auto_accounts"\n' + service.ledger_path.read_text())
+    service.full_rebuild()
+    before = snapshot(service.db)
+    original = ledger_projection.loader.load_file
+    def changing_membership(*args, **kwargs):
+        result = original(*args, **kwargs)
+        (nested / "two.beancount").write_text(txn(4))
+        return result
+    monkeypatch.setattr(ledger_projection.loader, "load_file", changing_membership)
+    with pytest.raises(ValueError, match="发生变化"):
+        service.refresh_files([year])
+    assert snapshot(service.db) == before
+    assert service.status()["status"] == "DIRTY"
+
+
+def test_plugin_physical_provenance_stays_tracked_and_new_sources_fail_closed(simple, monkeypatch):
+    import sys
+    import types
+    from beancount.core.data import Transaction
+    from backend.infrastructure.persistence.db.models import LedgerIndexFile
+
+    service, year, _ = simple
+    external = year.parent / "plugin-source.txt"
+    external.write_text("first")
+    plugin = types.ModuleType("beanmind_physical_provenance_test_plugin")
+    plugin.__plugins__ = ("transform",)
+    source_path = [external]
+    def transform(entries, options):
+        original = next(e for e in entries if isinstance(e, Transaction))
+        generated = original._replace(
+            meta={"filename": str(source_path[0]), "lineno": 1, "id": "physical-generated"},
+            narration=source_path[0].read_text(),
+        )
+        return [*entries, generated], []
+    plugin.transform = transform
+    monkeypatch.setitem(sys.modules, plugin.__name__, plugin)
+    service.ledger_path.write_text(f'plugin "{plugin.__name__}"\n' + service.ledger_path.read_text())
+    service.full_rebuild()
+    year.write_text(txn(1, amount=2) + txn(2))
+    service.refresh_files([year])
+    assert service.db.get(LedgerIndexFile, str(external)) is not None
+    external.write_text("second")
+    service.ensure_current()
+    assert service.db.get(LedgerTransaction, "physical-generated").narration == "second"
+    assert_full_equivalent(service)
+    before = snapshot(service.db)
+    new_source = external.with_name("new-plugin-source.txt")
+    new_source.write_text("new source")
+    source_path[0] = new_source
+    with pytest.raises(ValueError, match="未验证的源文件"):
+        service.refresh_files([year])
+    assert snapshot(service.db) == before
+    assert service.status()["status"] == "DIRTY"
+    assert service.db.get(LedgerIndexFile, str(external)) is not None
+
+
+def test_removed_plugin_provenance_is_still_verified_before_commit(simple, monkeypatch):
+    import sys
+    import types
+    from beancount.core.data import Transaction
+    from backend.infrastructure.persistence import ledger_projection
+    service, year, _ = simple
+    external = year.parent / "plugin-input.txt"
+    external.write_text("emit")
+    plugin = types.ModuleType("beanmind_removed_provenance_test_plugin")
+    plugin.__plugins__ = ("transform",)
+    def transform(entries, options):
+        if external.read_text() == "emit":
+            original = next(e for e in entries if isinstance(e, Transaction))
+            return [*entries, original._replace(meta={"filename": str(external), "lineno": 1, "id": "generated"})], []
+        return entries, []
+    plugin.transform = transform
+    monkeypatch.setitem(sys.modules, plugin.__name__, plugin)
+    service.ledger_path.write_text(f'plugin "{plugin.__name__}"\n' + service.ledger_path.read_text())
+    service.full_rebuild()
+    before = snapshot(service.db)
+    external.write_text("omit")
+    original = ledger_projection.loader.load_file
+    def changing_input(*args, **kwargs):
+        result = original(*args, **kwargs)
+        external.write_text("emit")
+        return result
+    monkeypatch.setattr(ledger_projection.loader, "load_file", changing_input)
+    with pytest.raises(ValueError, match="发生变化"):
+        service.refresh_files([year])
+    assert snapshot(service.db) == before
     assert service.status()["status"] == "DIRTY"

@@ -1,3 +1,5 @@
+import { showToast } from 'vant'
+import { useTransactionDraftStore } from '../stores/transactionDraft'
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 const routes: RouteRecordRaw[] = [
@@ -29,10 +31,22 @@ const routes: RouteRecordRaw[] = [
   { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
 ]
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(),
   routes,
   scrollBehavior(_to, _from, savedPosition) {
     return savedPosition || { top: 0 }
   },
 })
+
+// Keep the current draft and deletion context until the write has a known response
+// or the user explicitly finishes the read-only verification in the current page.
+router.beforeEach(() => {
+  const draftStore = useTransactionDraftStore()
+  if (draftStore.pendingWrite || draftStore.unconfirmed) {
+    showToast(draftStore.pendingWrite ? '正在保存，请等待操作结果' : '操作结果未确认，请先在当前页面核对')
+    return false
+  }
+})
+
+export default router
