@@ -3,6 +3,7 @@
 从 Beancount 文件读取和写入账户数据。
 """
 from pathlib import Path
+from backend.infrastructure.persistence.beancount.write_coordination import coordinated_write
 from typing import Optional, List, Dict
 from decimal import Decimal
 from datetime import datetime
@@ -174,6 +175,7 @@ class AccountRepositoryImpl(AccountRepository):
         
         return account_balances
     
+    @coordinated_write
     def create(self, account: Account) -> Account:
         """
         创建新账户
@@ -222,6 +224,7 @@ class AccountRepositoryImpl(AccountRepository):
         
         return account
     
+    @coordinated_write
     def delete(self, account_name: str, close_date=None) -> bool:
         """
         删除账户（关闭账户）
@@ -263,6 +266,7 @@ class AccountRepositoryImpl(AccountRepository):
         
         return True
     
+    @coordinated_write
     def reopen(self, account_name: str) -> bool:
         """
         重新开启账户（删除关闭记录）

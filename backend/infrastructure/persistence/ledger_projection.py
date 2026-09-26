@@ -6,7 +6,10 @@ import base64
 import hashlib
 import json
 import logging
+import re
+from functools import wraps
 import uuid
+import time
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -15,7 +18,7 @@ from typing import Iterable, Optional
 from beancount import loader
 from beancount.core.data import Transaction as BeancountTransaction
 from beancount.parser import parser
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, update
 from sqlalchemy.orm import Session, selectinload
 
 from backend.infrastructure.persistence.db.models import (
@@ -152,11 +155,11 @@ def _source_path(entry: BeancountTransaction) -> Path:
     return Path(filename).resolve()
 
 
-def _transaction_id(entry: BeancountTransaction, content_hash: str) -> str:
+def _transaction_id(entry: BeancountTransaction, content_hash: str, source_path: Path | None = None) -> str:
     explicit_id = entry.meta.get("id") if entry.meta else None
     if explicit_id:
         return str(explicit_id)
-    source = f"{_source_path(entry)}:{entry.meta.get('lineno', 0)}:{content_hash}"
+    source = f"{source_path or _source_path(entry)}:{entry.meta.get('lineno', 0)}:{content_hash}"
     return uuid.uuid5(uuid.NAMESPACE_URL, source).hex
 
 
@@ -197,6 +200,22 @@ def decode_transaction_cursor(cursor: str) -> tuple[date, int, str]:
         return date.fromisoformat(payload["date"]), lineno, payload["id"]
     except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
         raise InvalidTransactionCursorError("交易游标无效") from exc
+
+
+def _locked_write(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        from backend.infrastructure.persistence.beancount.ledger_write import ledger_lock
+
+        with ledger_lock(self.ledger_path):
+            return method(self, *args, **kwargs)
+    return wrapped
+
+
+def _chunks(values, size=400):
+    values = list(values)
+    for offset in range(0, len(values), size):
+        yield values[offset:offset + size]
 
 
 class LedgerProjectionService:
@@ -272,56 +291,50 @@ class LedgerProjectionService:
         record.status = status
         record.last_error = error
 
-    def mark_dirty(self, path: Path | str, error: Exception | str) -> None:
-        """记录投影错误；该操作不改变 Beancount 真源。"""
+    @_locked_write
+    def mark_dirty_files(self, paths: Iterable[Path | str], error: Exception | str = "write pending") -> None:
+        """Persist DIRTY before source replacement; failure must stop the caller."""
         self.db.rollback()
-        target = Path(path).resolve()
         try:
-            if target.exists():
-                self._record_file(target, PROJECTION_DIRTY, str(error))
-            else:
-                record = self.db.get(LedgerIndexFile, str(target))
-                if record is None:
-                    record = LedgerIndexFile(
-                        path=str(target),
-                        mtime_ns=0,
-                        size=0,
-                        content_hash="",
-                        indexed_at=datetime.now(),
-                        status=PROJECTION_DIRTY,
-                    )
-                    self.db.add(record)
-                record.status = PROJECTION_DIRTY
-                record.last_error = str(error)
-                record.indexed_at = datetime.now()
+            for path in paths:
+                target = Path(path).resolve()
+                if target.exists():
+                    self._record_file(target, PROJECTION_DIRTY, str(error))
+                else:
+                    record = self.db.get(LedgerIndexFile, str(target))
+                    if record is None:
+                        record = LedgerIndexFile(path=str(target), mtime_ns=0, size=0, content_hash="")
+                        self.db.add(record)
+                    record.status = PROJECTION_DIRTY
+                    record.last_error = str(error)
+                    record.indexed_at = datetime.now()
             self.db.commit()
         except Exception:
             self.db.rollback()
+            raise
+
+    def mark_dirty(self, path: Path | str, error: Exception | str) -> None:
+        """Compatibility error-reporting entry point; pre-write callers use strict API."""
+        try:
+            self.mark_dirty_files([path], error)
+        except Exception:
             logger.exception("无法记录账本投影 DIRTY 状态")
 
-    def _delete_transactions_for_files(self, paths: Iterable[Path | str]) -> None:
-        normalized = [str(Path(path).resolve()) for path in paths]
-        if not normalized:
-            return
-        ids = [
-            row[0]
-            for row in self.db.query(LedgerTransaction.id)
-            .filter(LedgerTransaction.source_file.in_(normalized))
-            .all()
-        ]
-        if ids:
-            self.db.query(LedgerPosting).filter(LedgerPosting.transaction_id.in_(ids)).delete(
-                synchronize_session=False
-            )
-            self.db.query(LedgerTag).filter(LedgerTag.transaction_id.in_(ids)).delete(
-                synchronize_session=False
-            )
-            self.db.query(LedgerTransaction).filter(LedgerTransaction.id.in_(ids)).delete(
-                synchronize_session=False
-            )
-
+    @_locked_write
     def full_rebuild(self) -> dict:
-        """从完整 Beancount 账本原子重建投影。"""
+        """Recover interrupted source writes before declaring any projection READY."""
+        from backend.infrastructure.persistence.beancount.ledger_write import (
+            has_pending_write, recover_ledger_write,
+        )
+
+        if has_pending_write(self.ledger_path):
+            recover_ledger_write(self.ledger_path, self._full_rebuild_impl)
+            return self.status()
+        return self._full_rebuild_impl()
+
+    @_locked_write
+    def _full_rebuild_impl(self) -> dict:
+        """从完整 Beancount 账本原子重建投影；恢复回调避免再次进入恢复。"""
         try:
             entries, errors, options = loader.load_file(str(self.ledger_path))
             if errors:
@@ -362,91 +375,188 @@ class LedgerProjectionService:
         return self.full_rebuild()
 
     def refresh_file(self, path: Path | str) -> dict:
-        """刷新一个可独立解析的交易文件；主文件变化时执行全量重建。"""
-        target = Path(path).resolve()
-        if target == self.ledger_path:
-            return self.full_rebuild()
-        if target.suffix != ".beancount" or not target.exists():
-            error = ValueError(f"无法安全增量刷新文件: {target}")
-            self.mark_dirty(target, error)
-            raise error
-        try:
-            entries, errors, _ = parser.parse_file(str(target))
-            if errors:
-                raise ValueError("; ".join(str(error) for error in errors[:10]))
-            if any(not isinstance(entry, BeancountTransaction) for entry in entries):
-                logger.info("文件包含全局或非交易指令，回退全量重建: %s", target)
-                return self.full_rebuild()
-            directives = ("include ", "plugin ", "option ")
-            if any(
-                line.strip().lower().startswith(directives)
-                for line in target.read_text(encoding="utf-8").splitlines()
-            ):
-                logger.info("文件包含全局配置，回退全量重建: %s", target)
-                return self.full_rebuild()
-            if any(
-                _source_path(entry) != target
-                for entry in entries
-                if isinstance(entry, BeancountTransaction)
-            ):
-                raise ValueError(f"文件无法独立投影: {target}")
-            self._delete_transactions_for_files([target])
-            used_ids = {row[0] for row in self.db.query(LedgerTransaction.id).all()}
-            transactions = [
-                self._model_from_entry(entry, used_ids)
-                for entry in entries
-                if isinstance(entry, BeancountTransaction)
-            ]
-            self.db.add_all(transactions)
-            self._record_file(target)
-            self.db.commit()
-            return {
-                "status": PROJECTION_READY,
-                "transactions": len(transactions),
-                "file": str(target),
-            }
-        except Exception as exc:
-            self.mark_dirty(target, exc)
-            raise
+        """Compatibility entry point for a single affected file."""
+        result = self.refresh_files([path])
+        if "files" in result:
+            result = {**result, "file": str(Path(path).resolve())}
+        return result
 
-    def ensure_current(self) -> dict:
-        """启动时复用未变化投影，只刷新安全变化，否则全量重建。"""
+    def _fast_path_safe(self, targets: set[Path]) -> bool:
+        # Options capable of changing booking/interpolation or plugins anywhere in
+        # the include graph require the loader. Only presentation options are safe.
         records = self.db.query(LedgerIndexFile).all()
-        if not records or any(record.status != PROJECTION_READY for record in records):
-            return self.full_rebuild()
-
-        changed: list[Path] = []
-        removed: list[Path] = []
+        if not records or not targets <= {Path(record.path) for record in records}:
+            return False
         for record in records:
             path = Path(record.path)
             if not path.exists():
-                removed.append(path)
-                continue
-            mtime_ns, size, content_hash = _fingerprint(path)
-            if (mtime_ns, size, content_hash) != (
-                record.mtime_ns,
-                record.size,
-                record.content_hash,
+                return False
+            if path not in targets and (
+                record.status != PROJECTION_READY or _fingerprint(path) !=
+                (record.mtime_ns, record.size, record.content_hash)
             ):
-                changed.append(path)
+                return False
+            for line in path.read_text(encoding="utf-8").splitlines():
+                text = line.strip()
+                if re.match(r'plugin\s|\d{4}-\d{2}-\d{2}\s+(pad|custom|balance)\s', text):
+                    return False
+                if re.match(r"option\s", text) and not re.match(
+                    r'option\s+"(?:title|operating_currency)"\s', text
+                ):
+                    return False
+                if path in targets and re.match(r'(include|option|plugin)\s', text):
+                    return False
+        return True
 
-        if not changed and not removed:
-            return self.status()
-        if self.ledger_path in changed or self.ledger_path in removed:
-            return self.full_rebuild()
-
+    @_locked_write
+    def refresh_files(self, paths: Iterable[Path | str], *, parsed_files=None) -> dict:
+        """Parse affected files and commit only changed rows in one transaction."""
+        started = time.perf_counter()
+        targets = {Path(path).resolve() for path in paths}
+        if not targets:
+            return {"status": PROJECTION_READY, "transactions": 0, "files": 0}
         try:
-            for path in removed:
-                self._delete_transactions_for_files([path])
-                self.db.query(LedgerIndexFile).filter(LedgerIndexFile.path == str(path)).delete(
-                    synchronize_session=False
-                )
+            if self.ledger_path in targets or not self._fast_path_safe(targets):
+                logger.info("投影刷新回退全量重建: global_or_unindexed")
+                return self.full_rebuild()
+            expected = {}
+            fingerprints = {}
+            resolved_sources = {}
+            for target in sorted(targets):
+                if target.suffix != ".beancount" or not target.exists():
+                    raise ValueError("无法安全增量刷新文件")
+                before = _fingerprint(target)
+                supplied = (parsed_files or {}).get(str(target))
+                if supplied is not None and supplied[1] == before:
+                    entries = supplied[0]
+                else:
+                    entries, errors, _ = parser.parse_file(str(target))
+                    if errors:
+                        raise ValueError("交易文件解析失败")
+                if _fingerprint(target) != before:
+                    raise ValueError("投影刷新期间源文件发生变化")
+                fingerprints[target] = before
+                for entry in entries:
+                    if not isinstance(entry, BeancountTransaction) or any(
+                        posting.units is None
+                        or not isinstance(getattr(posting.units, "number", None), Decimal)
+                        or not isinstance(getattr(posting.units, "currency", None), str)
+                        or posting.cost is not None
+                        or (posting.price is not None and not isinstance(posting.price.number, Decimal))
+                        for posting in getattr(entry, "postings", [])
+                    ):
+                        logger.info("投影刷新回退全量重建: booking_or_directive")
+                        return self.full_rebuild()
+                    source_name = entry.meta.get("filename") if entry.meta else None
+                    if source_name not in resolved_sources:
+                        resolved_sources[source_name] = _source_path(entry)
+                    if resolved_sources[source_name] != target:
+                        raise ValueError("解析条目源路径不匹配")
+                    digest = _content_hash(entry)
+                    transaction_id = _transaction_id(entry, digest, target)
+                    if transaction_id in expected:
+                        logger.info("投影刷新回退全量重建: duplicate_id")
+                        return self.full_rebuild()
+                    expected[transaction_id] = (entry, digest, str(target), int(entry.meta.get("lineno", 0)))
+            existing = {}
+            for batch in _chunks(str(target) for target in targets):
+                rows = self.db.query(
+                    LedgerTransaction.id, LedgerTransaction.source_file,
+                    LedgerTransaction.source_lineno, LedgerTransaction.content_hash,
+                ).filter(LedgerTransaction.source_file.in_(batch)).all()
+                existing.update((row.id, row) for row in rows)
+            for batch in _chunks(expected.keys() - existing.keys()):
+                if self.db.query(LedgerTransaction.id).filter(LedgerTransaction.id.in_(batch)).first():
+                    logger.info("投影刷新回退全量重建: cross_file_id")
+                    return self.full_rebuild()
+            compared_at = time.perf_counter()
+            removed = existing.keys() - expected.keys()
+            for batch in _chunks(removed):
+                self._delete_transaction_ids(batch)
+            added = changed = relocated = 0
+            positions = []
+            for transaction_id, (entry, digest, source_file, lineno) in expected.items():
+                old = existing.get(transaction_id)
+                if old is not None and old.content_hash == digest:
+                    if (old.source_file, old.source_lineno) != (source_file, lineno):
+                        positions.append({"id": transaction_id, "source_file": source_file, "source_lineno": lineno})
+                    continue
+                model = self._model_from_entry(entry)
+                if old is None:
+                    self.db.add(model)
+                    added += 1
+                else:
+                    # Core updates preserve created_at and never load old children.
+                    self.db.query(LedgerTransaction).filter(LedgerTransaction.id == transaction_id).update({
+                        column: getattr(model, column) for column in (
+                            "date", "flag", "payee", "narration", "transaction_type",
+                            "source_file", "source_lineno", "content_hash", "links_json",
+                        )
+                    }, synchronize_session=False)
+                    for child in (LedgerPosting, LedgerTag):
+                        self.db.query(child).filter(child.transaction_id == transaction_id).delete(synchronize_session=False)
+                    for child_type, children in ((LedgerPosting, model.postings), (LedgerTag, model.tags)):
+                        values = [{
+                            **{column.name: getattr(child, column.name)
+                               for column in child_type.__table__.columns
+                               if column.name not in ("id", "transaction_id")},
+                            "transaction_id": transaction_id,
+                        } for child in children]
+                        if values:
+                            self.db.execute(child_type.__table__.insert(), values)
+                    changed += 1
+            for batch in _chunks(positions):
+                self.db.execute(update(LedgerTransaction), batch)
+                relocated += len(batch)
+            for target in sorted(targets):
+                if _fingerprint(target) != fingerprints[target]:
+                    raise ValueError("投影提交前源文件发生变化")
+                self._record_file(target)
+            commit_started = time.perf_counter()
             self.db.commit()
-            for path in changed:
-                self.refresh_file(path)
-            return self.status()
-        except Exception:
+            committed_at = time.perf_counter()
+            self.db.expire_all()
+            logger.info(
+                "ledger_projection compare_ms=%.1f apply_ms=%.1f commit_ms=%.1f added=%d changed=%d relocated=%d removed=%d",
+                (compared_at - started) * 1000, (commit_started - compared_at) * 1000,
+                (committed_at - commit_started) * 1000, added, changed, relocated, len(removed),
+            )
+            return {"status": PROJECTION_READY, "transactions": len(expected), "files": len(targets)}
+        except Exception as exc:
+            self.db.rollback()
+            try:
+                self.mark_dirty_files(targets, exc)
+            except Exception:
+                logger.exception("无法记录账本投影 DIRTY 状态")
             raise
+
+    def _delete_transaction_ids(self, ids):
+        for child in (LedgerPosting, LedgerTag):
+            self.db.query(child).filter(child.transaction_id.in_(ids)).delete(synchronize_session=False)
+        self.db.query(LedgerTransaction).filter(LedgerTransaction.id.in_(ids)).delete(synchronize_session=False)
+
+    @_locked_write
+    def ensure_current(self) -> dict:
+        """Reuse unchanged projection; refresh affected files together."""
+        from backend.infrastructure.persistence.beancount.ledger_write import has_pending_write
+
+        if has_pending_write(self.ledger_path):
+            return self.full_rebuild()
+        records = self.db.query(LedgerIndexFile).all()
+        if not records or any(record.status != PROJECTION_READY for record in records):
+            return self.full_rebuild()
+        changed = []
+        for record in records:
+            path = Path(record.path)
+            if not path.exists():
+                return self.full_rebuild()
+            if _fingerprint(path) != (record.mtime_ns, record.size, record.content_hash):
+                changed.append(path)
+        if changed:
+            result = self.refresh_files(changed)
+            if "status" not in result:
+                return result
+        return self.status()
 
     def status(self) -> dict:
         records = self.db.query(LedgerIndexFile).order_by(LedgerIndexFile.path).all()
@@ -528,6 +638,13 @@ class LedgerProjectionService:
         return {"status": PROJECTION_READY, "consistent": True, "summary": actual}
 
     def assert_ready(self) -> None:
+        # sqlite3 legacy transaction mode does not BEGIN for SELECT. Establish
+        # the snapshot before the status read, shared by subsequent queries.
+        connection = self.db.connection()
+        if connection.dialect.name == "sqlite":
+            raw = connection.connection.driver_connection
+            if not raw.in_transaction:
+                connection.exec_driver_sql("BEGIN")
         records = self.db.query(LedgerIndexFile).all()
         if not records or any(record.status != PROJECTION_READY for record in records):
             raise LedgerProjectionDirtyError("账本查询投影不可用，请重建后重试")

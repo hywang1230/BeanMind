@@ -4,6 +4,7 @@
 处理 DTO 转换。
 """
 from typing import List, Dict, Optional
+from functools import wraps
 from decimal import Decimal
 from datetime import date, datetime
 
@@ -11,6 +12,14 @@ from backend.domain.transaction.entities import Transaction, Posting, Transactio
 from backend.domain.transaction.repositories import TransactionRepository
 from backend.domain.transaction.services import TransactionService
 from backend.domain.account.repositories import AccountRepository
+
+
+def _ledger_command(method):
+    @wraps(method)
+    def coordinated(self, *args, **kwargs):
+        with self.transaction_repository.command_context(self.account_repository):
+            return method(self, *args, **kwargs)
+    return coordinated
 
 
 class TransactionApplicationService:
@@ -42,6 +51,7 @@ class TransactionApplicationService:
             account_repository
         )
     
+    @_ledger_command
     def create_transaction(
         self,
         txn_date: str,
@@ -176,6 +186,7 @@ class TransactionApplicationService:
         """
         return self.transaction_repository.get_all_payees()
     
+    @_ledger_command
     def update_transaction(
         self,
         transaction_id: str,
@@ -215,7 +226,11 @@ class TransactionApplicationService:
         if description:
             transaction.description = description
         if postings is not None:
+            previous_postings = transaction.postings
             transaction.postings = [self._dto_to_posting(p) for p in postings]
+            for index, posting in enumerate(transaction.postings):
+                if index < len(previous_postings):
+                    posting.meta = {**(previous_postings[index].meta or {}), **(posting.meta or {})}
             # 重新验证平衡
             self.transaction_service.validate_transaction(transaction)
         if payee is not None:
@@ -229,6 +244,7 @@ class TransactionApplicationService:
         updated = self.transaction_repository.update(transaction)
         return self._transaction_to_dto(updated)
     
+    @_ledger_command
     def delete_transaction(self, transaction_id: str) -> bool:
         """
         删除交易

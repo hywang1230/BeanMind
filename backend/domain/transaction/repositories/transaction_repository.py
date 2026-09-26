@@ -4,6 +4,7 @@
 具体实现由基础设施层提供（Beancount + SQLite）。
 """
 from abc import ABC, abstractmethod
+from contextlib import nullcontext
 from typing import Optional, List, Dict
 from datetime import date, datetime
 from decimal import Decimal
@@ -24,6 +25,10 @@ class TransactionRepository(ABC):
     - 需要保证两者的一致性
     """
     
+    def command_context(self, account_repository=None):
+        """围住命令读取、验证与写入；具体存储实现负责协调。"""
+        return nullcontext()
+
     @abstractmethod
     def find_by_id(self, transaction_id: str) -> Optional[Transaction]:
         """

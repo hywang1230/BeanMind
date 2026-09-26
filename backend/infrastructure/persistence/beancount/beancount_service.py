@@ -3,6 +3,7 @@
 封装 Beancount 账本操作
 """
 from pathlib import Path
+from backend.infrastructure.persistence.beancount.write_coordination import coordinated_write, coordinated_read
 from typing import List, Dict, Optional
 from datetime import datetime, date
 from decimal import Decimal
@@ -32,11 +33,14 @@ class BeancountService:
         # 加载账本
         self.reload()
     
+    @coordinated_read
     def reload(self) -> None:
         """重新加载账本文件"""
         if not self.ledger_path.exists():
             raise FileNotFoundError(f"Ledger file not found: {self.ledger_path}")
         
+        from backend.infrastructure.persistence.beancount.ledger_write import assert_ledger_readable
+        assert_ledger_readable(self.ledger_path)
         self.entries, self.errors, self.options = loader.load_file(str(self.ledger_path))
         
         if self.errors:
@@ -156,6 +160,7 @@ class BeancountService:
         
         return balances[account_name].get(currency, Decimal(0))
     
+    @coordinated_write
     def append_transaction(self, transaction_data: Dict) -> str:
         """
         追加交易到账本文件
@@ -384,6 +389,7 @@ class BeancountService:
         """
         return self.ledger_path.parent / f"transactions_{year}.beancount"
     
+    @coordinated_write
     def ensure_year_file(self, year: int) -> Path:
         """
         确保年份对应的交易文件存在，并在 main.beancount 中被引用
@@ -411,6 +417,7 @@ class BeancountService:
         
         return year_file
     
+    @coordinated_write
     def _add_include_to_main(self, filename: str) -> None:
         """
         在 main.beancount 中添加 include 指令

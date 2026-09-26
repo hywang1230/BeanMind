@@ -6,7 +6,7 @@
 from pathlib import Path
 from threading import Lock
 from typing import Optional
-import os
+from backend.infrastructure.persistence.beancount.ledger_write import ledger_lock, assert_ledger_readable
 
 from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
 
@@ -41,7 +41,8 @@ class BeancountServiceProvider:
         """
         ledger_path = Path(ledger_path)
         
-        with cls._lock:
+        with ledger_lock(ledger_path), cls._lock:
+            assert_ledger_readable(ledger_path)
             # 检查文件是否存在
             if not ledger_path.exists():
                 raise FileNotFoundError(f"Ledger file not found: {ledger_path}")
@@ -100,11 +101,13 @@ class BeancountServiceProvider:
         
         立即重新加载账本文件，更新缓存。
         """
-        with cls._lock:
-            if cls._ledger_path and cls._ledger_path.exists():
-                cls._service = BeancountService(cls._ledger_path)
-                cls._last_mtime = cls._get_file_mtime(cls._ledger_path)
-    
+        path = cls._ledger_path
+        if path is not None:
+            with ledger_lock(path), cls._lock:
+                if cls._ledger_path == path and path.exists():
+                    cls._service = BeancountService(path)
+                    cls._last_mtime = cls._get_file_mtime(path)
+
     @classmethod
     def clear(cls) -> None:
         """清除缓存

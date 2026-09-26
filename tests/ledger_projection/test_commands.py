@@ -76,7 +76,7 @@ def test_projection_failure_keeps_beancount_write_and_marks_dirty(
     year_file = ledger_path.parent / "transactions_2025.beancount"
     before = year_file.read_text(encoding="utf-8")
     monkeypatch.setattr(
-        projection, "refresh_file", lambda _: (_ for _ in ()).throw(RuntimeError("boom"))
+        projection, "refresh_files", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom"))
     )
 
     created = _application_service(beancount, db_session, projection).create_transaction(

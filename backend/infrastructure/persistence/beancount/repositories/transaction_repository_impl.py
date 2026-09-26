@@ -8,20 +8,49 @@ from decimal import Decimal
 from datetime import date
 import logging
 import uuid
+from contextlib import contextmanager
+from functools import wraps
+import time
+import re
 
 from beancount.core.data import Transaction as BeancountTransaction, Posting as BeancountPosting
 from beancount.core import amount
+from beancount.core.position import Cost
 from beancount.parser import parser, printer
 from sqlalchemy.orm import Session, selectinload
 
 from backend.domain.transaction.entities import Transaction, Posting, TransactionType, TransactionFlag
 from backend.domain.transaction.repositories import TransactionRepository
 from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
-from backend.infrastructure.persistence.db.models import LedgerTransaction
-from backend.infrastructure.persistence.ledger_projection import LedgerProjectionService
+from backend.infrastructure.persistence.db.models import LedgerTransaction, LedgerIndexFile
+from backend.infrastructure.persistence.ledger_projection import (
+    LedgerProjectionService, LedgerProjectionDirtyError, _fingerprint, _content_hash,
+)
+from backend.infrastructure.persistence.beancount.ledger_write import (
+    ledger_lock, commit_ledger_files, has_pending_write,
+)
+
 
 
 logger = logging.getLogger(__name__)
+
+
+def _command(method):
+    @wraps(method)
+    def coordinated(self, *args, **kwargs):
+        with self.command_context():
+            return method(self, *args, **kwargs)
+    return coordinated
+
+
+def _read(method):
+    @wraps(method)
+    def coordinated(self, *args, **kwargs):
+        with ledger_lock(self.beancount_service.ledger_path):
+            if self.projection_service and not self._command_depth:
+                self.projection_service.assert_ready()
+            return method(self, *args, **kwargs)
+    return coordinated
 
 
 class TransactionRepositoryImpl(TransactionRepository):
@@ -52,9 +81,86 @@ class TransactionRepositoryImpl(TransactionRepository):
         self.projection_service = projection_service
         self._transactions_cache: Dict[str, Transaction] = {}
         self._cache_loaded = False
+        self._command_depth = 0
+        self._source_snapshots = {}
+        self._source_fingerprints = {}
         if load_transactions:
             self._load_transactions()
     
+    @contextmanager
+    def command_context(self, account_repository=None):
+        """锁内刷新依赖，避免使用等待锁之前取得的源位置和账户状态。"""
+        started = time.perf_counter()
+        with ledger_lock(self.beancount_service.ledger_path):
+            if self._command_depth:
+                yield
+                return
+            waited = (time.perf_counter() - started) * 1000
+            self._command_depth = 1
+            try:
+                if self.db_session.new or self.db_session.dirty or self.db_session.deleted:
+                    raise RuntimeError("账本命令不能携带尚未提交的数据库修改")
+                from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
+                self.db_session.rollback()
+                if self.projection_service:
+                    if has_pending_write(self.beancount_service.ledger_path):
+                        self.projection_service.full_rebuild()
+                    records = self.db_session.query(LedgerIndexFile).all()
+                    if not records:
+                        self.projection_service.full_rebuild()
+                    elif any(row.status != "READY" for row in records):
+                        raise LedgerProjectionDirtyError("账本查询投影不可用，请重建后重试")
+                    elif any(
+                        not Path(row.path).exists()
+                        or _fingerprint(Path(row.path)) != (row.mtime_ns, row.size, row.content_hash)
+                        for row in records
+                    ):
+                        self.projection_service.ensure_current()
+                        BeancountServiceProvider.invalidate()
+                elif has_pending_write(self.beancount_service.ledger_path):
+                    raise RuntimeError("账本存在未完成恢复，不能继续写入")
+                load_started = time.perf_counter()
+                self.beancount_service = BeancountServiceProvider.get_service(
+                    self.beancount_service.ledger_path
+                )
+                logger.info("ledger_source_load duration_ms=%.1f", (time.perf_counter() - load_started) * 1000)
+                if self.beancount_service.errors:
+                    raise ValueError("账本校验失败，拒绝写入")
+                self._transactions_cache.clear()
+                self._cache_loaded = False
+                if self.projection_service is None:
+                    self._load_transactions()
+                self._source_snapshots.clear()
+                self._source_fingerprints.clear()
+                if account_repository is not None and hasattr(account_repository, "_load_accounts"):
+                    account_repository.beancount_service = self.beancount_service
+                    account_repository._load_accounts()
+                yield
+            finally:
+                self._command_depth = 0
+                self._source_snapshots.clear()
+                logger.info("ledger_command total_ms=%.1f lock_wait_ms=%.1f",
+                            (time.perf_counter() - started) * 1000, waited)
+
+    def _read_source(self, path, *, parse_entries=True):
+        path = Path(path).resolve()
+        if path not in self._source_snapshots:
+            before = _fingerprint(path)
+            content = path.read_text(encoding="utf-8")
+            if _fingerprint(path) != before:
+                raise ValueError("交易源文件在读取期间已改变")
+            self._source_snapshots[path] = (content, None)
+            self._source_fingerprints[path] = before
+        content, entries = self._source_snapshots[path]
+        if parse_entries and entries is None:
+            parse_started = time.perf_counter()
+            entries, errors, _ = parser.parse_string(content, report_filename=str(path))
+            if errors:
+                raise ValueError("交易源文件无法安全解析")
+            self._source_snapshots[path] = (content, entries)
+            logger.info("ledger_source_parse duration_ms=%.1f", (time.perf_counter() - parse_started) * 1000)
+        return self._source_snapshots[path]
+
     def _load_transactions(self):
         """从 Beancount 加载所有交易"""
         self._transactions_cache.clear()
@@ -139,8 +245,8 @@ class TransactionRepositoryImpl(TransactionRepository):
             posting = BeancountPosting(
                 account=p.account,
                 units=amount.Amount(p.amount, p.currency),
-                cost=amount.Amount(p.cost, p.cost_currency) if p.cost else None,
-                price=amount.Amount(p.price, p.price_currency) if p.price else None,
+                cost=Cost(p.cost, p.cost_currency, None, None) if p.cost is not None else None,
+                price=amount.Amount(p.price, p.price_currency) if p.price is not None else None,
                 flag=p.flag,
                 meta=p.meta or {}
             )
@@ -245,6 +351,7 @@ class TransactionRepositoryImpl(TransactionRepository):
                 self.projection_service.mark_dirty(file, exc)
                 break
     
+    @_read
     def find_by_id(self, transaction_id: str) -> Optional[Transaction]:
         """根据 ID 查找交易"""
         cached = self._transactions_cache.get(transaction_id)
@@ -261,24 +368,60 @@ class TransactionRepositoryImpl(TransactionRepository):
                 .first()
             )
             if row:
-                source_entries, source_errors, _ = parser.parse_file(row.source_file)
-                if source_errors:
-                    raise ValueError(
-                        f"无法解析交易源文件，拒绝可能丢失元数据的写操作: {row.source_file}"
+                content = self._read_source(row.source_file, parse_entries=False)[0]
+                source_entry = None
+                # 常规记录只解析目标块。存在 parser 上下文指令或摘要不符时，
+                # 仍解析完整源快照，保留 pushtag/pushmeta 等历史语义。
+                if not re.search(r"(?m)^\s*(?:pushtag|poptag|pushmeta|popmeta)\b", content):
+                    lines = content.splitlines(keepends=True)
+                    start = row.source_lineno - 1
+                    end = start + 1
+                    while end < len(lines):
+                        line = lines[end]
+                        if line.strip() and not line[0].isspace() and not line.lstrip().startswith(";"):
+                            break
+                        end += 1
+                    if 0 <= start < len(lines):
+                        parsed, errors, _ = parser.parse_string(
+                            "".join(lines[start:end]), report_filename=row.source_file,
+                            report_firstline=row.source_lineno,
+                        )
+                        if not errors and len(parsed) == 1 and isinstance(parsed[0], BeancountTransaction):
+                            try:
+                                if _content_hash(parsed[0]) == row.content_hash:
+                                    source_entry = parsed[0]
+                            except (AttributeError, TypeError):
+                                pass  # booking/interpolation requires the complete source below.
+                if source_entry is None:
+                    _, source_entries = self._read_source(row.source_file)
+                    source_entry = next(
+                        (
+                            entry for entry in source_entries
+                            if isinstance(entry, BeancountTransaction)
+                            and entry.meta.get("lineno") == row.source_lineno
+                        ),
+                        None,
                     )
-                source_entry = next(
-                    (
-                        entry
-                        for entry in source_entries
-                        if isinstance(entry, BeancountTransaction)
-                        and entry.meta.get("lineno") == row.source_lineno
-                    ),
-                    None,
-                )
                 if source_entry is None:
                     raise ValueError(
                         f"无法在源位置找到交易: {row.source_file}:{row.source_lineno}"
                     )
+                # 行号必须仍指向同一内容，不能将另一笔源元数据写回。
+                try:
+                    source_hash = _content_hash(source_entry)
+                except (AttributeError, TypeError):
+                    # 成本/推导分录使用完整 loader 已验证的业务内容。
+                    source_hash = None
+                if source_hash is None or source_hash != row.content_hash:
+                    # 全局插件/booking 可以改变分录；用完整 loader 结果核对身份。
+                    matching = (
+                        entry for entry in self.beancount_service.entries
+                        if isinstance(entry, BeancountTransaction)
+                        and str(Path(entry.meta.get("filename", "")).resolve()) == row.source_file
+                        and entry.meta.get("lineno") == row.source_lineno
+                    )
+                    if not any(_content_hash(entry) == row.content_hash for entry in matching):
+                        raise ValueError("交易源文件与投影不一致，请刷新后重试")
                 transaction = Transaction(
                     id=row.id,
                     date=row.date,
@@ -445,241 +588,108 @@ class TransactionRepositoryImpl(TransactionRepository):
                    (t.payee and keyword_lower in t.payee.lower())
             ]
     
+    def _year_changes(self, transaction, changes):
+        target = self.beancount_service.get_year_file_path(transaction.date.year).resolve()
+        if target not in changes:
+            if target.exists():
+                changes[target] = self._read_source(target, parse_entries=False)[0]
+            else:
+                changes[target] = f"; {transaction.date.year} 年度交易记录\n"
+                self._source_fingerprints[target] = None
+                main = self.beancount_service.ledger_path.resolve()
+                content = self._read_source(main, parse_entries=False)[0]
+                include = f'include "{target.name}"'
+                if include not in content.splitlines():
+                    changes[main] = content.rstrip("\n") + "\n" + include + "\n"
+        return target
+
+    @staticmethod
+    def _replace_block(content, lineno, replacement):
+        lines = content.splitlines(keepends=True)
+        start = int(lineno) - 1
+        if start < 0 or start >= len(lines):
+            raise ValueError("交易源位置已失效")
+        end = start + 1
+        # 空行和注释可以位于交易内部；下一个非缩进指令才是边界。
+        while end < len(lines):
+            line = lines[end]
+            if line.strip() and not line[0].isspace() and not line.lstrip().startswith(";"):
+                break
+            end += 1
+        # 保留交易后面的空行/注释，避免破坏相邻说明。
+        while end > start + 1 and (not lines[end - 1].strip() or lines[end - 1].lstrip().startswith(";")):
+            end -= 1
+        return "".join(lines[:start]) + replacement + "".join(lines[end:])
+
+    def _commit_changes(self, changes):
+        started = time.perf_counter()
+        def before_commit():
+            if self.projection_service:
+                self.projection_service.mark_dirty_files(changes)
+        def after_commit(parsed_files):
+            if self.projection_service:
+                self.projection_service.refresh_files(changes, parsed_files=parsed_files)
+        try:
+            return commit_ledger_files(
+                self.beancount_service.ledger_path, changes,
+                before_commit=before_commit, after_commit=after_commit,
+                expected_fingerprints={str(path): self._source_fingerprints[path] for path in changes},
+                validation_context=(self.beancount_service.entries, self.beancount_service.options),
+            )
+        finally:
+            from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
+            BeancountServiceProvider.invalidate()
+            self._source_snapshots.clear()
+            logger.info("ledger_save files=%d total_ms=%.1f", len(changes),
+                        (time.perf_counter() - started) * 1000)
+
+    @_command
     def create(self, transaction: Transaction) -> Transaction:
-        """
-        创建新交易
-        
-        同时写入 Beancount 文件和 SQLite 数据库。
-        交易根据日期年份保存到对应的年份文件中（如 transactions_2025.beancount）。
-        """
-        # 生成 ID（如果没有）
         if not transaction.id:
             transaction.id = uuid.uuid4().hex
-        
-        # 转换为 Beancount 格式
-        beancount_txn = self._domain_to_beancount(transaction)
-        
-        # 根据交易日期获取对应年份的文件，并确保文件存在
-        year = transaction.date.year
-        year_file_existed = self.beancount_service.get_year_file_path(year).exists()
-        year_file = self.beancount_service.ensure_year_file(year)
-        
-        # 写入到对应年份的 Beancount 文件
-        with open(year_file, "a", encoding="utf-8") as f:
-            f.write("\n")
-            f.write(printer.format_entry(beancount_txn))
-            f.write("\n")
-        
+        changes = {}
+        target = self._year_changes(transaction, changes)
+        changes[target] += "\n" + printer.format_entry(self._domain_to_beancount(transaction)) + "\n"
+        self._commit_changes(changes)
         self._transactions_cache[transaction.id] = transaction
-        self._refresh_projection(
-            year_file if year_file_existed else self.beancount_service.ledger_path
-        )
         return transaction
 
-    
+    @_command
     def update(self, transaction: Transaction) -> Transaction:
-        """
-        更新交易
-        
-        策略：
-        1. 根据元数据中的位置信息定位原有交易
-        2. 如果文件相同，进行原地更新；否则删除旧的创建新的
-        3. 更新缓存和元数据
-        """
-        if not self.exists(transaction.id):
+        original = self.find_by_id(transaction.id)
+        if original is None:
             raise ValueError(f"交易 '{transaction.id}' 不存在")
-            
-        # 获取原有交易的元数据（位置信息）
-        # 尝试从传入的对象获取，如果缺失则回退到缓存查找
-        if not transaction.meta or 'filename' not in transaction.meta or 'lineno' not in transaction.meta:
-            cached_txn = self._transactions_cache.get(transaction.id)
-            if cached_txn and cached_txn.meta and 'filename' in cached_txn.meta:
-                # 复制元数据位置信息
-                if not transaction.meta:
-                    transaction.meta = {}
-                transaction.meta['filename'] = cached_txn.meta['filename']
-                transaction.meta['lineno'] = cached_txn.meta['lineno']
-            else:
-                raise ValueError("无法定位原始交易文件位置，更新失败")
-            
-        filename = transaction.meta['filename']
-        lineno = transaction.meta['lineno']
-        
-        # 检查是否需要移动文件（例如年份改变）
-        # 计算新交易应该所在的年份文件
-        year = transaction.date.year
-        target_year_file = self.beancount_service.get_year_file_path(year)
-        
-        # 统一路径格式进行比较
-        current_file_path = Path(filename).resolve()
-        target_file_path = Path(target_year_file).resolve()
-        
-        if current_file_path == target_file_path:
-            # 文件相同，进行原地更新
-            beancount_txn = self._domain_to_beancount(transaction)
-            new_content = printer.format_entry(beancount_txn)
-            
-            if not self._replace_transaction_in_file(filename, lineno, new_content):
-                 raise RuntimeError(f"无法在文件中原地更新交易: {filename}:{lineno}")
-            
-            self._transactions_cache[transaction.id] = transaction
-            self._refresh_projection(current_file_path)
-            return transaction
-            
+        meta = original.meta or {}
+        if not meta.get("filename") or not meta.get("lineno"):
+            raise ValueError("无法定位原始交易文件位置")
+        source = Path(meta["filename"]).resolve()
+        content = self._read_source(source, parse_entries=False)[0]
+        target = self.beancount_service.get_year_file_path(transaction.date.year).resolve()
+        formatted = printer.format_entry(self._domain_to_beancount(transaction)).rstrip("\n") + "\n"
+        if source == target:
+            changes = {source: self._replace_block(content, meta["lineno"], formatted)}
         else:
-            # 文件不同（跨年修改），走原有的“删除旧的 -> 创建新的”逻辑
-            
-            # 1. 从文件中删除原交易
-            if not self._remove_transaction_from_file(filename, lineno):
-                 raise ValueError(f"无法从文件中删除原交易: {filename}:{lineno}")
-                 
-            # 2. 先移除旧年份投影，避免同一稳定 UUID 在新年份插入时冲突。
-            self._refresh_projection(current_file_path)
+            changes = {source: self._replace_block(content, meta["lineno"], "")}
+            self._year_changes(transaction, changes)
+            changes[target] += "\n" + formatted + "\n"
+        self._commit_changes(changes)
+        self._transactions_cache[transaction.id] = transaction
+        return transaction
 
-            # 3. 创建新交易
-            try:
-                return self.create(transaction)
-            except Exception as e:
-                raise RuntimeError(f"更新交易失败（旧数据已删除，新数据写入失败）: {e}")
-
-    def _replace_transaction_in_file(self, filename: str, lineno: int, new_content: str) -> bool:
-        """
-        在文件中原地替换交易内容
-        
-        Args:
-            filename: 文件路径
-            lineno: 原交易起始行号（1-based）
-            new_content: 新的交易内容字符串
-        """
-        path = Path(filename)
-        if not path.exists():
-            return False
-            
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                
-            if lineno < 1 or lineno > len(lines):
-                return False
-                
-            # Beancount lineno 是 1-based
-            start_idx = lineno - 1
-            
-            # 确定旧交易块的结束位置
-            end_idx = start_idx + 1
-            while end_idx < len(lines):
-                line = lines[end_idx]
-                stripped = line.strip()
-                
-                # 空行视为 Entry 结束符
-                if not stripped:
-                    break
-                    
-                # 缩进的行属于当前 Entry
-                if line[0] == ' ' or line[0] == '\t':
-                    end_idx += 1
-                    continue
-                
-                # 非缩进且非空行，说明是下一个 Entry
-                break
-            
-            # 准备新内容，确保末尾有换行符（如果不在文件末尾）
-            if not new_content.endswith('\n'):
-                new_content += '\n'
-                
-            # 如果不是替换文件的最后一部分，且新内容没空行分隔，可能需要补一个空行（视情况而定）
-            # printer.format_entry 通常不带尾部空行，但为了美观我们可能希望保持
-            
-            # 替换内容
-            # 将新内容按行分割
-            new_lines_list = new_content.splitlines(keepends=True)
-            
-            # 执行替换 (lines[start_idx:end_idx] 是旧内容)
-            lines[start_idx:end_idx] = new_lines_list
-            
-            # 写回文件
-            with open(path, "w", encoding="utf-8") as f:
-                f.writelines(lines)
-                
-            return True
-            
-        except Exception as e:
-            # print(f"DEBUG: Replace failed: {e}")
-            return False
-    
-    def _remove_transaction_from_file(self, filename: str, lineno: int) -> bool:
-        """
-        从文件中删除指定行号的交易块
-        
-        Args:
-            filename: 文件路径
-            lineno: 交易起始行号（1-based）
-        """
-        path = Path(filename)
-        if not path.exists():
-            return False
-            
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                
-            if lineno < 1 or lineno > len(lines):
-                return False
-                
-            # Beancount lineno 是 1-based，转换为 list index
-            start_idx = lineno - 1
-            
-            # 确定交易块的结束位置
-            end_idx = start_idx + 1
-            while end_idx < len(lines):
-                line = lines[end_idx]
-                stripped = line.strip()
-                
-                # 空行视为 Entry 结束符
-                if not stripped:
-                    break
-                    
-                # 缩进的行属于当前 Entry
-                if line[0] == ' ' or line[0] == '\t':
-                    end_idx += 1
-                    continue
-                
-                # 非缩进且非空行，说明是下一个 Entry
-                break
-            
-            # 尝试把后面的空行也删掉一个，避免留下太多空行
-            if end_idx < len(lines) and lines[end_idx].strip() == "":
-                 end_idx += 1
-
-            # 删除内容
-            del lines[start_idx:end_idx]
-            
-            # 写回文件
-            with open(path, "w", encoding="utf-8") as f:
-                f.writelines(lines)
-                
-            return True
-            
-        except Exception as e:
-            return False
-    
+    @_command
     def delete(self, transaction_id: str) -> bool:
-        """按解析得到的源位置删除交易，并增量刷新投影。"""
-        if not self.exists(transaction_id):
+        transaction = self.find_by_id(transaction_id)
+        if transaction is None:
             return False
-
-        transaction = self._transactions_cache[transaction_id]
-        filename = transaction.meta.get("filename") if transaction.meta else None
-        lineno = transaction.meta.get("lineno") if transaction.meta else None
-        if not filename or not lineno:
-            raise ValueError("无法定位原始交易文件位置，删除失败")
-        if not self._remove_transaction_from_file(filename, int(lineno)):
-            raise RuntimeError(f"无法从文件中删除交易: {filename}:{lineno}")
-
-        del self._transactions_cache[transaction_id]
-        self._refresh_projection(filename)
+        meta = transaction.meta or {}
+        if not meta.get("filename") or not meta.get("lineno"):
+            raise ValueError("无法定位原始交易文件位置")
+        source = Path(meta["filename"]).resolve()
+        content = self._read_source(source, parse_entries=False)[0]
+        self._commit_changes({source: self._replace_block(content, meta["lineno"], "")})
+        self._transactions_cache.pop(transaction_id, None)
         return True
-    
+
     def _is_target_transaction(self, lines: list, start_index: int, transaction: Transaction) -> bool:
         """
         检查从 start_index 开始的交易块是否是目标交易
@@ -825,6 +835,7 @@ class TransactionRepositoryImpl(TransactionRepository):
             "expense_total": {curr: float(val) for curr, val in expense_total.items()}
         }
 
+    @_read
     def get_all_payees(self) -> List[str]:
         """获取所有历史交易方（Payee）"""
         if self.projection_service:
