@@ -20,7 +20,8 @@ def test_save_benchmark_nearest_rank():
 
 
 @pytest.mark.parametrize("mode", ["explicit", "mixed", "legacy"])
-def test_save_benchmark_isolated_api_and_full_equivalence(tmp_path, mode):
+@pytest.mark.parametrize("plugin_mode", ["none", "auto_accounts"])
+def test_save_benchmark_isolated_api_and_full_equivalence(tmp_path, mode, plugin_mode):
     protected = tmp_path / "protected"
     protected.mkdir()
     ledger = protected / "main.beancount"
@@ -34,7 +35,7 @@ def test_save_benchmark_isolated_api_and_full_equivalence(tmp_path, mode):
     report = tmp_path / "result.json"
     result = subprocess.run(
         [sys.executable, str(SCRIPT), "--sizes", "4", "7", "--iterations", "2",
-         "--id-mode", mode, "--output", str(report)],
+         "--id-mode", mode, "--plugin-mode", plugin_mode, "--output", str(report)],
         env=environment, cwd=ROOT, capture_output=True, text=True, check=True,
     )
     payload = json.loads(result.stdout)
@@ -45,13 +46,14 @@ def test_save_benchmark_isolated_api_and_full_equivalence(tmp_path, mode):
     assert [case["initial_transactions"] for case in payload["cases"]] == [4, 7]
     for case in payload["cases"]:
         assert case["id_mode"] == mode
+        assert case["plugin_mode"] == plugin_mode
         assert case["consistency"]["matched"] is True
         assert case["consistency"]["compared_rows"] == {
-            "ledger_transactions": case["initial_transactions"] + 3,
-            "ledger_postings": (case["initial_transactions"] + 3) * 2,
-            "ledger_tags": case["initial_transactions"] + 3,
+            "ledger_transactions": case["initial_transactions"],
+            "ledger_postings": case["initial_transactions"] * 2,
+            "ledger_tags": case["initial_transactions"],
         }
-        assert set(case["scenarios"]) == {"create", "edit_beginning", "edit_middle", "edit_end"}
+        assert set(case["scenarios"]) == {"create", "edit_beginning", "edit_middle", "edit_end", "delete"}
         for scenario in case["scenarios"].values():
             assert scenario["total_ms"]["runs"] == 2
             assert 0 < scenario["total_ms"]["median"] <= scenario["total_ms"]["p95"]

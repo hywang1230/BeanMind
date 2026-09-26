@@ -131,3 +131,38 @@ def test_update_uses_source_location_and_preserves_metadata_and_links(db_session
     assert 'id: "fixed-salary-2025-01"' in source
     assert 'note: "keep-me"' in source
     assert "^payroll" in source
+
+
+def test_default_plugin_command_crud_never_recovers_its_own_manifest(
+    db_session, ledger_path, monkeypatch
+):
+    from backend.infrastructure.persistence.beancount.ledger_write import has_pending_write
+
+    ledger_path.write_text('plugin "beancount.plugins.auto_accounts"\n' + ledger_path.read_text())
+    projection = LedgerProjectionService(db_session, ledger_path)
+    projection.full_rebuild()
+    beancount = BeancountService(ledger_path)
+    def unexpected_rebuild():
+        raise AssertionError("Normal plugin writes must use differences, not recovery/rebuild")
+    monkeypatch.setattr(projection, "full_rebuild", unexpected_rebuild)
+    created = _application_service(beancount, db_session, projection).create_transaction(
+        txn_date="2025-04-01", description="plugin create",
+        postings=[
+            {"account": "Expenses:Food", "amount": "12.34", "currency": "CNY"},
+            {"account": "Assets:Cash", "amount": "-12.34", "currency": "CNY"},
+        ],
+    )
+    assert projection.status()["status"] == "READY"
+    assert not has_pending_write(ledger_path)
+    identity = created["id"]
+    _application_service(beancount, db_session, projection).update_transaction(
+        identity, txn_date="2026-04-01", description="plugin cross year",
+    )
+    assert db_session.get(LedgerTransaction, identity).date.year == 2026
+    assert projection.status()["status"] == "READY"
+    assert not has_pending_write(ledger_path)
+    assert _application_service(beancount, db_session, projection).delete_transaction(identity)
+    assert db_session.get(LedgerTransaction, identity) is None
+    assert projection.status()["status"] == "READY"
+    assert not has_pending_write(ledger_path)
+    assert projection.check_consistency()["consistent"]

@@ -1,4 +1,15 @@
-import apiClient from './client'
+import apiClient, { type ApiError } from './client'
+
+export const UNCONFIRMED_TRANSACTION_MESSAGE = '未能确认操作结果，请刷新核对，勿重复提交'
+
+function writeError(error: ApiError): never {
+    if (error.code === 'REQUEST_NO_RESPONSE') {
+        throw { ...error, code: 'TRANSACTION_RESULT_UNCONFIRMED', message: UNCONFIRMED_TRANSACTION_MESSAGE } satisfies ApiError
+    }
+    throw error
+}
+
+const writeOptions = { timeout: 60000 }
 
 export type Posting = {
     account: string
@@ -69,7 +80,7 @@ export const transactionsApi = {
 
     // 创建交易
     createTransaction(data: CreateTransactionRequest): Promise<Transaction> {
-        return apiClient.post('/api/transactions', data)
+        return apiClient.post<Transaction, Transaction>('/api/transactions', data, writeOptions).catch(writeError)
     },
 
     // 获取交易详情
@@ -79,12 +90,12 @@ export const transactionsApi = {
 
     // 更新交易
     updateTransaction(id: string, data: Partial<CreateTransactionRequest>): Promise<Transaction> {
-        return apiClient.put(`/api/transactions/${id}`, data)
+        return apiClient.put<Transaction, Transaction>(`/api/transactions/${id}`, data, writeOptions).catch(writeError)
     },
 
     // 删除交易
     deleteTransaction(id: string): Promise<void> {
-        return apiClient.delete(`/api/transactions/${id}`)
+        return apiClient.delete<void, void>(`/api/transactions/${id}`, writeOptions).catch(writeError)
     },
 
     // 获取统计数据

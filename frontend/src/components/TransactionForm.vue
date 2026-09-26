@@ -1,5 +1,5 @@
 <template>
-  <van-form class="transaction-form" @submit.prevent>
+  <van-form class="transaction-form" :inert="loading || undefined" @submit.prevent>
     <van-cell-group inset class="transaction-form-card">
       <van-field name="type" label="类型">
         <template #input>
@@ -68,7 +68,7 @@
     </van-cell-group>
 
     <div class="transaction-submit">
-      <van-button block type="primary" native-type="button" :loading="loading" @click="onPrimary">
+      <van-button block type="primary" native-type="button" :loading="loading" :disabled="disabled || loading" @click="onPrimary">
         {{ primaryLabel }}
       </van-button>
     </div>
@@ -124,6 +124,7 @@ import type { ApiError } from '../api/client'
 const props = defineProps<{
   initial?: Transaction | null
   loading?: boolean
+  disabled?: boolean
   mode?: 'create' | 'edit'
 }>()
 
@@ -316,7 +317,8 @@ function applyDraft(draft: TransactionDraft) {
 
 function loadInitial(transaction: Transaction | null | undefined) {
   if (!transaction) return
-  const draft = draftFromTransaction(transaction)
+  const draft = draftStore.draft?.mode === `edit:${transaction.id}`
+    ? draftStore.draft : draftFromTransaction(transaction)
   draftStore.setDraft(draft)
   applyDraft(draft)
 }
@@ -382,6 +384,7 @@ function validateBase(): boolean {
 }
 
 function onPrimary() {
+  if (props.loading || props.disabled) return
   if (!validateBase()) return
   const draft = currentDraftSnapshot()
   draftStore.setDraft(draft)
@@ -408,6 +411,7 @@ function onPrimary() {
 
 // When returning from distribute with balanced multi draft, parent may call submit via prop watch — expose method.
 function trySubmitFromDraft() {
+  if (props.loading || props.disabled) return false
   const draft = draftStore.draft
   if (!draft) return false
   applyDraft(draft)

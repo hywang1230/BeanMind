@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """隔离合成账本保存基准；真实 API/依赖/磁盘 SQLite，不接受真实账本输入。
 
+默认使用初始化模板的 auto_accounts 插件；无插件对照可传 --plugin-mode none。
+删除场景删除本轮新增的稳定 ID 交易（文件尾部），不代表历史派生 ID 的前部删除。
 例如：python scripts/benchmark_transaction_save.py --sizes 1000 5000 10000 20000
 每规模在独立子进程运行，backend 导入之前覆盖所有数据路径并关闭外部服务。
 SQL 指标是 DBAPI 执行次数（executemany 计一次），并非影响行数。
@@ -44,10 +46,11 @@ def configure_isolation(root):
     })
 
 
-def generate_ledger(path, size, id_mode):
+def generate_ledger(path, size, id_mode, plugin_mode="none"):
     path.parent.mkdir(parents=True, exist_ok=True)
+    plugin = 'plugin "beancount.plugins.auto_accounts"\n' if plugin_mode == "auto_accounts" else ""
     path.write_text(
-        'option "operating_currency" "CNY"\n'
+        plugin + 'option "operating_currency" "CNY"\n'
         '2025-01-01 open Assets:Cash CNY\n'
         '2025-01-01 open Expenses:Food CNY\n'
         'include "transactions_2025.beancount"\n', encoding="utf-8",
@@ -84,7 +87,7 @@ def compare_projection(actual_engine, expected_engine):
     return {"matched": True, "compared_rows": counts}
 
 
-def run_worker(size, iterations, id_mode, positions):
+def run_worker(size, iterations, id_mode, positions, plugin_mode="none"):
     with tempfile.TemporaryDirectory(prefix="beanmind-save-benchmark-") as directory:
         root = Path(directory).resolve()
         configure_isolation(root)
@@ -101,7 +104,7 @@ def run_worker(size, iterations, id_mode, positions):
         from backend.interfaces.api.transaction import router
         from backend.services.currency_catalog import CurrencyCatalogService
 
-        generate_ledger(settings.LEDGER_FILE, size, id_mode)
+        generate_ledger(settings.LEDGER_FILE, size, id_mode, plugin_mode)
         Base.metadata.create_all(engine)
         with SessionLocal() as session:
             CurrencyCatalogService(session).ensure_seeded()
@@ -139,13 +142,17 @@ def run_worker(size, iterations, id_mode, positions):
 
                 _, _, warm = save("POST", "/api/transactions", payload)
                 save("PUT", f'/api/transactions/{warm["id"]}', {"description": "warm-edit"})
-                scenarios = ["create"] + [f"edit_{position}" for position in positions]
+                save("DELETE", f'/api/transactions/{warm["id"]}', None)
+                created_ids = []
+                scenarios = ["create"] + [f"edit_{position}" for position in positions] + ["delete"]
                 indices = {"beginning": 0, "middle": size // 2, "end": size - 1}
                 for scenario in scenarios:
                     elapsed_samples, sql_samples = [], []
                     for iteration in range(iterations):
                         if scenario == "create":
                             method, url, body = "POST", "/api/transactions", payload
+                        elif scenario == "delete":
+                            method, url, body = "DELETE", f"/api/transactions/{created_ids[iteration]}", None
                         else:
                             # Resolve again: legacy IDs can change when preceding source lines move.
                             position = scenario.removeprefix("edit_")
@@ -161,7 +168,9 @@ def run_worker(size, iterations, id_mode, positions):
                                 ).one()[0]
                             method, url = "PUT", f"/api/transactions/{target}"
                             body = {"description": f"{prefix}:edit-{iteration}"}
-                        elapsed, counts, _ = save(method, url, body)
+                        elapsed, counts, response = save(method, url, body)
+                        if scenario == "create":
+                            created_ids.append(response["id"])
                         elapsed_samples.append(elapsed)
                         sql_samples.append(counts)
                     results[scenario] = {
@@ -182,7 +191,8 @@ def run_worker(size, iterations, id_mode, positions):
                 consistency = compare_projection(engine, expected_engine)
             finally:
                 expected_engine.dispose()
-            return {"initial_transactions": size, "id_mode": id_mode,
+            return {"initial_transactions": size, "id_mode": id_mode, "plugin_mode": plugin_mode,
+                    "delete_targets": "created stable IDs at file end",
                     "iterations": iterations, "scenarios": results, "consistency": consistency}
         finally:
             engine.dispose()
@@ -200,6 +210,7 @@ def main():
     parser.add_argument("--sizes", nargs="+", type=positive_int, default=[1000, 5000, 10000, 20000])
     parser.add_argument("--iterations", type=positive_int, default=30)
     parser.add_argument("--id-mode", choices=["explicit", "mixed", "legacy"], default="explicit")
+    parser.add_argument("--plugin-mode", choices=["none", "auto_accounts"], default="auto_accounts")
     parser.add_argument("--edit-positions", nargs="+", choices=["beginning", "middle", "end"],
                         default=["beginning", "middle", "end"])
     parser.add_argument("--output", type=Path)
@@ -207,14 +218,14 @@ def main():
     args = parser.parse_args()
     try:
         if args.worker:
-            result = run_worker(args.sizes[0], args.iterations, args.id_mode, args.edit_positions)
+            result = run_worker(args.sizes[0], args.iterations, args.id_mode, args.edit_positions, args.plugin_mode)
         else:
             cases = []
             for size in args.sizes:
                 completed = subprocess.run(
                     [sys.executable, str(Path(__file__).resolve()), "--worker", "--sizes", str(size),
                      "--iterations", str(args.iterations), "--id-mode", args.id_mode,
-                     "--edit-positions", *args.edit_positions],
+                     "--plugin-mode", args.plugin_mode, "--edit-positions", *args.edit_positions],
                     capture_output=True, text=True, check=False,
                 )
                 if completed.returncode:

@@ -268,7 +268,7 @@ def test_refresh_replaces_only_changed_file(db_session, ledger_path):
     assert projection.check_consistency()["consistent"] is True
 
 
-def test_unchanged_startup_reuses_projection_and_main_change_rebuilds(
+def test_unchanged_startup_reuses_projection_and_main_change_uses_loader_difference(
     db_session, ledger_path, monkeypatch
 ):
     projection = LedgerProjectionService(db_session, ledger_path)
@@ -283,21 +283,23 @@ def test_unchanged_startup_reuses_projection_and_main_change_rebuilds(
     with ledger_path.open("a", encoding="utf-8") as handle:
         handle.write("\n; global change\n")
     calls = []
-    monkeypatch.setattr(projection, "full_rebuild", lambda: calls.append(True) or {"full": True})
-    assert projection.ensure_current() == {"full": True}
+    original = projection._refresh_loaded_ledger
+    monkeypatch.setattr(projection, "_refresh_loaded_ledger", lambda started: (calls.append(True), original(started))[1])
+    assert projection.ensure_current()["status"] == "READY"
     assert calls == [True]
 
 
-def test_unsafe_file_refresh_falls_back_to_full_rebuild(db_session, ledger_path, monkeypatch):
+def test_unsafe_file_refresh_uses_loader_difference(db_session, ledger_path, monkeypatch):
     projection = LedgerProjectionService(db_session, ledger_path)
     projection.rebuild_all()
     year_file = ledger_path.parent / "transactions_2025.beancount"
     with year_file.open("a", encoding="utf-8") as handle:
         handle.write('\noption "operating_currency" "USD"\n')
     called = []
-    monkeypatch.setattr(projection, "full_rebuild", lambda: called.append(True) or {"full": True})
+    original = projection._refresh_loaded_ledger
+    monkeypatch.setattr(projection, "_refresh_loaded_ledger", lambda started: (called.append(True), original(started))[1])
 
-    assert projection.refresh_file(year_file) == {"full": True}
+    assert projection.refresh_file(year_file)["status"] == "READY"
     assert called == [True]
 
 

@@ -2,7 +2,7 @@
   <section class="page secondary-page distribute-page">
     <van-nav-bar :title="pageTitle" left-arrow @click-left="goBack">
       <template #right>
-        <van-button size="small" type="primary" plain :disabled="!isValid || saving" :loading="saving" @click="handleNext">
+        <van-button size="small" type="primary" plain :disabled="!isValid || saving || draftStore.pendingWrite || draftStore.unconfirmed === draft?.mode" :loading="saving" @click="handleNext">
           {{ isLastStep ? '保存' : '下一步' }}
         </van-button>
       </template>
@@ -22,7 +22,7 @@
         </van-cell>
       </van-cell-group>
 
-      <van-cell-group inset class="lines-card">
+      <van-cell-group inset class="lines-card" :inert="saving || undefined">
         <MoneyInput
           v-for="account in accounts"
           :key="account"
@@ -36,6 +36,7 @@
         />
       </van-cell-group>
 
+      <TransactionWriteStatus :operation="draft.mode" :transaction-id="draft.mode.startsWith('edit:') ? draft.mode.slice(5) : undefined" @resume="error = ''" />
       <van-notice-bar v-if="error" color="var(--bm-expense)" background="var(--bm-danger-soft)">{{ error }}</van-notice-bar>
     </template>
   </section>
@@ -48,6 +49,7 @@ import { showSuccessToast } from 'vant'
 import { useRoute, useRouter } from 'vue-router'
 import type { ApiError } from '../../api/client'
 import { transactionsApi } from '../../api/transactions'
+import TransactionWriteStatus from '../../components/TransactionWriteStatus.vue'
 import MoneyInput from '../../components/MoneyInput.vue'
 import {
   sideIsBalanced,
@@ -251,6 +253,7 @@ function goBack() {
 }
 
 async function handleNext() {
+  if (draftStore.pendingWrite || draftStore.unconfirmed === draft.value?.mode) return
   submitted.value = true
   error.value = ''
   if (!draft.value || !isValid.value) return
@@ -275,23 +278,28 @@ async function handleNext() {
 
   const payload = toCreateRequest(draftStore.draft!)
   saving.value = true
+  draftStore.pendingWrite = true
   try {
     if (d.mode.startsWith('edit:')) {
       const id = d.mode.slice('edit:'.length)
       await transactionsApi.updateTransaction(id, payload)
       draftStore.clear()
+      draftStore.pendingWrite = false
       await router.replace(`/transactions/${id}`)
     } else {
       await transactionsApi.createTransaction(payload)
       draftStore.clear()
       showSuccessToast('已保存，可继续记账')
+      draftStore.pendingWrite = false
       await router.replace('/transactions/new')
     }
   } catch (reason) {
-    // keep draft for retry
-    error.value = (reason as ApiError).message || '保存失败'
+    const failure = reason as ApiError
+    if (failure.code === 'TRANSACTION_RESULT_UNCONFIRMED') draftStore.unconfirmed = d.mode
+    error.value = failure.code === 'REQUEST_CANCELED' ? '已取消等待，请核对交易记录后再操作' : failure.message || '保存失败'
   } finally {
     saving.value = false
+    draftStore.pendingWrite = false
   }
 }
 
