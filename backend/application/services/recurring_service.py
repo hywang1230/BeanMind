@@ -3,6 +3,7 @@
 负责执行周期记账任务的业务逻辑
 """
 import logging
+from functools import wraps
 import json
 from datetime import date
 from typing import List, Dict, Any, Optional
@@ -25,6 +26,15 @@ from backend.infrastructure.persistence.db.models import RecurringExecution, Rec
 from backend.infrastructure.persistence.ledger_projection import LedgerProjectionService
 
 logger = logging.getLogger(__name__)
+
+
+def _recurring_command(method):
+    @wraps(method)
+    def coordinated(self, *args, **kwargs):
+        service = self.transaction_service
+        with service.transaction_repository.command_context(service.account_repository):
+            return method(self, *args, **kwargs)
+    return coordinated
 
 
 class RecurringApplicationService:
@@ -87,6 +97,7 @@ class RecurringApplicationService:
         
         return results
     
+    @_recurring_command
     def _process_rule(self, rule: RecurringRule, execution_date: date) -> Dict[str, Any]:
         """处理单个规则
         

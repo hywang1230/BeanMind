@@ -26,8 +26,11 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      - name: Run backend tests
-        run: python scripts/change_harness.py baseline --component backend
+      - name: Install backend dependencies
+        run: uv sync --frozen --dev
+
+      - name: Run backend checks
+        run: bash scripts/verify backend
 
   frontend:
     name: Frontend tests and build
@@ -48,5 +51,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run frontend baseline
-        run: python ../scripts/change_harness.py baseline --component frontend
+      - name: Run frontend checks
+        run: bash ../scripts/verify frontend

@@ -4,6 +4,7 @@
 """
 import re
 from pathlib import Path
+from backend.infrastructure.persistence.beancount.write_coordination import coordinated_write
 from typing import Optional, List, Dict
 from decimal import Decimal
 from datetime import datetime, date
@@ -127,6 +128,7 @@ class ExchangeRateRepositoryImpl(ExchangeRateRepository):
         
         return None
     
+    @coordinated_write
     def create(self, exchange_rate: ExchangeRate) -> ExchangeRate:
         """创建新的汇率记录"""
         # 检查是否已存在相同日期的汇率
@@ -161,6 +163,7 @@ class ExchangeRateRepositoryImpl(ExchangeRateRepository):
         
         return exchange_rate
     
+    @coordinated_write
     def update(
         self,
         currency: str,
@@ -194,6 +197,7 @@ class ExchangeRateRepositoryImpl(ExchangeRateRepository):
         # 返回更新后的汇率
         return self.find_by_date(currency, effective_date, quote_currency)
     
+    @coordinated_write
     def delete(
         self,
         currency: str,

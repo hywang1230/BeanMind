@@ -33,6 +33,14 @@ async def lifespan(app: FastAPI):
 
     init_database(str(settings.DATABASE_FILE))
     database = get_db_session()
+    # 恢复失败必须阻止启动，不能被普通投影初始化的容错分支吞掉。
+    from backend.infrastructure.persistence.beancount.ledger_write import has_pending_write
+    try:
+        if has_pending_write(settings.LEDGER_FILE):
+            LedgerProjectionService(database, settings.LEDGER_FILE).full_rebuild()
+    except Exception:
+        database.close()
+        raise
     try:
         from backend.infrastructure.persistence.beancount.beancount_provider import (
             BeancountServiceProvider,
@@ -82,7 +90,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="BeanMind API",
     description="基于 Beancount 的单机个人财务系统",
-    version="3.0.3",
+    version="4.0.0",
     debug=settings.DEBUG,
     lifespan=lifespan,
 )
@@ -101,6 +109,25 @@ def handle_api_error(request: Request, error: ApiError):
         status_code=error.status_code,
         content={"code": error.code, "message": error.message, "details": error.details},
     )
+
+
+from backend.infrastructure.persistence.beancount.ledger_write import LedgerWriteError, LedgerWriteConflict
+from backend.infrastructure.persistence.ledger_projection import LedgerProjectionDirtyError
+
+
+@app.exception_handler(LedgerWriteError)
+def handle_ledger_write_error(request: Request, error: LedgerWriteError):
+    conflict = isinstance(error, LedgerWriteConflict)
+    return JSONResponse(
+        status_code=409 if conflict else 503,
+        content={"code": "LEDGER_WRITE_CONFLICT" if conflict else "LEDGER_WRITE_UNAVAILABLE",
+                 "message": "账本状态发生变化，请检查恢复状态" if conflict else "账本暂不可写，请检查恢复状态"},
+    )
+
+
+@app.exception_handler(LedgerProjectionDirtyError)
+def handle_projection_dirty(request: Request, error: LedgerProjectionDirtyError):
+    return JSONResponse(status_code=503, content={"code": error.code, "message": str(error)})
 
 from backend.interfaces.api import account as account_api
 from backend.interfaces.api import currency as currency_api
@@ -131,7 +158,7 @@ for router in (
 
 @app.get("/api")
 def read_root():
-    return {"message": "Welcome to BeanMind API", "version": "3.0.3", "status": "healthy"}
+    return {"message": "Welcome to BeanMind API", "version": "4.0.0", "status": "healthy"}
 
 
 @app.get("/health")

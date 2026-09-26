@@ -173,11 +173,11 @@ def test_recurring_projection_failure_keeps_ledger_dirty_until_recovery(
     )
     db_session.add(rule)
     db_session.commit()
-    original_refresh = LedgerProjectionService.refresh_file
+    original_refresh = LedgerProjectionService.refresh_files
     monkeypatch.setattr(
         LedgerProjectionService,
-        "refresh_file",
-        lambda self, path: (_ for _ in ()).throw(RuntimeError("boom")),
+        "refresh_files",
+        lambda self, *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
     results = RecurringApplicationService(db_session).execute_due_rules(
@@ -194,7 +194,7 @@ def test_recurring_projection_failure_keeps_ledger_dirty_until_recovery(
     with pytest.raises(LedgerProjectionDirtyError):
         TransactionQueryService(db_session, ledger_path).list_transactions()
 
-    monkeypatch.setattr(LedgerProjectionService, "refresh_file", original_refresh)
+    monkeypatch.setattr(LedgerProjectionService, "refresh_files", original_refresh)
     recovered = projection.ensure_current()
     items = TransactionQueryService(db_session, ledger_path).list_transactions(
         description="投影失败仍保留"
