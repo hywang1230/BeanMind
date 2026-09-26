@@ -1,14 +1,20 @@
 """Isolated filesystem fault tests for the ledger write protocol."""
 
 import os
+import logging
+from decimal import Decimal
 from pathlib import Path
 import subprocess
 import sys
 import threading
 
 import pytest
+from beancount.core import data
 
 from backend.infrastructure.persistence.beancount import ledger_write as writer
+from backend.infrastructure.persistence.db.models import LedgerTransaction
+from backend.infrastructure.persistence.ledger_projection import LedgerProjectionService
+from backend.infrastructure.persistence import ledger_projection as projection_module
 
 OLD = '2025-01-01 * "old"\n  Assets:Cash  1 CNY\n  Expenses:Food  -1 CNY\n'
 NEW = OLD.replace('"old"', '"new"')
@@ -45,6 +51,8 @@ def test_commit_preserves_permissions_and_official_metadata(files):
         assert entry.meta["lineno"] == 1
         assert entry.postings[0].meta["filename"] == str(year)
         assert parsed[str(year)][1] == writer.file_fingerprint(year)
+        assert parsed.candidate_snapshot is not None
+        assert parsed.copy().candidate_snapshot is parsed.candidate_snapshot
         phases.append("ready")
 
     assert writer.commit_ledger_files(
@@ -174,6 +182,7 @@ def test_unknown_global_option_uses_complete_validation(files):
             main, {year: invalid}, before_commit=lambda: None, after_commit=lambda _: None
         )
     assert year.read_text() == OLD
+    assert not writer.has_pending_write(main)
 
 
 def test_local_parse_for_normal_include_graph(files, monkeypatch):
@@ -368,6 +377,102 @@ def test_inferred_posting_uses_loader_and_keeps_formal_metadata(files):
     assert result[str(year)][0][0].postings[1].meta["filename"] == str(year)
 
 
+@pytest.mark.parametrize("directive", [
+    "2025-02-01 balance Assets:Cash 1 CNY\n",
+    '2025-02-01 custom "benchmark" "marker"\n',
+])
+def test_global_validation_parses_candidate_only_with_complete_loader(files, monkeypatch, directive):
+    main, year = files
+    main.write_text(main.read_text() + directive)
+    original = writer.parser.parse_file
+    parsed_paths = []
+
+    def track(path, *args, **kwargs):
+        parsed_paths.append(Path(path))
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(writer.parser, "parse_file", track)
+    assert writer.commit_ledger_files(
+        main, {year: NEW}, before_commit=lambda: None, after_commit=lambda _: None
+    )
+    assert not any(path.name.startswith(".beanmind-") for path in parsed_paths)
+    assert year.read_text() == NEW
+
+
+@pytest.mark.parametrize("main_changes", [False, True])
+def test_known_full_loader_branch_skips_included_candidate_preparse(files, monkeypatch, main_changes):
+    main, year = files
+    changes = {year: NEW}
+    if main_changes:
+        changes[main] = main.read_text() + "; harmless comment\n"
+    parsed_paths = []
+    original = writer.parser.parse_file
+
+    def track(path, *args, **kwargs):
+        parsed_paths.append(Path(path))
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(writer.parser, "parse_file", track)
+    assert writer.commit_ledger_files(
+        main, changes, before_commit=lambda: None, after_commit=lambda _: None,
+    )
+    assert not any(path.name.startswith(".beanmind-") for path in parsed_paths)
+
+
+def test_global_validation_rejects_invalid_syntax_before_dirty(files):
+    main, year = files
+    main.write_text(main.read_text() + "2025-02-01 balance Assets:Cash 1 CNY\n")
+    calls = []
+    with pytest.raises(writer.LedgerValidationError):
+        writer.commit_ledger_files(
+            main, {year: "invalid directive\n"},
+            before_commit=lambda: calls.append("dirty"), after_commit=lambda _: None,
+        )
+    assert calls == []
+    assert year.read_text() == OLD
+    assert not writer.has_pending_write(main)
+
+
+def test_global_validation_checks_unincluded_changed_file(files):
+    main, year = files
+    main.write_text(main.read_text() + "2025-02-01 balance Assets:Cash 1 CNY\n")
+    unindexed = main.parent / "unindexed.beancount"
+    with pytest.raises(writer.LedgerValidationError):
+        writer.commit_ledger_files(
+            main, {unindexed: "invalid directive\n"},
+            before_commit=lambda: pytest.fail("invalid source must not become DIRTY"),
+            after_commit=lambda _: None,
+        )
+    assert not unindexed.exists()
+    assert year.read_text() == OLD
+
+
+def test_removing_global_directive_uses_candidate_loader_not_stale_context(files):
+    main, year = files
+    balance = "2025-01-02 balance Assets:Cash 1 CNY\n"
+    year.write_text(OLD + balance)
+    changed = OLD.replace(" 1 CNY", " 2 CNY").replace(" -1 CNY", " -2 CNY")
+    from beancount import loader
+
+    context_entries, errors, options = loader.load_file(str(main))
+    assert not errors
+    observed = []
+    original = writer.loader.load_file
+
+    def track(path, *args, **kwargs):
+        observed.append(Path(path))
+        return original(path, *args, **kwargs)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(writer.loader, "load_file", track)
+        assert writer.commit_ledger_files(
+            main, {year: changed}, before_commit=lambda: None, after_commit=lambda _: None,
+            validation_context=(context_entries, options),
+        )
+    assert len(observed) == 1
+    assert year.read_text() == changed
+
+
 def test_later_balance_assertion_forces_full_validation_before_source_commit(files):
     main, year = files
     assertion = main.parent / "assertions.beancount"
@@ -386,6 +491,75 @@ def test_later_balance_assertion_forces_full_validation_before_source_commit(fil
     assert not writer.has_pending_write(main)
 
 
+def test_later_balance_candidate_matches_formal_rebuild_after_each_write(files, db_session):
+    main, year = files
+    main.write_text(main.read_text() + "2025-02-01 balance Assets:Cash 1 CNY\n")
+    projection = LedgerProjectionService(db_session, main)
+    projection.full_rebuild()
+    later = '2025-03-01 * "later"\n  Assets:Cash  2 CNY\n  Expenses:Food  -2 CNY\n'
+
+    def verify():
+        db_session.expire_all()
+        before = sorted((row.id, row.content_hash, row.source_file, row.source_lineno,
+                         tuple((p.account, p.amount_text, p.currency) for p in row.postings))
+                        for row in db_session.query(LedgerTransaction).all())
+        projection.full_rebuild()
+        db_session.expire_all()
+        after = sorted((row.id, row.content_hash, row.source_file, row.source_lineno,
+                        tuple((p.account, p.amount_text, p.currency) for p in row.postings))
+                       for row in db_session.query(LedgerTransaction).all())
+        assert before == after
+
+    def save(content):
+        def after(parsed):
+            assert parsed.candidate_snapshot is not None
+            projection.refresh_files([year], parsed_files=parsed,
+                                     candidate_snapshot=parsed.candidate_snapshot)
+
+        assert writer.commit_ledger_files(
+            main, {year: content},
+            before_commit=lambda: projection.mark_dirty_files([year]),
+            after_commit=after,
+        )
+        verify()
+
+    save(OLD + later)
+    save(NEW + later)
+    save(NEW)
+    assert projection.status()["status"] == "READY"
+
+
+def test_later_pad_change_uses_formal_loader_and_matches_rebuild(files, db_session):
+    main, year = files
+    accounts = main.parent / "accounts.beancount"
+    accounts.write_text(accounts.read_text() + "2020-01-01 open Equity:Opening CNY\n")
+    main.write_text(main.read_text()
+                    + "2025-02-01 pad Assets:Cash Equity:Opening\n"
+                    + "2025-02-02 balance Assets:Cash 2 CNY\n")
+    projection = LedgerProjectionService(db_session, main)
+    projection.full_rebuild()
+    changed = OLD.replace(" 1 CNY", " 3 CNY").replace(" -1 CNY", " -3 CNY")
+
+    def after(parsed):
+        assert parsed.candidate_snapshot is None
+        projection.refresh_files([year], parsed_files=parsed)
+
+    assert writer.commit_ledger_files(
+        main, {year: changed},
+        before_commit=lambda: projection.mark_dirty_files([year]),
+        after_commit=after,
+    )
+    db_session.expire_all()
+    before = sorted((row.id, row.content_hash, row.source_file, row.source_lineno)
+                    for row in db_session.query(LedgerTransaction).all())
+    projection.full_rebuild()
+    db_session.expire_all()
+    after = sorted((row.id, row.content_hash, row.source_file, row.source_lineno)
+                   for row in db_session.query(LedgerTransaction).all())
+    assert before == after
+    assert not writer.has_pending_write(main)
+
+
 def test_loader_plugin_virtual_sources_do_not_reject_valid_save(files):
     main, year = files
     main.write_text(
@@ -396,8 +570,11 @@ def test_loader_plugin_virtual_sources_do_not_reject_valid_save(files):
     )
     changed = '2025-01-01 * "exchange"\n  Assets:Cash  1 USD @ 7 CNY\n  Expenses:Food  -7 CNY\n'
     result = {}
+    def collect(parsed):
+        assert parsed.candidate_snapshot is None
+        result.update(parsed)
     assert writer.commit_ledger_files(
-        main, {year: changed}, before_commit=lambda: None, after_commit=result.update
+        main, {year: changed}, before_commit=lambda: None, after_commit=collect
     )
     assert set(result) == {str(year)}
     transaction = result[str(year)][0][0]
@@ -405,6 +582,263 @@ def test_loader_plugin_virtual_sources_do_not_reject_valid_save(files):
     assert len(transaction.postings) == 4
     assert all(p.meta["filename"] == str(year) for p in transaction.postings)
     assert year.read_text() == changed
+
+
+@pytest.mark.parametrize("scenario", ["price", "inferred", "commodity", "fifo"])
+def test_candidate_booking_matches_formal_loader_and_rebuild(files, db_session, caplog, scenario):
+    main, year = files
+    accounts = main.parent / "accounts.beancount"
+    if scenario == "price":
+        accounts.write_text(accounts.read_text().replace("Cash CNY", "Cash CNY,USD"))
+        main.write_text(main.read_text() +
+                        '2024-12-31 price USD 7 CNY\n2025-01-01 custom "benchmark" "marker"\n')
+        changed = ('2025-01-01 * "priced"\n  Assets:Cash  1 USD @ 7 CNY\n'
+                   '  Expenses:Food  -7 CNY\n')
+    elif scenario == "inferred":
+        main.write_text(main.read_text() + '2025-01-01 custom "benchmark" "marker"\n')
+        changed = NEW.replace("Expenses:Food  -1 CNY", "Expenses:Food")
+    elif scenario == "commodity":
+        main.write_text(main.read_text() +
+                        '2020-01-01 commodity CNY\n  precision: 2\n'
+                        '2025-01-01 custom "benchmark" "marker"\n')
+        changed = NEW.replace(" 1 CNY", " 1.23 CNY").replace(" -1 CNY", " -1.23 CNY")
+    else:
+        accounts.write_text(
+            "2020-01-01 open Assets:Inventory USD \"FIFO\"\n"
+            "2020-01-01 open Equity:Opening CNY\n"
+        )
+        main.write_text(main.read_text() +
+                        'include "sell.beancount"\n2025-01-01 custom "benchmark" "marker"\n')
+        sell = main.parent / "sell.beancount"
+        sell.write_text('2025-01-02 * "sell"\n  Assets:Inventory  -1 USD {}\n  Equity:Opening\n')
+        year.write_text('2025-01-01 * "buy"\n  Assets:Inventory  2 USD {5 CNY}\n  Equity:Opening  -10 CNY\n')
+        changed = year.read_text().replace("{5 CNY}", "{6 CNY}").replace("-10 CNY", "-12 CNY")
+
+    projection = LedgerProjectionService(db_session, main)
+    projection.full_rebuild()
+    candidate = []
+
+    def after(parsed):
+        snapshot = parsed.candidate_snapshot
+        assert snapshot is not None
+        official, errors, _ = writer.loader.load_file(str(main))
+        assert not errors
+        expected = [entry for entry in official if isinstance(entry, data.Transaction)]
+        actual = [entry for entry in snapshot.entries if isinstance(entry, data.Transaction)]
+        assert actual == expected
+        if scenario == "price":
+            assert actual[0].postings[0].price.number == Decimal("7")
+        elif scenario == "inferred":
+            assert actual[0].postings[1].units.number == Decimal("-1")
+        elif scenario == "commodity":
+            assert actual[0].postings[0].units.number == Decimal("1.23")
+        else:
+            sell_transaction = next(entry for entry in actual if entry.narration == "sell")
+            assert sell_transaction.postings[0].cost.number == Decimal("6")
+            assert sell_transaction.postings[1].units.number == Decimal("6")
+        candidate.extend(actual)
+        projection.refresh_files([year], parsed_files=parsed, candidate_snapshot=snapshot)
+
+    with caplog.at_level(logging.INFO, logger="backend.infrastructure.persistence.ledger_projection"):
+        assert writer.commit_ledger_files(
+            main, {year: changed}, before_commit=lambda: projection.mark_dirty_files([year]),
+            after_commit=after,
+        )
+    assert "mode=candidate_diff" in caplog.text
+    db_session.expire_all()
+    before = sorted((row.id, row.content_hash, row.source_file, row.source_lineno,
+                     tuple((p.account, p.amount_text, p.currency, p.cost_text, p.price_text)
+                           for p in row.postings))
+                    for row in db_session.query(LedgerTransaction).all())
+    projection.full_rebuild()
+    db_session.expire_all()
+    after = sorted((row.id, row.content_hash, row.source_file, row.source_lineno,
+                    tuple((p.account, p.amount_text, p.currency, p.cost_text, p.price_text)
+                          for p in row.postings))
+                   for row in db_session.query(LedgerTransaction).all())
+    assert before == after
+    assert candidate
+
+
+@pytest.mark.parametrize("change_at", [1, 3])
+@pytest.mark.parametrize("manifest_source_changed", [False, True])
+def test_late_candidate_source_change_retries_only_with_intact_manifest(
+    files, db_session, monkeypatch, caplog, manifest_source_changed, change_at
+):
+    main, year = files
+    accounts = main.parent / "accounts.beancount"
+    main.write_text(main.read_text() + '2025-01-01 custom "benchmark" "marker"\n')
+    projection = LedgerProjectionService(db_session, main)
+    projection.full_rebuild()
+    original = projection_module._source_fingerprints
+    calls = 0
+
+    def changing_graph(path):
+        nonlocal calls
+        calls += 1
+        if calls == change_at:
+            target = year if manifest_source_changed else accounts
+            target.write_text(target.read_text() + "; concurrent edit\n")
+        return original(path)
+
+    def after(parsed):
+        assert parsed.candidate_snapshot is not None
+        with monkeypatch.context() as patch:
+            patch.setattr(projection_module, "_source_fingerprints", changing_graph)
+            projection.refresh_files([year], parsed_files=parsed,
+                                     candidate_snapshot=parsed.candidate_snapshot)
+
+    with caplog.at_level(logging.INFO, logger="backend.infrastructure.persistence.ledger_projection"):
+        committed = writer.commit_ledger_files(
+            main, {year: NEW}, before_commit=lambda: projection.mark_dirty_files([year]),
+            after_commit=after,
+        )
+    assert calls >= change_at
+    if manifest_source_changed:
+        assert committed is False
+        assert projection.status()["status"] == "DIRTY"
+        assert writer.has_pending_write(main)
+        assert "mode=loader_diff" not in caplog.text
+    else:
+        assert committed is True
+        assert projection.status()["status"] == "READY"
+        reason = "source_graph_or_fingerprint" if change_at == 1 else "late_invalidated"
+        assert f"reason={reason}" in caplog.text
+        assert "mode=loader_diff" in caplog.text
+        assert not writer.has_pending_write(main)
+
+
+def test_candidate_entry_conversion_failure_retries_formal_loader(files, db_session, monkeypatch, caplog):
+    main, year = files
+    main.write_text(main.read_text() + '2025-01-01 custom "benchmark" "marker"\n')
+    second = '2025-01-02 * "second"\n  Assets:Cash  2 CNY\n  Expenses:Food  -2 CNY\n'
+    year.write_text(OLD + second)
+    projection = LedgerProjectionService(db_session, main)
+    projection.full_rebuild()
+    original = projection._model_from_entry
+    calls = 0
+
+    def fail_once(entry):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ValueError("candidate-only conversion fault")
+        return original(entry)
+
+    monkeypatch.setattr(projection, "_model_from_entry", fail_once)
+
+    def after(parsed):
+        assert parsed.candidate_snapshot is not None
+        projection.refresh_files([year], parsed_files=parsed,
+                                 candidate_snapshot=parsed.candidate_snapshot)
+
+    with caplog.at_level(logging.INFO, logger="backend.infrastructure.persistence.ledger_projection"):
+        assert writer.commit_ledger_files(
+            main, {year: NEW + second.replace('"second"', '"second edited"')},
+            before_commit=lambda: projection.mark_dirty_files([year]),
+            after_commit=after,
+        )
+    assert calls >= 4
+    assert "reason=late_invalidated" in caplog.text
+    assert "mode=loader_diff" in caplog.text
+    assert projection.status()["status"] == "READY"
+    monkeypatch.setattr(projection, "_model_from_entry", original)
+    db_session.expire_all()
+    before = sorted((row.id, row.content_hash, row.source_file, row.source_lineno)
+                    for row in db_session.query(LedgerTransaction).all())
+    projection.full_rebuild()
+    db_session.expire_all()
+    assert before == sorted((row.id, row.content_hash, row.source_file, row.source_lineno)
+                            for row in db_session.query(LedgerTransaction).all())
+
+
+def test_candidate_fallback_loader_failure_stays_dirty(files, db_session, monkeypatch, caplog):
+    main, year = files
+    main.write_text(main.read_text() + '2025-01-01 custom "benchmark" "marker"\n')
+    projection = LedgerProjectionService(db_session, main)
+    projection.full_rebuild()
+    original_rows = [(row.id, row.content_hash) for row in db_session.query(LedgerTransaction).all()]
+
+    def after(parsed):
+        assert parsed.candidate_snapshot is not None
+        with monkeypatch.context() as patch:
+            patch.setattr(projection, "_model_from_entry",
+                          lambda _: (_ for _ in ()).throw(ValueError("candidate conversion failed")))
+            patch.setattr(projection_module.loader, "load_file",
+                          lambda *_: (_ for _ in ()).throw(ValueError("formal loader failed")))
+            projection.refresh_files([year], parsed_files=parsed,
+                                     candidate_snapshot=parsed.candidate_snapshot)
+
+    with caplog.at_level(logging.INFO, logger="backend.infrastructure.persistence.ledger_projection"):
+        assert not writer.commit_ledger_files(
+            main, {year: NEW}, before_commit=lambda: projection.mark_dirty_files([year]),
+            after_commit=after,
+        )
+    assert year.read_text() == NEW
+    assert projection.status()["status"] == "DIRTY"
+    assert writer.has_pending_write(main)
+    assert "reason=late_invalidated" in caplog.text
+    assert "mode=loader_diff" not in caplog.text
+    db_session.expire_all()
+    assert [(row.id, row.content_hash) for row in db_session.query(LedgerTransaction).all()] == original_rows
+
+
+@pytest.mark.parametrize("dirty_retry_fails", [False, True])
+def test_post_projection_source_conflict_keeps_manifest(files, db_session, dirty_retry_fails):
+    main, year = files
+    projection = LedgerProjectionService(db_session, main)
+    projection.full_rebuild()
+    dirty_calls = 0
+
+    def mark_dirty():
+        nonlocal dirty_calls
+        dirty_calls += 1
+        if dirty_retry_fails and dirty_calls == 2:
+            raise OSError("dirty status unavailable")
+        projection.mark_dirty_files([year])
+
+    def after(parsed):
+        projection.refresh_files([year], parsed_files=parsed,
+                                 candidate_snapshot=parsed.candidate_snapshot)
+        year.write_text(year.read_text() + "; external edit\n")
+
+    assert not writer.commit_ledger_files(
+        main, {year: NEW}, before_commit=mark_dirty, after_commit=after,
+    )
+    assert dirty_calls == 2
+    assert writer.has_pending_write(main)
+    assert projection.status()["status"] == "DIRTY"
+    with pytest.raises(projection_module.LedgerProjectionDirtyError):
+        projection.assert_ready()
+    with pytest.raises(writer.LedgerWriteConflict):
+        writer.recover_ledger_write(main, lambda: pytest.fail("must not overwrite external edit"))
+    assert "; external edit" in year.read_text()
+
+
+def test_candidate_database_failure_stays_dirty_without_loader_retry(files, db_session, monkeypatch, caplog):
+    main, year = files
+    main.write_text(main.read_text() + '2025-01-01 custom "benchmark" "marker"\n')
+    projection = LedgerProjectionService(db_session, main)
+    projection.full_rebuild()
+    monkeypatch.setattr(
+        projection, "_apply_difference",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("database unavailable")),
+    )
+
+    def after(parsed):
+        assert parsed.candidate_snapshot is not None
+        projection.refresh_files([year], parsed_files=parsed,
+                                 candidate_snapshot=parsed.candidate_snapshot)
+
+    with caplog.at_level(logging.INFO, logger="backend.infrastructure.persistence.ledger_projection"):
+        assert not writer.commit_ledger_files(
+            main, {year: NEW}, before_commit=lambda: projection.mark_dirty_files([year]),
+            after_commit=after,
+        )
+    assert projection.status()["status"] == "DIRTY"
+    assert writer.has_pending_write(main)
+    assert "reason=late_invalidated" not in caplog.text
+    assert "mode=loader_diff" not in caplog.text
 
 
 @pytest.mark.parametrize("invalid_kind", ["inactive", "currency"])

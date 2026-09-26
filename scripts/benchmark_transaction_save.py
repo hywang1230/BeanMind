@@ -6,16 +6,19 @@
 例如：python scripts/benchmark_transaction_save.py --sizes 1000 5000 10000 20000
 每规模在独立子进程运行，backend 导入之前覆盖所有数据路径并关闭外部服务。
 SQL 指标是 DBAPI 执行次数（executemany 计一次），并非影响行数。
+指令位置 before/after 仅表示主文件中相对 include 的文本顺序，不表示指令日期早晚。
 """
 from __future__ import annotations
 
 import argparse
 from collections import Counter
 import json
+import logging
 import math
 import os
 from pathlib import Path
 import platform
+import re
 import statistics
 import subprocess
 import sys
@@ -46,14 +49,30 @@ def configure_isolation(root):
     })
 
 
-def generate_ledger(path, size, id_mode, plugin_mode="none"):
+def generate_ledger(path, size, id_mode, plugin_mode="none", global_mode="none", directive_text_position="before"):
     path.parent.mkdir(parents=True, exist_ok=True)
     plugin = 'plugin "beancount.plugins.auto_accounts"\n' if plugin_mode == "auto_accounts" else ""
+    directives = {
+        "balance": '2025-01-02 balance Assets:Cash 0 CNY\n',
+        "pad": '2025-01-02 pad Assets:Cash Equity:Opening\n',
+        "pad_balance": '2025-01-03 balance Assets:Cash 1 CNY\n',
+        "custom": '2025-01-02 custom "benchmark" "marker"\n',
+    }
+    if global_mode == "combined":
+        selected = ("pad", "custom", "pad_balance")
+    elif global_mode == "pad":
+        selected = ("pad", "pad_balance")
+    else:
+        selected = () if global_mode == "none" else (global_mode,)
+    globals_text = "".join(directives[name] for name in selected)
+    include = 'include "transactions_2025.beancount"\n'
     path.write_text(
         plugin + 'option "operating_currency" "CNY"\n'
         '2025-01-01 open Assets:Cash CNY\n'
         '2025-01-01 open Expenses:Food CNY\n'
-        'include "transactions_2025.beancount"\n', encoding="utf-8",
+        + ('2025-01-01 open Equity:Opening CNY\n' if "pad" in selected else "")
+        + (globals_text + include if directive_text_position == "before" else include + globals_text),
+        encoding="utf-8",
     )
     with (path.parent / "transactions_2025.beancount").open("w", encoding="utf-8") as handle:
         for index in range(size):
@@ -87,7 +106,7 @@ def compare_projection(actual_engine, expected_engine):
     return {"matched": True, "compared_rows": counts}
 
 
-def run_worker(size, iterations, id_mode, positions, plugin_mode="none"):
+def run_worker(size, iterations, id_mode, positions, plugin_mode="none", global_mode="none", directive_text_position="before"):
     with tempfile.TemporaryDirectory(prefix="beanmind-save-benchmark-") as directory:
         root = Path(directory).resolve()
         configure_isolation(root)
@@ -104,7 +123,7 @@ def run_worker(size, iterations, id_mode, positions, plugin_mode="none"):
         from backend.interfaces.api.transaction import router
         from backend.services.currency_catalog import CurrencyCatalogService
 
-        generate_ledger(settings.LEDGER_FILE, size, id_mode, plugin_mode)
+        generate_ledger(settings.LEDGER_FILE, size, id_mode, plugin_mode, global_mode, directive_text_position)
         Base.metadata.create_all(engine)
         with SessionLocal() as session:
             CurrencyCatalogService(session).ensure_seeded()
@@ -112,6 +131,32 @@ def run_worker(size, iterations, id_mode, positions, plugin_mode="none"):
         app = FastAPI()
         app.include_router(router)  # Real dependencies; each HTTP request owns its session.
         sql_counts = Counter()
+        phase_samples = {}
+        phase_states = {}
+        phase_loggers = [logging.getLogger(name) for name in (
+            "backend.infrastructure.persistence.beancount.ledger_write",
+            "backend.infrastructure.persistence.ledger_projection",
+            "backend.infrastructure.persistence.beancount.repositories.transaction_repository_impl",
+        )]
+
+        class PhaseHandler(logging.Handler):
+            def emit(self, record):
+                message = record.getMessage()
+                if not message.startswith("ledger_"):
+                    return
+                phase = message.split(" ", 1)[0]
+                if phase == "ledger_projection" and " mode=" in message:
+                    phase_states["projection_mode"] = message.split("mode=", 1)[1].split(" ", 1)[0]
+                elif phase == "ledger_projection_reuse":
+                    phase_states["reuse_status"] = message.split("status=", 1)[1].split(" ", 1)[0]
+                for name, value in re.findall(r"([a-z_]+_ms)=([0-9.]+)", message):
+                    phase_samples[f"{phase}.{name}".replace("ledger_", "", 1)] = float(value)
+
+        phase_handler = PhaseHandler()
+        original_levels = [item.level for item in phase_loggers]
+        for item in phase_loggers:
+            item.setLevel(logging.INFO)
+            item.addHandler(phase_handler)
 
         def count_sql(connection, cursor, statement, parameters, context, executemany):
             verb = statement.lstrip().split(None, 1)[0].upper()
@@ -131,23 +176,27 @@ def run_worker(size, iterations, id_mode, positions, plugin_mode="none"):
             with TestClient(app) as client:
                 def save(method, url, body):
                     sql_counts.clear()
+                    phase_samples.clear()
+                    phase_states.clear()
                     started = time.perf_counter()
                     response = client.request(method, url, json=body)
                     elapsed = (time.perf_counter() - started) * 1000
                     counts = dict(sql_counts)
+                    phases = dict(phase_samples)
+                    states = dict(phase_states)
                     if response.status_code not in (200, 201):
                         # Never print response bodies, SQL parameters or ledger contents.
                         raise RuntimeError(f"save API status {response.status_code}")
-                    return elapsed, counts, response.json()
+                    return elapsed, counts, phases, states, response.json()
 
-                _, _, warm = save("POST", "/api/transactions", payload)
+                _, _, _, _, warm = save("POST", "/api/transactions", payload)
                 save("PUT", f'/api/transactions/{warm["id"]}', {"description": "warm-edit"})
                 save("DELETE", f'/api/transactions/{warm["id"]}', None)
                 created_ids = []
                 scenarios = ["create"] + [f"edit_{position}" for position in positions] + ["delete"]
                 indices = {"beginning": 0, "middle": size // 2, "end": size - 1}
                 for scenario in scenarios:
-                    elapsed_samples, sql_samples = [], []
+                    elapsed_samples, sql_samples, phase_runs, state_runs = [], [], [], []
                     for iteration in range(iterations):
                         if scenario == "create":
                             method, url, body = "POST", "/api/transactions", payload
@@ -168,17 +217,25 @@ def run_worker(size, iterations, id_mode, positions, plugin_mode="none"):
                                 ).one()[0]
                             method, url = "PUT", f"/api/transactions/{target}"
                             body = {"description": f"{prefix}:edit-{iteration}"}
-                        elapsed, counts, response = save(method, url, body)
+                        elapsed, counts, phases, states, response = save(method, url, body)
                         if scenario == "create":
                             created_ids.append(response["id"])
                         elapsed_samples.append(elapsed)
                         sql_samples.append(counts)
+                        phase_runs.append(phases)
+                        state_runs.append(states)
                     results[scenario] = {
                         "total_ms": distribution(elapsed_samples),
                         "sql_executions": {
                             verb: distribution([sample.get(verb, 0) for sample in sql_samples])
                             for verb in ("INSERT", "DELETE", "UPDATE", "SELECT")
                         },
+                        "phases_ms": {
+                            name: distribution([sample[name] for sample in phase_runs if name in sample])
+                            for name in sorted({name for sample in phase_runs for name in sample})
+                        },
+                        "projection_modes": dict(Counter(sample.get("projection_mode", "unknown") for sample in state_runs)),
+                        "reuse_status": dict(Counter(sample.get("reuse_status", "not_eligible") for sample in state_runs)),
                     }
             event.remove(engine, "before_cursor_execute", count_sql)
             expected_engine = create_engine(
@@ -192,9 +249,13 @@ def run_worker(size, iterations, id_mode, positions, plugin_mode="none"):
             finally:
                 expected_engine.dispose()
             return {"initial_transactions": size, "id_mode": id_mode, "plugin_mode": plugin_mode,
+                    "global_mode": global_mode, "directive_text_position": directive_text_position,
                     "delete_targets": "created stable IDs at file end",
                     "iterations": iterations, "scenarios": results, "consistency": consistency}
         finally:
+            for item, level in zip(phase_loggers, original_levels):
+                item.removeHandler(phase_handler)
+                item.setLevel(level)
             engine.dispose()
 
 
@@ -211,6 +272,8 @@ def main():
     parser.add_argument("--iterations", type=positive_int, default=30)
     parser.add_argument("--id-mode", choices=["explicit", "mixed", "legacy"], default="explicit")
     parser.add_argument("--plugin-mode", choices=["none", "auto_accounts"], default="auto_accounts")
+    parser.add_argument("--global-mode", choices=["none", "balance", "pad", "custom", "combined"], default="none")
+    parser.add_argument("--directive-text-position", choices=["before", "after"], default="before")
     parser.add_argument("--edit-positions", nargs="+", choices=["beginning", "middle", "end"],
                         default=["beginning", "middle", "end"])
     parser.add_argument("--output", type=Path)
@@ -218,14 +281,17 @@ def main():
     args = parser.parse_args()
     try:
         if args.worker:
-            result = run_worker(args.sizes[0], args.iterations, args.id_mode, args.edit_positions, args.plugin_mode)
+            result = run_worker(args.sizes[0], args.iterations, args.id_mode, args.edit_positions,
+                                args.plugin_mode, args.global_mode, args.directive_text_position)
         else:
             cases = []
             for size in args.sizes:
                 completed = subprocess.run(
                     [sys.executable, str(Path(__file__).resolve()), "--worker", "--sizes", str(size),
                      "--iterations", str(args.iterations), "--id-mode", args.id_mode,
-                     "--plugin-mode", args.plugin_mode, "--edit-positions", *args.edit_positions],
+                     "--plugin-mode", args.plugin_mode, "--global-mode", args.global_mode,
+                     "--directive-text-position", args.directive_text_position,
+                     "--edit-positions", *args.edit_positions],
                     capture_output=True, text=True, check=False,
                 )
                 if completed.returncode:
@@ -236,7 +302,8 @@ def main():
                 "api_dependencies": "production, one session per request",
                 "environment": {"python": platform.python_version(), "platform": platform.platform()},
                 "p95_method": "nearest-rank", "sql_unit": "DBAPI executions, not affected rows",
-                "timing_scope": "total HTTP request; nested phases not instrumented", "cases": cases,
+                "timing_scope": "total HTTP request and nested INFO phases; nested phases must not be summed",
+                "cases": cases,
             }
         output = json.dumps(result, ensure_ascii=False, indent=2)
         if args.output:

@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from backend.application.services import TransactionApplicationService
@@ -166,3 +168,74 @@ def test_default_plugin_command_crud_never_recovers_its_own_manifest(
     assert projection.status()["status"] == "READY"
     assert not has_pending_write(ledger_path)
     assert projection.check_consistency()["consistent"]
+
+
+def test_candidate_projection_matches_formal_rebuild_after_each_command(db_session, ledger_path, caplog):
+    ledger_path.write_text(ledger_path.read_text() + '2025-01-01 custom "benchmark" "marker"\n')
+    projection = LedgerProjectionService(db_session, ledger_path)
+    projection.full_rebuild()
+    beancount = BeancountService(ledger_path)
+
+    def verify():
+        db_session.expire_all()
+        before = sorted((row.id, row.source_file, row.source_lineno, row.content_hash,
+                         row.links_json, tuple((p.sequence, p.account, p.amount_text, p.currency,
+                                                p.cost_text, p.price_text) for p in row.postings),
+                         tuple(tag.tag for tag in row.tags))
+                        for row in db_session.query(LedgerTransaction).all())
+        projection.full_rebuild()
+        db_session.expire_all()
+        after = sorted((row.id, row.source_file, row.source_lineno, row.content_hash,
+                        row.links_json, tuple((p.sequence, p.account, p.amount_text, p.currency,
+                                               p.cost_text, p.price_text) for p in row.postings),
+                        tuple(tag.tag for tag in row.tags))
+                       for row in db_session.query(LedgerTransaction).all())
+        assert before == after
+
+    with caplog.at_level(logging.INFO, logger="backend.infrastructure.persistence.ledger_projection"):
+        created = _application_service(beancount, db_session, projection).create_transaction(
+            txn_date="2025-04-01", description="候选新增",
+            postings=[
+                {"account": "Expenses:Food", "amount": "1.23", "currency": "CNY"},
+                {"account": "Assets:Cash", "amount": "-1.23", "currency": "CNY"},
+            ],
+        )
+        assert "mode=candidate_diff" in caplog.text
+        verify()
+        caplog.clear()
+        _application_service(beancount, db_session, projection).update_transaction(
+            created["id"], description="候选编辑",
+        )
+        assert "mode=candidate_diff" in caplog.text
+        verify()
+        caplog.clear()
+        assert _application_service(beancount, db_session, projection).delete_transaction(created["id"])
+        assert "mode=candidate_diff" in caplog.text
+        verify()
+
+
+def test_candidate_fingerprint_mismatch_falls_back_to_formal_loader(db_session, ledger_path, caplog):
+    from backend.infrastructure.persistence.beancount.ledger_write import commit_ledger_files
+
+    ledger_path.write_text(ledger_path.read_text() + '2025-01-01 custom "benchmark" "marker"\n')
+    projection = LedgerProjectionService(db_session, ledger_path)
+    projection.full_rebuild()
+    year = ledger_path.parent / "transactions_2025.beancount"
+    accounts = ledger_path.parent / "accounts.beancount"
+    changed = year.read_text().replace("午餐", "午餐已核对")
+
+    def after_commit(parsed_files):
+        assert parsed_files.candidate_snapshot is not None
+        accounts.write_text(accounts.read_text() + "; external metadata change\n")
+        projection.refresh_files([year], parsed_files=parsed_files,
+                                 candidate_snapshot=parsed_files.candidate_snapshot)
+
+    with caplog.at_level(logging.INFO, logger="backend.infrastructure.persistence.ledger_projection"):
+        assert commit_ledger_files(
+            ledger_path, {year: changed},
+            before_commit=lambda: projection.mark_dirty_files([year]),
+            after_commit=after_commit,
+        )
+    assert "status=fallback reason=source_graph_or_fingerprint" in caplog.text
+    assert "mode=loader_diff" in caplog.text
+    assert projection.ensure_current()["status"] == "READY"

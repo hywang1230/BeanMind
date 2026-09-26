@@ -47,6 +47,10 @@ class InvalidTransactionCursorError(ValueError):
     code = "INVALID_TRANSACTION_CURSOR"
 
 
+class CandidateReuseInvalidated(ValueError):
+    """A candidate-only projection assumption failed before commit."""
+
+
 def _decimal_text(value: Optional[Decimal]) -> Optional[str]:
     if value is None:
         return None
@@ -432,7 +436,7 @@ class LedgerProjectionService:
         return True
 
     @_locked_write
-    def refresh_files(self, paths: Iterable[Path | str], *, parsed_files=None) -> dict:
+    def refresh_files(self, paths: Iterable[Path | str], *, parsed_files=None, candidate_snapshot=None) -> dict:
         """Parse affected files and commit only changed rows in one transaction."""
         from backend.infrastructure.persistence.beancount.ledger_write import (
             assert_ledger_readable, has_pending_write,
@@ -451,7 +455,9 @@ class LedgerProjectionService:
         try:
             if self.ledger_path in targets or not self._fast_path_safe(targets):
                 logger.info("投影刷新使用完整 loader 差异: global_or_unindexed")
-                return self._refresh_loaded_ledger(started)
+                if candidate_snapshot is None:
+                    return self._refresh_loaded_ledger(started)
+                return self._refresh_loaded_ledger(started, candidate_snapshot)
             expected = {}
             fingerprints = {}
             resolved_sources = {}
@@ -511,8 +517,20 @@ class LedgerProjectionService:
                 logger.exception("无法记录账本投影 DIRTY 状态")
             raise
 
-    def _refresh_loaded_ledger(self, started: float) -> dict:
+    def _refresh_loaded_ledger(self, started: float, candidate_snapshot=None) -> dict:
         """Use final loader output across all sources, without destructive rebuilding."""
+        try:
+            return self._refresh_loaded_ledger_once(started, candidate_snapshot)
+        except CandidateReuseInvalidated:
+            self.db.rollback()
+            from backend.infrastructure.persistence.beancount.ledger_write import assert_ledger_readable
+
+            assert_ledger_readable(self.ledger_path)
+            logger.info("ledger_projection_reuse status=fallback reason=late_invalidated")
+            return self._refresh_loaded_ledger_once(started, None)
+
+    def _refresh_loaded_ledger_once(self, started: float, candidate_snapshot=None) -> dict:
+        graph_started = time.perf_counter()
         graph_fingerprints = _source_fingerprints(self.ledger_path)
         # Preserve existing physical provenance outside include directives. Plugins
         # may use it as an input, so it must stay tracked until no output refers to it.
@@ -521,35 +539,64 @@ class LedgerProjectionService:
             path = Path(row.path)
             if path not in fingerprints and path.is_file():
                 fingerprints[path] = _fingerprint(path)
-        entries, errors, options = loader.load_file(str(self.ledger_path))
-        if errors:
-            raise ValueError("完整账本解析或校验失败")
-        loaded_files = {self.ledger_path} | {Path(path).resolve() for path in options.get("include", [])}
+        reusable = (
+            candidate_snapshot is not None
+            and set(candidate_snapshot.source_hashes) == set(graph_fingerprints)
+            and all(graph_fingerprints[path][2] == digest
+                    for path, digest in candidate_snapshot.source_hashes.items())
+        )
+        if reusable:
+            entries = candidate_snapshot.entries
+            loaded_files = set(graph_fingerprints)
+            origin = "candidate_diff"
+            logger.info("ledger_projection_reuse status=used")
+        else:
+            if candidate_snapshot is not None:
+                # The source may have changed after refresh_files checked the
+                # FILES_COMMITTED manifest but before this first graph sample.
+                from backend.infrastructure.persistence.beancount.ledger_write import assert_ledger_readable
+
+                assert_ledger_readable(self.ledger_path)
+                logger.info("ledger_projection_reuse status=fallback reason=source_graph_or_fingerprint")
+            load_started = time.perf_counter()
+            entries, errors, options = loader.load_file(str(self.ledger_path))
+            logger.info("ledger_projection_full graph_ms=%.1f loader_ms=%.1f",
+                        (load_started - graph_started) * 1000,
+                        (time.perf_counter() - load_started) * 1000)
+            if errors:
+                raise ValueError("完整账本解析或校验失败")
+            loaded_files = {self.ledger_path} | {Path(path).resolve() for path in options.get("include", [])}
+            origin = "loader_diff"
         if loaded_files != set(graph_fingerprints) or _source_fingerprints(self.ledger_path) != graph_fingerprints:
             raise ValueError("投影解析期间账本包含关系或源文件发生变化")
         expected = {}
         sources = {}
-        for entry in entries:
-            if not isinstance(entry, BeancountTransaction):
-                continue
-            filename = entry.meta.get("filename") if entry.meta else None
-            if filename not in sources:
-                sources[filename] = _source_path(entry)
-            source = sources[filename]
-            if source.is_file():
-                if source not in fingerprints:
-                    raise ValueError("插件引入未验证的源文件，请完整重建投影")
-                loaded_files.add(source)
-            digest = _content_hash(entry)
-            transaction_id = _transaction_id(entry, digest, source)
-            if transaction_id in expected:
-                transaction_id = uuid.uuid5(
-                    uuid.NAMESPACE_URL,
-                    f"duplicate:{source}:{entry.meta.get('lineno', 0)}:{digest}:{transaction_id}",
-                ).hex
-            if transaction_id in expected:
-                raise ValueError("无法唯一标识插件生成的交易")
-            expected[transaction_id] = (entry, digest, str(source), int(entry.meta.get("lineno", 0)))
+        try:
+            for entry in entries:
+                if not isinstance(entry, BeancountTransaction):
+                    continue
+                filename = entry.meta.get("filename") if entry.meta else None
+                if filename not in sources:
+                    sources[filename] = _source_path(entry)
+                source = sources[filename]
+                if source.is_file():
+                    if source not in fingerprints:
+                        raise ValueError("插件引入未验证的源文件，请完整重建投影")
+                    loaded_files.add(source)
+                digest = _content_hash(entry)
+                transaction_id = _transaction_id(entry, digest, source)
+                if transaction_id in expected:
+                    transaction_id = uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"duplicate:{source}:{entry.meta.get('lineno', 0)}:{digest}:{transaction_id}",
+                    ).hex
+                if transaction_id in expected:
+                    raise ValueError("无法唯一标识插件生成的交易")
+                expected[transaction_id] = (entry, digest, str(source), int(entry.meta.get("lineno", 0)))
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            if reusable:
+                raise CandidateReuseInvalidated("Candidate entries cannot be projected") from exc
+            raise
         rows = self.db.query(
             LedgerTransaction.id, LedgerTransaction.source_file,
             LedgerTransaction.source_lineno, LedgerTransaction.content_hash,
@@ -558,11 +605,12 @@ class LedgerProjectionService:
             expected, {row.id: row for row in rows},
             {path: fingerprints[path] for path in loaded_files}, started,
             graph_fingerprints=graph_fingerprints, verified_fingerprints=fingerprints,
+            origin=origin,
         )
 
     def _apply_difference(
         self, expected, existing, fingerprints, started, *,
-        graph_fingerprints=None, verified_fingerprints=None,
+        graph_fingerprints=None, verified_fingerprints=None, origin=None,
     ):
         complete = graph_fingerprints is not None
         targets = set(fingerprints)
@@ -578,7 +626,12 @@ class LedgerProjectionService:
                 if (old.source_file, old.source_lineno) != (source_file, lineno):
                     positions.append({"id": transaction_id, "source_file": source_file, "source_lineno": lineno})
                 continue
-            model = self._model_from_entry(entry)
+            try:
+                model = self._model_from_entry(entry)
+            except (ValueError, TypeError, KeyError, AttributeError) as exc:
+                if origin == "candidate_diff":
+                    raise CandidateReuseInvalidated("Candidate entry conversion failed") from exc
+                raise
             model.id = transaction_id
             if old is None:
                 self.db.add(model)
@@ -607,12 +660,18 @@ class LedgerProjectionService:
             self.db.execute(update(LedgerTransaction), batch)
             relocated += len(batch)
         if complete and _source_fingerprints(self.ledger_path) != graph_fingerprints:
+            if origin == "candidate_diff":
+                raise CandidateReuseInvalidated("Candidate source graph changed before commit")
             raise ValueError("投影提交前账本包含关系或源文件发生变化")
         for source, before in (verified_fingerprints or fingerprints).items():
             if _fingerprint(source) != before:
+                if origin == "candidate_diff":
+                    raise CandidateReuseInvalidated("Candidate source changed before commit")
                 raise ValueError("投影提交前源文件发生变化")
         for target in sorted(targets):
             if _fingerprint(target) != fingerprints[target]:
+                if origin == "candidate_diff":
+                    raise CandidateReuseInvalidated("Candidate source changed before commit")
                 raise ValueError("投影提交前源文件发生变化")
             self._record_file(target)
         if complete:
@@ -624,7 +683,7 @@ class LedgerProjectionService:
         self.db.expire_all()
         logger.info(
             "ledger_projection mode=%s compare_ms=%.1f apply_ms=%.1f commit_ms=%.1f added=%d changed=%d relocated=%d removed=%d",
-            "loader_diff" if complete else "file_diff",
+            origin or ("loader_diff" if complete else "file_diff"),
             (compared_at - started) * 1000, (commit_started - compared_at) * 1000,
             (committed_at - commit_started) * 1000, added, changed, relocated, len(removed),
         )
@@ -659,8 +718,11 @@ class LedgerProjectionService:
         return self.status()
 
     def status(self) -> dict:
+        from backend.infrastructure.persistence.beancount.ledger_write import has_pending_write
+
         records = self.db.query(LedgerIndexFile).order_by(LedgerIndexFile.path).all()
-        ready = bool(records) and all(record.status == PROJECTION_READY for record in records)
+        ready = (bool(records) and not has_pending_write(self.ledger_path)
+                 and all(record.status == PROJECTION_READY for record in records))
         return {
             "status": PROJECTION_READY if ready else PROJECTION_DIRTY,
             "transactions": self.db.query(LedgerTransaction).count(),
@@ -738,6 +800,10 @@ class LedgerProjectionService:
         return {"status": PROJECTION_READY, "consistent": True, "summary": actual}
 
     def assert_ready(self) -> None:
+        from backend.infrastructure.persistence.beancount.ledger_write import has_pending_write
+
+        if has_pending_write(self.ledger_path):
+            raise LedgerProjectionDirtyError("账本存在待恢复写入，查询投影不可用")
         # sqlite3 legacy transaction mode does not BEGIN for SELECT. Establish
         # the snapshot before the status read, shared by subsequent queries.
         connection = self.db.connection()
