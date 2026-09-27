@@ -16,6 +16,7 @@ class AccountBalanceItem(BaseModel):
     total_cny: Decimal = Field(default=Decimal("0"), description="折合人民币总额")
     children: List["AccountBalanceItem"] = Field(default_factory=list, description="子账户列表")
     depth: int = Field(default=0, description="账户层级深度")
+    is_virtual: bool = Field(default=False, description="是否为仅用于报表展示的汇总行")
 
 
 class BalanceSheetCategory(BaseModel):
@@ -51,6 +52,25 @@ class BalanceSheetResponse(BaseModel):
     
     # 货币列表
     currencies: List[str] = Field(default_factory=list, description="涉及的货币列表")
+
+
+class TrialBalanceCategory(BaseModel):
+    """保留 Beancount 原始借贷符号的账户分类。"""
+    type: str = Field(..., description="Assets/Liabilities/Equity/Income/Expenses")
+    name: str = Field(..., description="分类显示名称")
+    accounts: List[AccountBalanceItem] = Field(default_factory=list)
+    total_cny: Decimal = Field(default=Decimal("0"), description="有符号折合人民币金额")
+    totals_by_currency: Dict[str, Decimal] = Field(default_factory=dict)
+
+
+class TrialBalanceResponse(BaseModel):
+    """截止日五类账户试算表。"""
+    as_of_date: str
+    categories: List[TrialBalanceCategory]
+    signed_sum_cny: Decimal = Field(..., description="五类折算金额的有符号合计")
+    ledger_error_count: int = Field(..., description="Beancount 加载错误数")
+    exchange_rates: Dict[str, Decimal] = Field(default_factory=dict)
+    currencies: List[str] = Field(default_factory=list)
 
 
 class IncomeExpenseItem(BaseModel):

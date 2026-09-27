@@ -6,6 +6,7 @@
     <van-cell-group inset class="entry-group">
       <van-cell title="资产负债表" label="查看截至某日的资产、负债与权益" is-link to="/reports/balance-sheet" />
       <van-cell title="利润表" label="查看指定期间的收入、支出与结余" is-link :to="incomeStatementLink" />
+      <van-cell title="试算表" label="按原始借贷符号核对五类账户余额" is-link to="/reports/trial-balance" />
       <van-cell title="月度复盘" label="总结本月收支并生成下月建议" is-link :to="`/reviews/${month}`" />
     </van-cell-group>
 

@@ -44,10 +44,8 @@ class BeancountService:
         self.entries, self.errors, self.options = loader.load_file(str(self.ledger_path))
         
         if self.errors:
-            # 记录错误但不抛出异常
+            # 只记录数量，避免在日志中输出包含财务数据的错误详情。
             print(f"⚠️  Beancount parsing warnings: {len(self.errors)} errors")
-            for error in self.errors[:5]:  # 只显示前5个错误
-                print(f"  - {error}")
     
     def get_operating_currency(self) -> str:
         """
@@ -127,7 +125,9 @@ class BeancountService:
                 if hasattr(node, 'balance') and not node.balance.is_empty():
                     balances = {}
                     for pos in node.balance:
-                        balances[pos.units.currency] = pos.units.number
+                        currency = pos.units.currency
+                        balances[currency] = balances.get(currency, Decimal("0")) + pos.units.number
+                    balances = {currency: value for currency, value in balances.items() if value}
                     
                     if balances:  # 只返回有余额的账户
                         result[node.account] = balances
@@ -454,4 +454,3 @@ class BeancountService:
         # 写回文件
         with open(self.ledger_path, "w", encoding="utf-8") as f:
             f.write("\n".join(lines))
-

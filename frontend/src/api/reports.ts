@@ -8,6 +8,7 @@ export type AccountBalanceItem = {
   total_cny: string
   children: AccountBalanceItem[]
   depth: number
+  is_virtual?: boolean
 }
 
 // 资产负债表分类
@@ -29,6 +30,23 @@ export type BalanceSheetResponse = {
   total_liabilities_cny: string
   total_equity_cny: string
   net_worth_cny: string
+  exchange_rates: Record<string, string>
+  currencies: string[]
+}
+
+export type TrialBalanceCategory = {
+  type: string
+  name: string
+  accounts: AccountBalanceItem[]
+  total_cny: string
+  totals_by_currency: Record<string, string>
+}
+
+export type TrialBalanceResponse = {
+  as_of_date: string
+  categories: TrialBalanceCategory[]
+  signed_sum_cny: string
+  ledger_error_count: number
   exchange_rates: Record<string, string>
   currencies: string[]
 }
@@ -145,6 +163,12 @@ export const reportsApi = {
     as_of_date?: string
   }): Promise<BalanceSheetResponse> {
     return apiClient.get('/api/reports/balance-sheet', { params })
+  },
+
+  getTrialBalance(params?: {
+    as_of_date?: string
+  }): Promise<TrialBalanceResponse> {
+    return apiClient.get('/api/reports/trial-balance', { params })
   },
 
   getIncomeStatement(params?: {
