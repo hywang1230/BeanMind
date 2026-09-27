@@ -24,6 +24,102 @@ def test_balance_sheet_structure_and_decimal(core_api_client: TestClient):
     assert isinstance(body["assets"]["accounts"], list)
     # exchange rates present
     assert "CNY" in body["exchange_rates"] or "USD" in body["exchange_rates"]
+    liabilities = Decimal(str(body["total_liabilities_cny"]))
+    equity = Decimal(str(body["total_equity_cny"]))
+    assert assets_cny == liabilities + equity
+    assert equity == Decimal(str(body["net_worth_cny"]))
+    assert equity == Decimal(str(body["equity"]["total_cny"]))
+    assert equity == sum(
+        (Decimal(str(item["total_cny"])) for item in body["equity"]["accounts"]),
+        Decimal("0"),
+    )
+    components = {item["account"]: item for item in body["equity"]["accounts"]}
+    assert Decimal(str(components["Equity:OpeningBalances"]["total_cny"])) == Decimal("7860")
+    assert Decimal(str(components["@equity:accumulated_result"]["total_cny"])) == Decimal("9229.772")
+    assert components["@equity:accumulated_result"]["is_virtual"] is True
+    assert "@equity:report_adjustment" not in components
+
+
+def test_balance_sheet_parent_posting_is_not_lost(temp_ledger_env, db_session):
+    ledger_dir = temp_ledger_env["ledger_path"].parent
+    accounts = ledger_dir / "accounts.beancount"
+    accounts.write_text(
+        accounts.read_text(encoding="utf-8")
+        + "\n2020-01-01 open Assets:Bank CNY\n"
+        + "2020-01-01 open Assets:Bank:Checking:Card CNY\n",
+        encoding="utf-8",
+    )
+    txns = ledger_dir / "transactions.beancount"
+    txns.write_text(
+        txns.read_text(encoding="utf-8")
+        + "\n2025-03-20 * \"期初补账\"\n"
+        + "  Assets:Bank  10.00 CNY\n"
+        + "  Equity:OpeningBalances -10.00 CNY\n"
+        + "\n2025-03-21 * \"子账户补账\"\n"
+        + "  Assets:Bank:Checking:Card 30.00 CNY\n"
+        + "  Equity:OpeningBalances -30.00 CNY\n",
+        encoding="utf-8",
+    )
+    client = build_api_client(temp_ledger_env["ledger_path"], db_session)
+    response = client.get("/api/reports/balance-sheet", params={"as_of_date": "2025-03-31"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert Decimal(str(body["total_assets_cny"])) == Decimal("17429.772")
+    assert Decimal(str(body["total_equity_cny"])) == Decimal("17129.772")
+    assert Decimal(str(body["assets"]["totals_by_currency"]["CNY"])) == Decimal("15989.70")
+    bank = next(item for item in body["assets"]["accounts"] if item["account"] == "Assets:Bank")
+    assert Decimal(str(bank["total_cny"])) == Decimal("15020")
+    assert Decimal(str(bank["balances"]["CNY"])) == Decimal("15020")
+
+
+def test_balance_sheet_liability_overpayment_keeps_negative_display(temp_ledger_env, db_session):
+    txns = temp_ledger_env["ledger_path"].parent / "transactions.beancount"
+    txns.write_text(
+        txns.read_text(encoding="utf-8")
+        + "\n2025-03-20 * \"信用卡溢缴\"\n"
+        + "  Liabilities:CreditCard 400.00 CNY\n"
+        + "  Assets:Bank:Checking -400.00 CNY\n",
+        encoding="utf-8",
+    )
+    client = build_api_client(temp_ledger_env["ledger_path"], db_session)
+    response = client.get("/api/reports/balance-sheet", params={"as_of_date": "2025-03-31"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert Decimal(str(body["total_liabilities_cny"])) == Decimal("-100")
+    assert Decimal(str(body["liabilities"]["accounts"][0]["total_cny"])) == Decimal("-100")
+    assert Decimal(str(body["total_assets_cny"])) == (
+        Decimal(str(body["total_liabilities_cny"])) + Decimal(str(body["total_equity_cny"]))
+    )
+
+
+def test_balance_sheet_conversion_adjustment_and_negative_equity(temp_ledger_env, db_session):
+    txns = temp_ledger_env["ledger_path"].parent / "transactions.beancount"
+    txns.write_text(
+        txns.read_text(encoding="utf-8")
+        + "\n2025-03-15 * \"换汇\"\n"
+        + "  Assets:Cash -10.00 USD @ 7.30 CNY\n"
+        + "  Assets:Bank:Checking 73.00 CNY\n"
+        + "\n2025-03-20 * \"大额费用\"\n"
+        + "  Expenses:Food 20000.00 CNY\n"
+        + "  Liabilities:CreditCard -20000.00 CNY\n",
+        encoding="utf-8",
+    )
+    client = build_api_client(temp_ledger_env["ledger_path"], db_session)
+    response = client.get("/api/reports/balance-sheet", params={"as_of_date": "2025-03-31"})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assets = Decimal(str(body["total_assets_cny"]))
+    liabilities = Decimal(str(body["total_liabilities_cny"]))
+    equity = Decimal(str(body["total_equity_cny"]))
+    assert equity < 0
+    assert assets == liabilities + equity
+    components = {item["account"]: item for item in body["equity"]["accounts"]}
+    assert Decimal(str(components["@equity:accumulated_result"]["total_cny"])) == Decimal("-10770.228")
+    assert Decimal(str(components["@equity:report_adjustment"]["total_cny"])) == Decimal("1")
+    assert Decimal(str(body["equity"]["total_cny"])) == sum(
+        (Decimal(str(item["total_cny"])) for item in body["equity"]["accounts"]),
+        Decimal("0"),
+    )
 
 
 def test_income_statement_closed_interval(core_api_client: TestClient):
@@ -433,4 +529,3 @@ def test_daily_net_spending_partial_missing_exchange_rate(temp_ledger_env, db_se
     assert Decimal(str(by_date["2025-01-16"]["expense"])) == Decimal("-50")
     assert by_date["2025-01-18"]["has_activity"] is True
     assert Decimal(str(by_date["2025-01-18"]["expense"])) == Decimal("0")
-

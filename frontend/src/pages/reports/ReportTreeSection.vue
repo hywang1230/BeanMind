@@ -6,8 +6,8 @@
       <template v-for="node in visible" :key="node.account">
         <van-cell
           :title="node.display_name || node.account"
-          :label="node.account"
-          is-link
+          :label="node.is_virtual ? '报表汇总项' : node.account"
+          :is-link="!node.is_virtual"
           :style="{ paddingLeft: `${12 + node.depth * 12}px` }"
           @click="onClick(node)"
         >
@@ -44,6 +44,7 @@ export type TreeItem = {
   percentage?: string
   children?: TreeItem[]
   depth: number
+  is_virtual?: boolean
 }
 
 const props = withDefaults(defineProps<{
@@ -86,6 +87,7 @@ function toggle(account: string) {
 }
 
 function onClick(node: TreeItem) {
+  if (node.is_virtual) return
   if (node.children?.length) {
     toggle(node.account)
     return

@@ -15,6 +15,8 @@ from backend.interfaces.dto.reports import (
     BalanceSheetResponse,
     BalanceSheetCategory,
     AccountBalanceItem,
+    TrialBalanceResponse,
+    TrialBalanceCategory,
     IncomeStatementResponse,
     IncomeStatementCategory,
     IncomeExpenseItem,
@@ -224,20 +226,16 @@ def build_account_tree(
             if item.children:
                 # 递归处理子账户
                 child_balances, child_cny = aggregate_balances(item.children)
-                # 合并子账户余额
+                # 合并子账户余额到当前节点
                 for currency, amount in child_balances.items():
-                    total_balances[currency] += amount
                     if currency not in item.balances:
                         item.balances[currency] = Decimal("0")
                     item.balances[currency] += amount
-                # 更新该节点的 CNY 总额
                 item.total_cny += child_cny
-                total_cny += item.total_cny
-            else:
-                # 叶子节点
-                for currency, amount in item.balances.items():
-                    total_balances[currency] += amount
-                total_cny += item.total_cny
+            # 向父节点返回当前节点的完整余额，包括自身直接分录。
+            for currency, amount in item.balances.items():
+                total_balances[currency] += amount
+            total_cny += item.total_cny
         
         return dict(total_balances), total_cny
     
@@ -369,57 +367,44 @@ def build_income_expense_tree(
 def calculate_category_total(
     accounts: List[AccountBalanceItem]
 ) -> tuple[Decimal, Dict[str, Decimal]]:
-    """计算分类总额（只计算叶子节点，避免重复计算）"""
-    total_cny = Decimal("0")
+    """顶层节点已经汇总其子账户，按顶层相加以保留父账户直接分录。"""
+    total_cny = sum((account.total_cny for account in accounts), Decimal("0"))
     totals_by_currency: Dict[str, Decimal] = defaultdict(Decimal)
-    
-    def process_account(account: AccountBalanceItem):
-        nonlocal total_cny
-        if account.children:
-            # 有子账户，递归处理
-            for child in account.children:
-                process_account(child)
-        else:
-            # 叶子节点，累加
-            total_cny += account.total_cny
-            for currency, amount in account.balances.items():
-                totals_by_currency[currency] += amount
-    
     for account in accounts:
-        process_account(account)
+        for currency, amount in account.balances.items():
+            totals_by_currency[currency] += amount
     
     return total_cny, dict(totals_by_currency)
 
 
-def convert_accounts_to_absolute(accounts: List[AccountBalanceItem]) -> List[AccountBalanceItem]:
+def invert_account_signs(accounts: List[AccountBalanceItem]) -> List[AccountBalanceItem]:
     """
-    递归地将账户余额转换为绝对值（用于负债和权益显示）
+    递归转换 Beancount 负债和权益的借贷符号，保留抵销项的负值。
     
     Args:
         accounts: 账户列表
         
     Returns:
-        转换后的账户列表（余额均为正数）
+        转换后的账户列表；抵销项和异常方向余额仍可能为负数
     """
     result = []
     for account in accounts:
-        # 转换余额为绝对值
-        abs_balances = {currency: abs(amount) for currency, amount in account.balances.items()}
-        abs_total_cny = abs(account.total_cny)
+        display_balances = {currency: -amount for currency, amount in account.balances.items()}
+        display_total_cny = -account.total_cny
         
         # 递归处理子账户
-        abs_children = convert_accounts_to_absolute(account.children) if account.children else []
+        display_children = invert_account_signs(account.children) if account.children else []
         
         # 创建新的账户项
-        abs_account = AccountBalanceItem(
+        display_account = AccountBalanceItem(
             account=account.account,
             display_name=account.display_name,
-            balances=abs_balances,
-            total_cny=abs_total_cny,
+            balances=display_balances,
+            total_cny=display_total_cny,
             depth=account.depth,
-            children=abs_children
+            children=display_children,
         )
-        result.append(abs_account)
+        result.append(display_account)
     
     return result
 
@@ -512,18 +497,39 @@ def get_balance_sheet(
     # 构建负债类账户树
     liabilities_accounts = build_account_tree(all_balances, "Liabilities", exchange_rates)
     liabilities_total_cny, liabilities_totals_by_currency = calculate_category_total(liabilities_accounts)
-    # 将负债账户余额转换为绝对值（便于用户理解）
-    liabilities_accounts_abs = convert_accounts_to_absolute(liabilities_accounts)
-    
+    liabilities_accounts_display = invert_account_signs(liabilities_accounts)
+
     # 构建权益类账户树
     equity_accounts = build_account_tree(all_balances, "Equity", exchange_rates)
-    equity_total_cny, equity_totals_by_currency = calculate_category_total(equity_accounts)
-    # 将权益账户余额转换为绝对值（便于用户理解）
-    equity_accounts_abs = convert_accounts_to_absolute(equity_accounts)
-    
-    # 计算净资产 (资产 + 负债，因为负债在 beancount 中是负数)
-    net_worth_cny = assets_total_cny + liabilities_total_cny
-    
+    ledger_equity_raw_cny, equity_totals_by_currency = calculate_category_total(equity_accounts)
+    equity_accounts_display = invert_account_signs(equity_accounts)
+
+    accumulated_result_cny = Decimal("0")
+    for account, balances in all_balances.items():
+        if account.startswith(("Income:", "Expenses:")):
+            for currency, amount in balances.items():
+                accumulated_result_cny -= amount * rate_for(currency, exchange_rates)
+
+    # 展示口径：负债和权益取 Beancount 原始余额的相反数。
+    display_liabilities_cny = -liabilities_total_cny
+    total_equity_cny = assets_total_cny - display_liabilities_cny
+    report_adjustment_cny = total_equity_cny + ledger_equity_raw_cny - accumulated_result_cny
+    equity_accounts_display.append(AccountBalanceItem(
+        account="@equity:accumulated_result",
+        display_name="累计损益",
+        total_cny=accumulated_result_cny,
+        depth=1,
+        is_virtual=True,
+    ))
+    if report_adjustment_cny:
+        equity_accounts_display.append(AccountBalanceItem(
+            account="@equity:report_adjustment",
+            display_name="报表折算调整",
+            total_cny=report_adjustment_cny,
+            depth=1,
+            is_virtual=True,
+        ))
+
     return BalanceSheetResponse(
         as_of_date=target_date.isoformat(),
         assets=BalanceSheetCategory(
@@ -536,23 +542,68 @@ def get_balance_sheet(
         liabilities=BalanceSheetCategory(
             name="负债",
             type="Liabilities",
-            accounts=liabilities_accounts_abs,  # 使用转换后的绝对值账户
-            total_cny=abs(liabilities_total_cny),  # 展示为正数
-            totals_by_currency={k: abs(v) for k, v in liabilities_totals_by_currency.items()}
+            accounts=liabilities_accounts_display,
+            total_cny=display_liabilities_cny,
+            totals_by_currency={k: -v for k, v in liabilities_totals_by_currency.items()}
         ),
         equity=BalanceSheetCategory(
             name="权益",
             type="Equity",
-            accounts=equity_accounts_abs,  # 使用转换后的绝对值账户
-            total_cny=abs(equity_total_cny),
-            totals_by_currency={k: abs(v) for k, v in equity_totals_by_currency.items()}
+            accounts=equity_accounts_display,
+            total_cny=total_equity_cny,
+            totals_by_currency={k: -v for k, v in equity_totals_by_currency.items()}
         ),
         total_assets_cny=assets_total_cny,
-        total_liabilities_cny=abs(liabilities_total_cny),
-        total_equity_cny=abs(equity_total_cny),
-        net_worth_cny=net_worth_cny,
+        total_liabilities_cny=display_liabilities_cny,
+        total_equity_cny=total_equity_cny,
+        net_worth_cny=total_equity_cny,
         exchange_rates=exchange_rates,
         currencies=currencies
+    )
+
+
+@router.get("/trial-balance", response_model=TrialBalanceResponse)
+def get_trial_balance(
+    as_of_date: Optional[str] = Query(None, description="截止日期 YYYY-MM-DD，默认为今天"),
+    beancount_service: BeancountService = Depends(get_beancount_service),
+) -> TrialBalanceResponse:
+    """按账本原始借贷符号展示五类账户的截止日余额。"""
+    if as_of_date:
+        try:
+            target_date = datetime.strptime(as_of_date, "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD") from exc
+    else:
+        target_date = date.today()
+
+    exchange_rates = beancount_service.get_all_exchange_rates(to_currency="CNY", as_of_date=target_date)
+    all_balances = beancount_service.get_account_balances(as_of_date=target_date)
+    categories = []
+    for account_type, display_name in (
+        ("Assets", "资产"),
+        ("Liabilities", "负债"),
+        ("Equity", "权益"),
+        ("Income", "收入"),
+        ("Expenses", "支出"),
+    ):
+        accounts = build_account_tree(all_balances, account_type, exchange_rates)
+        total_cny, totals_by_currency = calculate_category_total(accounts)
+        categories.append(TrialBalanceCategory(
+            type=account_type,
+            name=display_name,
+            accounts=accounts,
+            total_cny=total_cny,
+            totals_by_currency=totals_by_currency,
+        ))
+
+    currencies = sorted({currency for balances in all_balances.values() for currency in balances})
+    return TrialBalanceResponse(
+        as_of_date=target_date.isoformat(),
+        categories=categories,
+        signed_sum_cny=sum((category.total_cny for category in categories), Decimal("0")),
+        ledger_error_count=len(beancount_service.errors),
+        exchange_rates=exchange_rates,
+        currencies=currencies,
     )
 
 
