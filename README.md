@@ -111,7 +111,7 @@ bash scripts/verify docs        # 文档与入口静态检查
 
 检查不隐式安装依赖；后端强制使用临时数据并关闭调度器与 LLM，失败保留非零退出码。CI 使用相同入口。自动检查不替代设计确认、真实设备验收、迁移备份确认或匿名真实数据性能验证。
 
-默认流程使用本地 `docs/` 设计文档与 Shell Harness，无需 OpenSpec CLI。旧 change harness 保留供历史兼容，不再要求新任务创建 change；原有账本、投影、迁移、性能与 PWA 验收要求见 Harness。`AGENTS.md` 和 `docs/` 沿用 Git 忽略策略，CI 不依赖这些本地文件。
+默认使用本地 docs 设计文档与 Shell Harness，无需 OpenSpec CLI 或 change 清单。风险验收要求见 Harness；AGENTS.md 与 docs 保持 Git 忽略策略，CI 不依赖这些本地文件。
 
 
 ## License

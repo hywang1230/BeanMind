@@ -3,7 +3,7 @@
     <van-nav-bar title="资产负债表" left-arrow @click-left="router.back()" />
     <header class="page-header">
       <van-cell-group inset>
-        <DatePickerField v-model="asOfDate" label="截止日期" />
+        <MonthPicker v-model="month" label="截止月份" />
       </van-cell-group>
       <van-button block size="small" type="primary" @click="applyDate">查询</van-button>
     </header>
@@ -47,13 +47,14 @@ import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { ApiError } from '../../api/client'
 import { reportsApi, type BalanceSheetResponse } from '../../api/reports'
-import DatePickerField from '../../components/DatePickerField.vue'
+import MonthPicker from '../../components/MonthPicker.vue'
 import { formatAmountDisplay } from '../../utils/decimal'
+import { monthEnd, reportMonth } from '../../utils/reportMonth'
 import ReportTreeSection from './ReportTreeSection.vue'
 
 const route = useRoute()
 const router = useRouter()
-const asOfDate = ref(String(route.query.as_of_date || new Date().toISOString().slice(0, 10)))
+const month = ref(queryMonth())
 const data = ref<BalanceSheetResponse | null>(null)
 const loading = ref(false)
 const error = ref('')
@@ -63,14 +64,19 @@ function fmt(value: string) {
 }
 
 function applyDate() {
-  router.replace({ query: { ...route.query, as_of_date: asOfDate.value } })
+  const { as_of_date: _legacyDate, ...query } = route.query
+  router.replace({ query: { ...query, month: month.value } })
+}
+
+function queryMonth() {
+  return reportMonth(route.query.month || route.query.as_of_date)
 }
 
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    data.value = await reportsApi.getBalanceSheet({ as_of_date: asOfDate.value })
+    data.value = await reportsApi.getBalanceSheet({ as_of_date: monthEnd(queryMonth()) })
   } catch (reason) {
     const err = reason as ApiError
     error.value = err.code === 'MISSING_EXCHANGE_RATE'
@@ -85,14 +91,14 @@ async function load() {
 function openAccount(account: string) {
   router.push({
     path: '/reports/account-detail',
-    query: { account, end_date: asOfDate.value },
+    query: { account, end_date: data.value?.as_of_date || monthEnd(queryMonth()) },
   })
 }
 
 watch(
-  () => route.query.as_of_date,
-  (value) => {
-    if (value) asOfDate.value = String(value)
+  () => [route.query.month, route.query.as_of_date],
+  () => {
+    month.value = queryMonth()
     load()
   },
 )

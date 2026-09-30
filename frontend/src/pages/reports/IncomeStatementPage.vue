@@ -3,7 +3,8 @@
     <van-nav-bar title="利润表" left-arrow @click-left="router.back()" />
     <header class="page-header">
       <van-cell-group inset>
-        <DateRangePickerField v-model:start-date="startDate" v-model:end-date="endDate" />
+        <MonthPicker v-model="startMonth" label="开始月份" />
+        <MonthPicker v-model="endMonth" label="结束月份" />
       </van-cell-group>
       <van-button block size="small" type="primary" @click="applyDate">查询</van-button>
     </header>
@@ -40,19 +41,18 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { showToast } from 'vant'
 import type { ApiError } from '../../api/client'
 import { reportsApi, type IncomeExpenseItem, type IncomeStatementResponse } from '../../api/reports'
-import DateRangePickerField from '../../components/DateRangePickerField.vue'
+import MonthPicker from '../../components/MonthPicker.vue'
 import { formatAmountDisplay } from '../../utils/decimal'
+import { monthEnd, monthStart, reportMonth } from '../../utils/reportMonth'
 import ReportTreeSection, { type TreeItem } from './ReportTreeSection.vue'
 
 const route = useRoute()
 const router = useRouter()
-const today = new Date()
-const month = today.toISOString().slice(0, 7)
-const defaultEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
-const startDate = ref(String(route.query.start_date || `${month}-01`))
-const endDate = ref(String(route.query.end_date || `${month}-${String(defaultEnd).padStart(2, '0')}`))
+const startMonth = ref(queryMonths().start)
+const endMonth = ref(queryMonths().end)
 const data = ref<IncomeStatementResponse | null>(null)
 const loading = ref(false)
 const error = ref('')
@@ -74,22 +74,40 @@ function toTreeItems(items: IncomeExpenseItem[]): TreeItem[] {
 }
 
 function applyDate() {
+  if (startMonth.value > endMonth.value) {
+    showToast('开始月份不能晚于结束月份')
+    return
+  }
+  const { start_date: _legacyStart, end_date: _legacyEnd, ...query } = route.query
   router.replace({
     query: {
-      ...route.query,
-      start_date: startDate.value,
-      end_date: endDate.value,
+      ...query,
+      start_month: startMonth.value,
+      end_month: endMonth.value,
     },
   })
+}
+
+function queryMonths() {
+  return {
+    start: reportMonth(route.query.start_month || route.query.start_date),
+    end: reportMonth(route.query.end_month || route.query.end_date),
+  }
 }
 
 async function load() {
   loading.value = true
   error.value = ''
   try {
+    const months = queryMonths()
+    if (months.start > months.end) {
+      error.value = '开始月份不能晚于结束月份'
+      data.value = null
+      return
+    }
     data.value = await reportsApi.getIncomeStatement({
-      start_date: startDate.value,
-      end_date: endDate.value,
+      start_date: monthStart(months.start),
+      end_date: monthEnd(months.end),
     })
   } catch (reason) {
     const err = reason as ApiError
@@ -107,17 +125,17 @@ function openAccount(account: string) {
     path: '/reports/account-detail',
     query: {
       account,
-      start_date: startDate.value,
-      end_date: endDate.value,
+      start_date: data.value?.start_date || monthStart(queryMonths().start),
+      end_date: data.value?.end_date || monthEnd(queryMonths().end),
     },
   })
 }
 
 watch(
-  () => [route.query.start_date, route.query.end_date],
+  () => [route.query.start_month, route.query.end_month, route.query.start_date, route.query.end_date],
   () => {
-    if (route.query.start_date) startDate.value = String(route.query.start_date)
-    if (route.query.end_date) endDate.value = String(route.query.end_date)
+    startMonth.value = queryMonths().start
+    endMonth.value = queryMonths().end
     load()
   },
 )

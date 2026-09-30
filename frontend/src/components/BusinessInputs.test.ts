@@ -327,6 +327,21 @@ describe('business inputs', () => {
     expect(wrapper.find('van-date-picker-stub').exists()).toBe(true)
   })
 
+  it('supports a report field and confirms a month without a day column', async () => {
+    const wrapper = mount(MonthPicker, {
+      props: { modelValue: '2024-02', label: '截止月份' },
+      global: { plugins: [Vant], stubs: { VanPopup: popupStub } },
+    })
+    expect(wrapper.find('.month-picker-trigger').exists()).toBe(false)
+    expect(wrapper.find('.van-field input').attributes('readonly')).toBeDefined()
+    await wrapper.find('.van-field').trigger('click')
+    const picker = wrapper.findComponent({ name: 'VanDatePicker' })
+    expect(picker.props('columnsType')).toEqual(['year', 'month'])
+    picker.vm.$emit('update:modelValue', ['2026', '09'])
+    picker.vm.$emit('confirm')
+    expect(wrapper.emitted('update:modelValue')).toEqual([['2026-09']])
+  })
+
   it('uses the Vant calendar instead of a native date input', async () => {
     const wrapper = shallowMount(DatePickerField, {
       props: { modelValue: '2026-07-17', label: '日期' },
