@@ -46,7 +46,7 @@ import {
   type AccountDetailResponse,
   type AccountTransactionItem,
 } from '../../api/reports'
-import { formatAmountDisplay } from '../../utils/decimal'
+import { formatAmountDisplay, negateAmount } from '../../utils/decimal'
 
 const route = useRoute()
 const router = useRouter()
@@ -60,7 +60,8 @@ const error = ref('')
 const scrollY = ref(0)
 
 function fmt(value: string) {
-  return formatAmountDisplay(value, 2)
+  // Income postings are credits: negate every displayed amount, including reversals.
+  return formatAmountDisplay(detail.value?.account_type === 'Income' ? negateAmount(value) : value, 2)
 }
 
 function queryParams() {

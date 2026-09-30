@@ -112,7 +112,15 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page-header { display: grid; gap: 8px; padding: 8px 0 0; margin-bottom: 16px; }
+.page-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 8px 0 0;
+  margin-bottom: 16px;
+}
 .page-header :deep(.van-cell-group--inset) { margin-left: 0; margin-right: 0; }
 .summary-card { margin-top: 8px; }
 .report-note { margin: 12px 16px; color: var(--bm-muted, #888); font-size: 12px; line-height: 1.5; }

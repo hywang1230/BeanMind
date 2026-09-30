@@ -1,22 +1,35 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import Vant from 'vant'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { reactive } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import MonthPicker from '../../components/MonthPicker.vue'
 
 import { reportsApi } from '../../api/reports'
 import BalanceSheetPage from './BalanceSheetPage.vue'
 
 const replace = vi.fn()
 const push = vi.fn()
+const route = reactive<{ query: Record<string, string> }>({ query: { as_of_date: '2026-07-31' } })
 vi.mock('vue-router', () => ({
   useRouter: () => ({ back: vi.fn(), replace, push }),
-  useRoute: () => ({ query: { as_of_date: '2026-07-31' } }),
+  useRoute: () => route,
 }))
 vi.mock('../../api/reports', () => ({
   reportsApi: { getBalanceSheet: vi.fn() },
 }))
 
 describe('BalanceSheetPage', () => {
-  beforeEach(() => vi.clearAllMocks())
+  const wrappers: Array<ReturnType<typeof mount>> = []
+  function mountPage() {
+    const wrapper = mount(BalanceSheetPage, { global: { plugins: [Vant] } })
+    wrappers.push(wrapper)
+    return wrapper
+  }
+  beforeEach(() => {
+    vi.clearAllMocks()
+    route.query = { as_of_date: '2026-07-31' }
+  })
+  afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
 
   it('loads balance sheet by as_of_date and formats CNY amounts as strings', async () => {
     vi.mocked(reportsApi.getBalanceSheet).mockResolvedValue({
@@ -59,7 +72,7 @@ describe('BalanceSheetPage', () => {
       currencies: ['CNY'],
     })
 
-    const wrapper = mount(BalanceSheetPage, { global: { plugins: [Vant] } })
+    const wrapper = mountPage()
     await flushPromises()
     expect(reportsApi.getBalanceSheet).toHaveBeenCalledWith({ as_of_date: '2026-07-31' })
     expect(wrapper.text()).toContain('100.12')
@@ -82,7 +95,7 @@ describe('BalanceSheetPage', () => {
       exchange_rates: { CNY: '1' }, currencies: ['CNY'],
     })
 
-    const wrapper = mount(BalanceSheetPage, { global: { plugins: [Vant] } })
+    const wrapper = mountPage()
     await flushPromises()
     expect(wrapper.text()).toContain('总权益80.00')
     const equityRows = wrapper.findAll('.tree-section')[2]!.findAll('.van-cell')
@@ -100,9 +113,28 @@ describe('BalanceSheetPage', () => {
 
   it('shows retryable error when rates missing', async () => {
     vi.mocked(reportsApi.getBalanceSheet).mockRejectedValue({ message: '缺少汇率: USD' })
-    const wrapper = mount(BalanceSheetPage, { global: { plugins: [Vant] } })
+    const wrapper = mountPage()
     await flushPromises()
     expect(wrapper.text()).toContain('缺少汇率: USD')
     expect(wrapper.text()).toContain('重试')
+  })
+
+  it('normalizes legacy dates to month end and applies the chosen month in the URL', async () => {
+    route.query = { as_of_date: '2024-02-10' }
+    vi.mocked(reportsApi.getBalanceSheet).mockRejectedValue({ message: 'test error' })
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(reportsApi.getBalanceSheet).toHaveBeenLastCalledWith({ as_of_date: '2024-02-29' })
+    expect(wrapper.findComponent(MonthPicker).props('modelValue')).toBe('2024-02')
+    await wrapper.findComponent(MonthPicker).vm.$emit('update:modelValue', '2026-04')
+    await wrapper.find('.page-header > .van-button').trigger('click')
+    expect(replace).toHaveBeenCalledWith({ query: { month: '2026-04' } })
+    route.query = { month: '2026-04' }
+    await flushPromises()
+    expect(reportsApi.getBalanceSheet).toHaveBeenLastCalledWith({ as_of_date: '2026-04-30' })
+    // Browser back restores the applied filter, including when no query remains.
+    route.query = { month: '2024-02' }
+    await flushPromises()
+    expect(wrapper.findComponent(MonthPicker).props('modelValue')).toBe('2024-02')
   })
 })

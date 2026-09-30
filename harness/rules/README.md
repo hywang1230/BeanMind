@@ -1,6 +1,6 @@
 # BeanMind 开发规则
 
-这些规则约束后续改动，不要求借规范搭建搬迁或重构现有业务代码。设计与授权见根目录 AGENTS.md；检查与验收见 [Harness](../README.md)。
+模块落位、工程与产品规则在此维护；协作与授权见根 AGENTS.md，检查与验收见 [Harness](../README.md)。
 
 ## 模块、依赖与文件落位
 
@@ -29,10 +29,11 @@ Python 文件和函数用 snake_case、类型用 PascalCase；沿用 `Transactio
 
 - 路由负责协议校验、依赖和错误映射，业务约束复用 Service。保持错误 `code`、`message`、`details` 和 Decimal 传输契约，不新增生产 `/api/test/*`。
 - 同步 SQLAlchemy 配合同步 Endpoint/Service；DB 依赖用 `yield` 关闭会话，后台调用者关闭自建会话，不吞异常。
-- 写入先落 Beancount 再刷新投影；保留临时文件、写后解析、失败回滚、幂等和单写者保障。投影失败为 DIRTY，财务查询拒绝返回错误结果，从账本重建恢复；预算依赖 READY 投影。
-- 金额使用 Decimal、NUMERIC 或十进制字符串；不以 float 做财务运算，缺失汇率显式返回。流水保持 SQL 聚合、`(date, id)` Keyset Cursor 与稳定 UUID，不新增精确总数扫描或批量补写历史 UUID。
+- 写入先落 Beancount 再刷新投影，禁止 SQLite 反向覆盖账本；保留临时文件、写后解析、失败回滚、幂等和单写者保障。投影失败为 DIRTY，财务查询拒绝返回错误结果，从账本重建恢复；预算依赖 READY 投影。
+- 金额使用 Decimal、NUMERIC 或十进制字符串；不以 float 做财务运算，缺失汇率显式返回，不按 1:1 兜底。流水保持 SQL 聚合、`(date, id)` Keyset Cursor 与稳定 UUID，不新增精确总数扫描或批量补写历史 UUID。
 - 保留账户关闭/重开及历史交易、周期记账、币种、汇率、报表和账户明细，不因空夹具删能力。日志不输出完整账本、财务明细、Prompt 或密钥。
-- AI 复盘默认关闭；确定性代码提供财务事实，模型只生成总结和建议，输出本地校验，失败不影响核心功能。
+- AI 复盘默认关闭，使用 OpenAI-compatible Chat Completions；确定性代码提供财务事实，模型只生成总结和建议，输出本地校验，失败不影响核心功能。
+- 登录、租户、远端同步、应用内备份必须有明确新需求。
 
 ## 前端
 
@@ -46,4 +47,4 @@ Python 文件和函数用 snake_case、类型用 PascalCase；沿用 `Transactio
 
 - 迁移默认只读预览；执行需明确目标授权、`--apply`、外部可恢复备份、`--confirm-drop-budgets`。核对解析、SQLite/WAL、保留数量和回退条件。
 - 性能结论需要匿名真实数据 1× 与等分布 2×，合成夹具不能替代。
-- 测试使用临时数据或授权副本；不得读取或修改默认真实账本、SQLite。复用测试，只补真实覆盖缺口，保留原生 runner 对失败、零测试与跳过的语义。
+- 测试遵守根 AGENTS.md 的数据授权边界；保留原生 runner 对失败、零测试与跳过的语义。

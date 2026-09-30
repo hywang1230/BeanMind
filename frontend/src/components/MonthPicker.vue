@@ -1,5 +1,6 @@
 <template>
-  <van-button class="month-picker-trigger" plain round icon="calendar-o" @click="open">
+  <van-field v-if="label" :model-value="modelValue" :label="label" readonly is-link @click="open" />
+  <van-button v-else class="month-picker-trigger" plain round icon="calendar-o" @click="open">
     {{ modelValue }}
     <van-icon name="arrow" />
   </van-button>
@@ -8,6 +9,8 @@
       v-model="selected"
       title="选择月份"
       :columns-type="['year', 'month']"
+      :min-date="minDate"
+      :max-date="maxDate"
       @confirm="confirm"
       @cancel="show = false"
     />
@@ -17,12 +20,14 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 
-const props = defineProps<{ modelValue: string }>()
+const props = defineProps<{ modelValue: string; label?: string }>()
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
   (event: 'change', value: string): void
 }>()
 const show = ref(false)
+const minDate = new Date(2000, 0, 1)
+const maxDate = new Date(2100, 11, 31)
 const selected = ref<string[]>(parts(props.modelValue))
 
 function parts(value: string) {
