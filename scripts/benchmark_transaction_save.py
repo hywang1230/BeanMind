@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from contextlib import contextmanager
 import json
 import logging
 import math
@@ -46,7 +47,19 @@ def configure_isolation(root):
         "SCHEDULER_ENABLED": "false", "LLM_ENABLED": "false",
         "LLM_BASE_URL": "", "LLM_API_KEY": "", "LLM_MODEL": "benchmark-disabled",
         "DEBUG": "false", "LOG_LEVEL": "ERROR",
+        "PYTHON_DOTENV_DISABLED": "true",
     })
+
+
+@contextmanager
+def working_directory(root):
+    """Pydantic's .env source must also be isolated, even with env overrides."""
+    previous = Path.cwd()
+    os.chdir(root)
+    try:
+        yield
+    finally:
+        os.chdir(previous)
 
 
 def generate_ledger(path, size, id_mode, plugin_mode="none", global_mode="none", directive_text_position="before"):
@@ -107,7 +120,7 @@ def compare_projection(actual_engine, expected_engine):
 
 
 def run_worker(size, iterations, id_mode, positions, plugin_mode="none", global_mode="none", directive_text_position="before"):
-    with tempfile.TemporaryDirectory(prefix="beanmind-save-benchmark-") as directory:
+    with tempfile.TemporaryDirectory(prefix="beanmind-save-benchmark-") as directory, working_directory(Path(directory).resolve()):
         root = Path(directory).resolve()
         configure_isolation(root)
         # No backend import is permitted above isolation configuration.
@@ -121,7 +134,9 @@ def run_worker(size, iterations, id_mode, positions, plugin_mode="none", global_
         from backend.infrastructure.persistence.db.models import Base, LedgerTransaction
         from backend.infrastructure.persistence.ledger_projection import LedgerProjectionService
         from backend.interfaces.api.transaction import router
+        from backend.interfaces.api.transaction_timing import TransactionWriteTimingMiddleware
         from backend.services.currency_catalog import CurrencyCatalogService
+        from beancount import loader
 
         generate_ledger(settings.LEDGER_FILE, size, id_mode, plugin_mode, global_mode, directive_text_position)
         Base.metadata.create_all(engine)
@@ -129,14 +144,30 @@ def run_worker(size, iterations, id_mode, positions, plugin_mode="none", global_
             CurrencyCatalogService(session).ensure_seeded()
             LedgerProjectionService(session, settings.LEDGER_FILE).rebuild_all()
         app = FastAPI()
+        app.add_middleware(TransactionWriteTimingMiddleware)
         app.include_router(router)  # Real dependencies; each HTTP request owns its session.
         sql_counts = Counter()
-        phase_samples = {}
+        phase_samples = Counter()
         phase_states = {}
+        phase_events = Counter()
+        provider_events = Counter()
+        loader_calls = 0
+        # Count the complete pipeline, including uncached formal loads and mirrors;
+        # a public load_file call satisfied by pickle is not a full loader run.
+        original_loader = loader._load
+
+        def count_loader(*args, **kwargs):
+            nonlocal loader_calls
+            loader_calls += 1
+            return original_loader(*args, **kwargs)
+
+        loader._load = count_loader
         phase_loggers = [logging.getLogger(name) for name in (
             "backend.infrastructure.persistence.beancount.ledger_write",
             "backend.infrastructure.persistence.ledger_projection",
             "backend.infrastructure.persistence.beancount.repositories.transaction_repository_impl",
+            "backend.infrastructure.persistence.beancount.beancount_provider",
+            "backend.interfaces.api.transaction_timing",
         )]
 
         class PhaseHandler(logging.Handler):
@@ -145,12 +176,18 @@ def run_worker(size, iterations, id_mode, positions, plugin_mode="none", global_
                 if not message.startswith("ledger_"):
                     return
                 phase = message.split(" ", 1)[0]
+                phase_events[phase.removeprefix("ledger_")] += 1
                 if phase == "ledger_projection" and " mode=" in message:
                     phase_states["projection_mode"] = message.split("mode=", 1)[1].split(" ", 1)[0]
                 elif phase == "ledger_projection_reuse":
                     phase_states["reuse_status"] = message.split("status=", 1)[1].split(" ", 1)[0]
+                elif phase == "ledger_provider" and " event=" in message:
+                    event_name = message.split("event=", 1)[1].split(" ", 1)[0]
+                    provider_events[event_name] += 1
+                for name, value in re.findall(r"(sample_count)=([0-9]+)", message):
+                    phase_events[f"{phase.removeprefix('ledger_')}.{name}"] += int(value)
                 for name, value in re.findall(r"([a-z_]+_ms)=([0-9.]+)", message):
-                    phase_samples[f"{phase}.{name}".replace("ledger_", "", 1)] = float(value)
+                    phase_samples[f"{phase}.{name}".replace("ledger_", "", 1)] += float(value)
 
         phase_handler = PhaseHandler()
         original_levels = [item.level for item in phase_loggers]
@@ -175,21 +212,31 @@ def run_worker(size, iterations, id_mode, positions, plugin_mode="none", global_
         try:
             with TestClient(app) as client:
                 def save(method, url, body):
+                    nonlocal loader_calls
                     sql_counts.clear()
                     phase_samples.clear()
                     phase_states.clear()
+                    phase_events.clear()
+                    provider_events.clear()
+                    loader_calls = 0
                     started = time.perf_counter()
                     response = client.request(method, url, json=body)
                     elapsed = (time.perf_counter() - started) * 1000
                     counts = dict(sql_counts)
                     phases = dict(phase_samples)
                     states = dict(phase_states)
+                    states["phase_events"] = dict(phase_events)
+                    states["provider_events"] = dict(provider_events)
+                    states["loader_calls"] = loader_calls
                     if response.status_code not in (200, 201):
                         # Never print response bodies, SQL parameters or ledger contents.
                         raise RuntimeError(f"save API status {response.status_code}")
                     return elapsed, counts, phases, states, response.json()
 
-                _, _, _, _, warm = save("POST", "/api/transactions", payload)
+                cold_elapsed, _, cold_phases, cold_states, warm = save("POST", "/api/transactions", payload)
+                cold_start = {"total_ms": round(cold_elapsed, 3), "phases_ms": cold_phases,
+                              "loader_calls": cold_states["loader_calls"],
+                              "provider_events": cold_states["provider_events"]}
                 save("PUT", f'/api/transactions/{warm["id"]}', {"description": "warm-edit"})
                 save("DELETE", f'/api/transactions/{warm["id"]}', None)
                 created_ids = []
@@ -226,6 +273,10 @@ def run_worker(size, iterations, id_mode, positions, plugin_mode="none", global_
                         state_runs.append(states)
                     results[scenario] = {
                         "total_ms": distribution(elapsed_samples),
+                        "samples_ms": [round(value, 3) for value in elapsed_samples],
+                        "loader_calls": distribution([sample["loader_calls"] for sample in state_runs]),
+                        "provider_events": dict(sum((Counter(sample["provider_events"]) for sample in state_runs), Counter())),
+                        "phase_event_counts": dict(sum((Counter(sample["phase_events"]) for sample in state_runs), Counter())),
                         "sql_executions": {
                             verb: distribution([sample.get(verb, 0) for sample in sql_samples])
                             for verb in ("INSERT", "DELETE", "UPDATE", "SELECT")
@@ -251,8 +302,11 @@ def run_worker(size, iterations, id_mode, positions, plugin_mode="none", global_
             return {"initial_transactions": size, "id_mode": id_mode, "plugin_mode": plugin_mode,
                     "global_mode": global_mode, "directive_text_position": directive_text_position,
                     "delete_targets": "created stable IDs at file end",
-                    "iterations": iterations, "scenarios": results, "consistency": consistency}
+                    "iterations": iterations, "cold_start": cold_start,
+                    "host_load_average": list(os.getloadavg()) if hasattr(os, "getloadavg") else None,
+                    "scenarios": results, "consistency": consistency}
         finally:
+            loader._load = original_loader
             for item, level in zip(phase_loggers, original_levels):
                 item.removeHandler(phase_handler)
                 item.setLevel(level)

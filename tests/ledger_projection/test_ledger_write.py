@@ -729,8 +729,10 @@ def test_candidate_entry_conversion_failure_retries_formal_loader(files, db_sess
 
     def after(parsed):
         assert parsed.candidate_snapshot is not None
+        parsed.projection_receipt = object()  # Refresh must clear any stale receipt.
         projection.refresh_files([year], parsed_files=parsed,
                                  candidate_snapshot=parsed.candidate_snapshot)
+        assert parsed.projection_receipt is None
 
     with caplog.at_level(logging.INFO, logger="backend.infrastructure.persistence.ledger_projection"):
         assert writer.commit_ledger_files(
@@ -764,7 +766,7 @@ def test_candidate_fallback_loader_failure_stays_dirty(files, db_session, monkey
         with monkeypatch.context() as patch:
             patch.setattr(projection, "_model_from_entry",
                           lambda _: (_ for _ in ()).throw(ValueError("candidate conversion failed")))
-            patch.setattr(projection_module.loader, "load_file",
+            patch.setattr(projection_module, "load_ledger_file",
                           lambda *_: (_ for _ in ()).throw(ValueError("formal loader failed")))
             projection.refresh_files([year], parsed_files=parsed,
                                      candidate_snapshot=parsed.candidate_snapshot)
@@ -869,3 +871,302 @@ def test_pure_candidate_validates_account_semantics_in_locked_context(
         )
     assert year.read_text() == before
     assert not writer.has_pending_write(main)
+
+
+@pytest.mark.parametrize("declaration", [
+    'plugin "beancount.plugins.auto_accounts"\n',
+    'plugin "beancount.plugins.auto_accounts" "config"\n',
+    'plugin "beancount.plugins.auto_accounts"\nplugin "beancount.plugins.auto_accounts"\n',
+    '  plugin "beancount.plugins.auto_accounts"\n',
+    'plugin "auto_accounts"\n',
+    'plugin "beancount.plugins.auto_accounts"\nplugin "other.plugin"\n',
+    'plugin "beancount.plugins.auto_accounts"\n  "config"\n',
+])
+def test_trusted_plugin_configuration_requires_exact_single_declaration(files, declaration):
+    main, year = files
+    main.write_text(declaration + main.read_text())
+    state = writer.sample_source_state(main)
+    options = {"filename": str(main), "include": [str(p) for p in state.sources],
+               "plugin": [("beancount.plugins.auto_accounts", None)], "pythonpath": []}
+    assert writer.trusted_full_view(state, options) is (declaration == writer._AUTO_ACCOUNTS + "\n")
+    for plugins in ([('beancount.plugins.auto_accounts', 'config')],
+                    [('beancount.plugins.auto_accounts', None), ('other.plugin', None)], []):
+        assert not writer.trusted_full_view(state, {**options, "plugin": plugins})
+
+
+def test_source_state_detects_preserved_mtime_and_include_membership(files):
+    main, year = files
+    before = writer.sample_source_state(main)
+    old_stat = year.stat()
+    year.write_text(NEW)
+    os.utime(year, ns=(old_stat.st_atime_ns, old_stat.st_mtime_ns))
+    after = writer.sample_source_state(main)
+    assert before.fingerprints[year][:2] == after.fingerprints[year][:2]
+    assert before.fingerprints[year][2] != after.fingerprints[year][2]
+    other = main.parent / 'other.beancount'
+    other.write_text('; member\n')
+    main.write_text(main.read_text() + 'include "other.beancount"\n')
+    assert set(writer.sample_source_state(main).sources) == set(before.sources) | {other}
+
+
+@pytest.mark.parametrize("pattern", ['*.beancount', '../external.beancount'])
+def test_source_state_rejects_untracked_include_inputs(files, pattern):
+    main, _ = files
+    main.write_text(f'include "{pattern}"\n')
+    with pytest.raises(writer.LedgerSourceUnsupported):
+        writer.sample_source_state(main)
+
+
+def test_auto_accounts_candidate_paths_and_ready_receipt(files, db_session, monkeypatch):
+    main, year = files
+    main.write_text('plugin "beancount.plugins.auto_accounts"\n' + main.read_text())
+    # Require the plugin to actually synthesize an Open, preserving virtual provenance.
+    changed = NEW.replace('Expenses:Food', 'Expenses:New')
+    projection = LedgerProjectionService(db_session, main)
+    projection.full_rebuild()
+    captured = []
+    original_loader = writer.loader._load
+    loader_calls = []
+    def counted_loader(*args, **kwargs):
+        loader_calls.append(1)
+        return original_loader(*args, **kwargs)
+    monkeypatch.setattr(writer.loader, "_load", counted_loader)
+
+    def after(parsed):
+        snapshot = parsed.candidate_snapshot
+        assert snapshot is not None
+        assert snapshot.ledger_path == main
+        assert snapshot.options['filename'] == str(main)
+        assert set(map(Path, snapshot.options['include'])) == set(snapshot.source_hashes)
+        assert snapshot.options['pythonpath'] == []
+        assert 'input_hash' not in snapshot.options
+        generated = [entry for entry in snapshot.entries if entry.meta['filename'] == '<auto_accounts>']
+        assert any(isinstance(entry, data.Open) and entry.account == 'Expenses:New' for entry in generated)
+        for entry in snapshot.entries:
+            assert '.beanmind-validate-' not in entry.meta['filename']
+            for posting in getattr(entry, 'postings', []):
+                assert '.beanmind-validate-' not in posting.meta['filename']
+        assert parsed.projection_receipt is None
+        projection.refresh_files([year], parsed_files=parsed, candidate_snapshot=snapshot)
+        receipt = parsed.projection_receipt
+        assert receipt.snapshot is snapshot
+        assert receipt.candidate_used and receipt.ready_committed
+        assert receipt.source_version == writer.sample_source_state(main).fingerprints
+        assert parsed.copy().projection_receipt is receipt
+        captured.append(receipt)
+
+    assert writer.commit_ledger_files(main, {year: changed},
+                                     before_commit=lambda: projection.mark_dirty_files([year]),
+                                     after_commit=after)
+    assert captured
+    assert len(loader_calls) == 1  # Candidate loader is reused by the projection.
+    before = sorted((row.id, row.content_hash) for row in db_session.query(LedgerTransaction).all())
+    projection.full_rebuild()
+    assert before == sorted((row.id, row.content_hash) for row in db_session.query(LedgerTransaction).all())
+
+
+def test_trusted_view_rejects_unknown_options_and_external_paths(files):
+    main, _ = files
+    state = writer.sample_source_state(main)
+    options = {'filename': str(main), 'include': list(map(str, state.sources)), 'plugin': [], 'pythonpath': []}
+    assert writer.trusted_full_view(state, options)
+    for changed in ({'external_path': '/tmp/input'}, {'pythonpath': [str(main.parent)]},
+                    {'include': [str(main)]}, {'filename': '/tmp/input'}):
+        assert not writer.trusted_full_view(state, {**options, **changed})
+
+
+def test_source_sampling_rejects_earlier_source_change_with_preserved_mtime(files, monkeypatch):
+    main, year = files
+    original_read = Path.read_bytes
+    changed = False
+    main_stat = main.stat()
+    def read_bytes(path):
+        nonlocal changed
+        raw = original_read(path)
+        if path == year and not changed:
+            changed = True
+            # The main source was already traversed. Alter its include graph while
+            # preserving its mtime and size; ctime/inode still invalidate the sample.
+            content = main.read_text()
+            main.write_text(content.replace('year.beancount', 'none.beancount'))
+            os.utime(main, ns=(main_stat.st_atime_ns, main_stat.st_mtime_ns))
+        return raw
+    monkeypatch.setattr(Path, 'read_bytes', read_bytes)
+    with pytest.raises(writer.LedgerWriteConflict, match='changed while sampling'):
+        writer.sample_source_state(main)
+
+
+def test_formal_loader_forwards_parameters_and_error_logging(files, monkeypatch):
+    main, _ = files
+    calls = []
+    errors = [object()]
+    expected = ([], errors, {})
+    timings, error_log, validations = object(), object(), [object()]
+    def uncached(filename, log_timings, extra_validations, encoding):
+        calls.append((filename, log_timings, extra_validations, encoding))
+        return expected
+    monkeypatch.setattr(writer.loader, '_uncached_load_file', uncached)
+    monkeypatch.setattr(writer.loader, '_log_errors', lambda value, target: calls.append((value, target)))
+    monkeypatch.setenv('BEANMIND_TEST_LEDGER', str(main))
+    assert writer.load_ledger_file('$BEANMIND_TEST_LEDGER', timings, error_log, validations, 'utf-8') is not None
+    assert calls == [(str(main), timings, validations, 'utf-8'), (errors, error_log)]
+
+
+@pytest.mark.parametrize('broken', ['missing', 'signature', 'version'])
+def test_formal_loader_contract_failure_never_falls_back(files, monkeypatch, broken):
+    main, _ = files
+    if broken == 'missing':
+        monkeypatch.delattr(writer.loader, '_uncached_load_file')
+    elif broken == 'signature':
+        monkeypatch.setattr(writer.loader, '_uncached_load_file', lambda filename: None)
+    else:
+        monkeypatch.setattr(writer.beancount, '__version__', 'unsupported')
+    monkeypatch.setattr(writer.loader, 'load_file', lambda *args: pytest.fail('unsafe cached fallback'))
+    with pytest.raises(writer.LedgerWriteError, match='loader contract'):
+        writer.load_ledger_file(main)
+
+
+def test_formal_loader_encrypted_entry_preserves_public_contract(files, monkeypatch):
+    main, _ = files
+    calls = []
+    expected = ([], [], {})
+    monkeypatch.setattr(writer.loader.encryption, 'is_encrypted_file', lambda filename: True)
+    monkeypatch.setattr(writer.loader, 'load_file', lambda *args: calls.append(args) or expected)
+    monkeypatch.setattr(writer.loader, '_uncached_load_file', lambda *args: pytest.fail('encrypted private loader'))
+    assert writer.load_ledger_file(main, 'timings', 'errors', ['validation'], 'encoding') is expected
+    assert calls == [(str(main), 'timings', 'errors', ['validation'], 'encoding')]
+
+
+def test_formal_loader_runs_extra_validations_and_logs_errors(files):
+    import io
+    main, year = files
+    validations = []
+    def extra(entries, options):
+        validations.append((entries, options))
+        return []
+    entries, errors, options = writer.load_ledger_file(main, extra_validations=[extra])
+    assert not errors and validations == [(entries, options)]
+    year.write_text('invalid directive\n')
+    error_output = io.StringIO()
+    _, errors, _ = writer.load_ledger_file(main, log_errors=error_output)
+    assert errors and error_output.getvalue()
+
+
+@pytest.mark.parametrize('mode', ['rebuild', 'fallback', 'consistency'])
+def test_formal_projection_ignores_stale_pickle_without_touching_cache(files, db_session, monkeypatch, mode):
+    import builtins
+    main, year = files
+    main.write_text('plugin "beancount.plugins.auto_accounts"\n' + main.read_text())
+    projection = LedgerProjectionService(db_session, main)
+    projection.full_rebuild()
+    cache = main.parent / '.forced.picklecache'
+    cached_load = writer.loader.pickle_cache_function(lambda _: str(cache), 0, writer.loader._uncached_load_file)
+    cached_entries, errors, _ = cached_load(str(main), None, None, None)
+    assert not errors and cache.exists()
+    before_cache = cache.read_bytes()
+    before_stat = cache.stat()
+    previous = year.stat()
+    year.write_text(OLD.replace(' 1 CNY', ' 2 CNY').replace(' -1 CNY', ' -2 CNY')
+                   .replace('2025-01-01', '2025-02-01'))
+    os.utime(year, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+    # The real Beancount wrapper proves the preserved-mtime cache is stale.
+    stale_entries, _, _ = cached_load(str(main), None, None, None)
+    assert stale_entries == cached_entries
+    original_open = builtins.open
+    original_remove = os.remove
+    def open_file(path, *args, **kwargs):
+        if not isinstance(path, int) and Path(path) == cache:
+            pytest.fail('formal projection must not read or write picklecache')
+        return original_open(path, *args, **kwargs)
+    def remove_file(path, *args, **kwargs):
+        if Path(path) == cache:
+            pytest.fail('formal projection must not delete picklecache')
+        return original_remove(path, *args, **kwargs)
+    with monkeypatch.context() as patch:
+        patch.setattr(builtins, 'open', open_file)
+        patch.setattr(os, 'remove', remove_file)
+        patch.setattr(writer.loader, 'load_file',
+                      lambda *args, **kwargs: pytest.fail('formal projection used the cached public loader'))
+        if mode == 'consistency':
+            with pytest.raises(ValueError, match='核对失败'):
+                projection.check_consistency()
+            projection.full_rebuild()
+        elif mode == 'fallback':
+            projection.refresh_files([year])
+        else:
+            projection.full_rebuild()
+        assert projection.check_consistency()['consistent']
+        row = db_session.query(LedgerTransaction).one()
+        assert {posting.amount_text for posting in row.postings} == {'2', '-2'}
+        assert row.date.isoformat() == '2025-02-01'
+    assert cache.read_bytes() == before_cache
+    after_stat = cache.stat()
+    assert (after_stat.st_mtime_ns, after_stat.st_ino, after_stat.st_size) == (
+        before_stat.st_mtime_ns, before_stat.st_ino, before_stat.st_size)
+
+
+def test_final_graph_early_source_change_cannot_issue_stale_ready_receipt(files, db_session, monkeypatch, caplog):
+    main, year = files
+    accounts = main.parent / 'accounts.beancount'
+    # LIFO traversal reads accounts before year, making year the last graph source.
+    main.write_text('plugin "beancount.plugins.auto_accounts"\n'
+                    'include "year.beancount"\ninclude "accounts.beancount"\n')
+    projection = LedgerProjectionService(db_session, main)
+    projection.full_rebuild()
+    original_graph = projection_module._source_fingerprints
+    original_fingerprint = projection_module._fingerprint
+    phase = 0
+    changed = False
+    receipts = []
+    def graph(path):
+        nonlocal phase
+        phase += 1
+        return original_graph(path)
+    def fingerprint(path):
+        nonlocal changed
+        value = original_fingerprint(path)
+        if phase == 3 and path == year and not changed:
+            changed = True
+            previous = accounts.stat()
+            accounts.write_text(accounts.read_text().replace('2020-01-01', '2021-01-01'))
+            os.utime(accounts, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+        return value
+    def after(parsed):
+        with monkeypatch.context() as patch:
+            patch.setattr(projection_module, '_source_fingerprints', graph)
+            patch.setattr(projection_module, '_fingerprint', fingerprint)
+            projection.refresh_files([year], parsed_files=parsed, candidate_snapshot=parsed.candidate_snapshot)
+        receipts.append(parsed.projection_receipt)
+    with caplog.at_level(logging.INFO, logger='backend.infrastructure.persistence.ledger_projection'):
+        assert writer.commit_ledger_files(main, {year: NEW},
+                                         before_commit=lambda: projection.mark_dirty_files([year]),
+                                         after_commit=after)
+    assert changed and receipts == [None]
+    assert 'reason=late_invalidated' in caplog.text
+    assert 'mode=loader_diff' in caplog.text
+    assert projection.status()['status'] == 'READY'
+    assert projection.check_consistency()['consistent']
+
+
+def test_candidate_rechecks_later_posting_provenance_after_filename_mapping_hit(files, tmp_path):
+    main, year = files
+    year.write_text(OLD + NEW.replace('2025-01-01', '2025-01-02'))
+    sources = writer._source_tree(main, {})
+    mirror = tmp_path / 'candidate-mirror'
+    mirror.mkdir()
+    for path, content in sources.items():
+        target = mirror / path.relative_to(main.parent)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content)
+    entries, errors, options = writer.loader.load_file(str(mirror / main.name))
+    assert not errors
+    assert writer._candidate_snapshot(entries, options, mirror, sources, main) is not None
+    transactions = [entry for entry in entries if isinstance(entry, data.Transaction)]
+    assert len(transactions) == 2
+    first, later = transactions
+    assert first.meta['filename'] == later.meta['filename']
+    bad_meta = {**later.postings[0].meta, 'filename': str(mirror / 'accounts.beancount')}
+    bad_posting = later.postings[0]._replace(meta=bad_meta)
+    damaged = later._replace(postings=[bad_posting, *later.postings[1:]])
+    damaged_entries = [damaged if entry is later else entry for entry in entries]
+    assert writer._candidate_snapshot(damaged_entries, options, mirror, sources, main) is None
