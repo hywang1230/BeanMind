@@ -4,6 +4,7 @@ from decimal import Decimal
 import httpx
 
 from backend.ai.llm_client import LlmUnavailableError, OpenAICompatibleClient
+from backend.config.settings import Settings
 from backend.infrastructure.persistence.ledger_projection import LedgerProjectionService
 from backend.infrastructure.persistence.beancount.beancount_service import BeancountService
 from backend.services.ledger_aggregation import LedgerAggregationService
@@ -75,6 +76,31 @@ def test_openai_compatible_client_rejects_markdown() -> None:
         assert "响应不可用" in str(error)
     else:
         raise AssertionError("invalid response was accepted")
+
+
+def test_monthly_review_default_waits_five_minutes_in_http_transport(monkeypatch) -> None:
+    monkeypatch.delenv("LLM_TIMEOUT_SECONDS", raising=False)
+    configured = Settings(_env_file=None)
+    observed = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed.append(request.extensions["timeout"]["read"])
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": valid_model_payload()}}]},
+        )
+
+    client = OpenAICompatibleClient(
+        enabled=True,
+        base_url="https://example.invalid/v1",
+        api_key="synthetic-key",
+        model="test-model",
+        timeout_seconds=configured.LLM_TIMEOUT_SECONDS,
+        transport=httpx.MockTransport(handler),
+    )
+    result = client.generate({})
+    assert observed == [300.0]
+    assert result.highlights == ["餐饮占比最高"]
 
 
 def test_openai_compatible_client_handles_timeout_without_leaking_secret() -> None:

@@ -87,6 +87,14 @@ def test_save_benchmark_isolated_api_and_full_equivalence(tmp_path, mode, plugin
             assert 0 < scenario["total_ms"]["median"] <= scenario["total_ms"]["p95"]
             assert set(scenario["sql_executions"]) == {"INSERT", "UPDATE", "DELETE", "SELECT"}
             assert scenario["sql_executions"]["SELECT"]["median"] > 0
+            assert len(scenario["samples_ms"]) == 2
+            assert scenario["phase_event_counts"]["request"] == 2
+            if plugin_mode == "auto_accounts":
+                assert scenario["loader_calls"]["median"] == 1
+                assert scenario["provider_events"]["publish"] == 2
+                # Factory and command both read the Provider: count both hits.
+                assert scenario["provider_events"]["hit"] >= 4
+                assert scenario["phase_event_counts"]["provider.sample_count"] >= 6
     assert "Assets:Cash" not in result.stdout
     assert "fixture-" not in result.stdout
 
@@ -116,3 +124,25 @@ def test_save_benchmark_consistency_failure_is_nonzero_and_redacted(tmp_path):
     assert not result.stdout
     assert "SECRET-FINANCIAL-CONTENT" not in result.stderr
     assert "No report produced" in result.stderr
+
+
+def test_save_benchmark_does_not_read_dotenv_even_with_overrides(tmp_path):
+    # Pydantic reads .env even when every relevant variable has an env override.
+    # Execute from a directory containing a sentinel .env and fail on any attempt
+    # to parse it, rather than merely asserting it was not modified.
+    (tmp_path / ".env").write_text("LLM_API_KEY=PRIVATE-SENTINEL\n")
+    program = (
+        "import sys; "
+        f"sys.path.insert(0, {str(ROOT)!r}); "
+        "from pydantic_settings.sources.providers import dotenv; "
+        "dotenv.dotenv_values = lambda *args, **kwargs: "
+        "(_ for _ in ()).throw(RuntimeError('dotenv must not be read')); "
+        "from scripts import benchmark_transaction_save as benchmark; "
+        "sys.argv = ['benchmark', '--worker', '--sizes', '2', '--iterations', '1']; "
+        "raise SystemExit(benchmark.main())"
+    )
+    result = subprocess.run([sys.executable, "-c", program], cwd=tmp_path,
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["consistency"]["matched"] is True
+    assert "PRIVATE-SENTINEL" not in result.stdout + result.stderr

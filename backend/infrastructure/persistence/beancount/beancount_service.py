@@ -7,8 +7,8 @@ from backend.infrastructure.persistence.beancount.write_coordination import coor
 from typing import List, Dict, Optional
 from datetime import datetime, date
 from decimal import Decimal
+from time import perf_counter
 
-from beancount import loader
 from beancount.core import data, amount
 from beancount.core.data import Open, Transaction, Posting, TxnPosting
 from beancount.ops import summarize
@@ -29,19 +29,27 @@ class BeancountService:
         self.entries = []
         self.errors = []
         self.options = {}
+        self.load_generation = 0
+        self.load_duration_ms = 0.0
         
         # 加载账本
         self.reload()
     
     @coordinated_read
     def reload(self) -> None:
-        """重新加载账本文件"""
+        """重新加载账本文件；每次尝试使旧 Provider 绑定失效。"""
+        self.load_generation += 1
+        self.load_duration_ms = 0.0
         if not self.ledger_path.exists():
             raise FileNotFoundError(f"Ledger file not found: {self.ledger_path}")
         
-        from backend.infrastructure.persistence.beancount.ledger_write import assert_ledger_readable
+        from backend.infrastructure.persistence.beancount.ledger_write import assert_ledger_readable, load_ledger_file
         assert_ledger_readable(self.ledger_path)
-        self.entries, self.errors, self.options = loader.load_file(str(self.ledger_path))
+        started = perf_counter()
+        try:
+            self.entries, self.errors, self.options = load_ledger_file(str(self.ledger_path))
+        finally:
+            self.load_duration_ms = (perf_counter() - started) * 1000
         
         if self.errors:
             # 只记录数量，避免在日志中输出包含财务数据的错误详情。

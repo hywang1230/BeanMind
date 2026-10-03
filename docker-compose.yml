@@ -33,7 +33,7 @@ services:
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
-      - LLM_TIMEOUT_SECONDS=${LLM_TIMEOUT_SECONDS:-30}
+      - LLM_TIMEOUT_SECONDS=${LLM_TIMEOUT_SECONDS:-300}
       # 服务
       - DEBUG=${DEBUG:-false}
       - CORS_ORIGINS=${CORS_ORIGINS:-*}

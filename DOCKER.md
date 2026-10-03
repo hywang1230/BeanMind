@@ -229,7 +229,7 @@ docker compose up -d
 | `LLM_BASE_URL` | 空 | OpenAI-compatible 接口 base URL |
 | `LLM_API_KEY` | 空 | API Key |
 | `LLM_MODEL` | `gpt-4o-mini` | 模型名 |
-| `LLM_TIMEOUT_SECONDS` | `30` | 超时秒数 |
+| `LLM_TIMEOUT_SECONDS` | `300` | 月度复盘模型请求超时秒数（5 分钟） |
 
 ### 服务
 

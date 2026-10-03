@@ -91,8 +91,10 @@ LLM_ENABLED=true
 LLM_BASE_URL=https://example.com/v1
 LLM_API_KEY=your-api-key
 LLM_MODEL=your-model
-LLM_TIMEOUT_SECONDS=30
+LLM_TIMEOUT_SECONDS=300
 ```
+
+月度复盘模型请求默认超时 5 分钟。已有部署若显式设置了 `LLM_TIMEOUT_SECONDS`，会覆盖默认值；将其调整为 `300` 后重启服务生效；Docker 部署需重新创建容器以更新环境变量。
 
 模型只生成月度总结和建议，金额、预算和趋势由确定性代码计算。模型失败不影响记账、查询和预算。
 

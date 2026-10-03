@@ -623,25 +623,41 @@ class TransactionRepositoryImpl(TransactionRepository):
 
     def _commit_changes(self, changes):
         started = time.perf_counter()
+        validated = None
+        committed = False
         def before_commit():
             if self.projection_service:
                 self.projection_service.mark_dirty_files(changes)
         def after_commit(parsed_files):
+            nonlocal validated
+            validated = parsed_files
             if self.projection_service:
                 self.projection_service.refresh_files(
                     changes, parsed_files=parsed_files,
                     candidate_snapshot=parsed_files.candidate_snapshot,
                 )
         try:
-            return commit_ledger_files(
+            committed = commit_ledger_files(
                 self.beancount_service.ledger_path, changes,
                 before_commit=before_commit, after_commit=after_commit,
                 expected_fingerprints={str(path): self._source_fingerprints[path] for path in changes},
                 validation_context=(self.beancount_service.entries, self.beancount_service.options),
             )
+            return committed
         finally:
             from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
-            BeancountServiceProvider.invalidate()
+            if committed and validated is not None and validated.candidate_snapshot is not None and validated.projection_receipt is not None:
+                # commit returned only after final readability checks and manifest cleanup.
+                # Publishing is an acceleration step; it cannot change write success.
+                try:
+                    published = BeancountServiceProvider.publish(validated.candidate_snapshot, validated.projection_receipt)
+                except Exception:
+                    published = False
+                    logger.info("ledger_provider status=fallback reason=publish_exception")
+                if not published:
+                    BeancountServiceProvider.invalidate()
+            else:
+                BeancountServiceProvider.invalidate()
             self._source_snapshots.clear()
             logger.info("ledger_save files=%d total_ms=%.1f", len(changes),
                         (time.perf_counter() - started) * 1000)

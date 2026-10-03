@@ -333,12 +333,12 @@ def test_loader_difference_rejects_changed_source_during_load(simple, monkeypatc
     service.ledger_path.write_text('plugin "beancount.plugins.auto_accounts"\n' + service.ledger_path.read_text())
     service.full_rebuild()
     before = snapshot(service.db)
-    original = ledger_projection.loader.load_file
+    original = ledger_projection.load_ledger_file
     def changing_load(*args, **kwargs):
         result = original(*args, **kwargs)
         year.write_text(year.read_text() + txn(3))
         return result
-    monkeypatch.setattr(ledger_projection.loader, "load_file", changing_load)
+    monkeypatch.setattr(ledger_projection, "load_ledger_file", changing_load)
     with pytest.raises(ValueError, match="发生变化"):
         service.refresh_files([year])
     assert snapshot(service.db) == before
@@ -379,12 +379,12 @@ def test_loader_difference_recursive_wildcard_and_membership_change(simple, monk
     service.ledger_path.write_text('plugin "beancount.plugins.auto_accounts"\n' + service.ledger_path.read_text())
     service.full_rebuild()
     before = snapshot(service.db)
-    original = ledger_projection.loader.load_file
+    original = ledger_projection.load_ledger_file
     def changing_membership(*args, **kwargs):
         result = original(*args, **kwargs)
         (nested / "two.beancount").write_text(txn(4))
         return result
-    monkeypatch.setattr(ledger_projection.loader, "load_file", changing_membership)
+    monkeypatch.setattr(ledger_projection, "load_ledger_file", changing_membership)
     with pytest.raises(ValueError, match="发生变化"):
         service.refresh_files([year])
     assert snapshot(service.db) == before
@@ -453,13 +453,49 @@ def test_removed_plugin_provenance_is_still_verified_before_commit(simple, monke
     service.full_rebuild()
     before = snapshot(service.db)
     external.write_text("omit")
-    original = ledger_projection.loader.load_file
+    original = ledger_projection.load_ledger_file
     def changing_input(*args, **kwargs):
         result = original(*args, **kwargs)
         external.write_text("emit")
         return result
-    monkeypatch.setattr(ledger_projection.loader, "load_file", changing_input)
+    monkeypatch.setattr(ledger_projection, "load_ledger_file", changing_input)
     with pytest.raises(ValueError, match="发生变化"):
         service.refresh_files([year])
     assert snapshot(service.db) == before
     assert service.status()["status"] == "DIRTY"
+
+
+def test_complete_candidate_checks_physical_source_once_and_reuses_final_record_sample(simple, monkeypatch):
+    import time
+    from pathlib import Path
+    from beancount import loader
+    from backend.infrastructure.persistence.beancount.ledger_write import (
+        CandidateSnapshot, ValidatedFiles, sample_source_state,
+    )
+
+    service, year, _ = simple
+    service.ledger_path.write_text('plugin "beancount.plugins.auto_accounts"\n' + service.ledger_path.read_text())
+    year.write_text(''.join(txn(index) for index in range(20)))
+    entries, errors, options = loader.load_file(str(service.ledger_path))
+    assert not errors
+    state = sample_source_state(service.ledger_path)
+    candidate = CandidateSnapshot(entries, {path: value[2] for path, value in state.fingerprints.items()},
+                                  options, service.ledger_path)
+    parsed = ValidatedFiles({}, candidate)
+    calls = []
+    records = []
+    original_is_file = Path.is_file
+    original_record = service._record_file
+    def is_file(path):
+        calls.append(path)
+        return original_is_file(path)
+    def record(path, *args, **kwargs):
+        records.append(kwargs.get('fingerprint'))
+        return original_record(path, *args, **kwargs)
+    monkeypatch.setattr(Path, 'is_file', is_file)
+    monkeypatch.setattr(service, '_record_file', record)
+    service._refresh_loaded_ledger(time.perf_counter(), candidate, parsed)
+    assert calls.count(year) == 1
+    assert records and all(value is not None for value in records)
+    assert parsed.projection_receipt.ready_committed
+    assert_full_equivalent(service)

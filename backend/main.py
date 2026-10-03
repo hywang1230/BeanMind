@@ -90,10 +90,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="BeanMind API",
     description="基于 Beancount 的单机个人财务系统",
-    version="4.0.4",
+    version="4.0.5",
     debug=settings.DEBUG,
     lifespan=lifespan,
 )
+from backend.interfaces.api.transaction_timing import TransactionWriteTimingMiddleware
+
+app.add_middleware(TransactionWriteTimingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -158,7 +161,7 @@ for router in (
 
 @app.get("/api")
 def read_root():
-    return {"message": "Welcome to BeanMind API", "version": "4.0.4", "status": "healthy"}
+    return {"message": "Welcome to BeanMind API", "version": "4.0.5", "status": "healthy"}
 
 
 @app.get("/health")

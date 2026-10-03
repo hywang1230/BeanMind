@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     LLM_BASE_URL: str = ""
     LLM_API_KEY: str = ""
     LLM_MODEL: str = "gpt-4o-mini"
-    LLM_TIMEOUT_SECONDS: float = 30.0
+    LLM_TIMEOUT_SECONDS: float = 300.0
 
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
