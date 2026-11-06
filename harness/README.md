@@ -1,43 +1,48 @@
 # BeanMind Harness
 
-统一入口为 `bash scripts/verify`，CI 使用相同入口。工程与产品规则见 [开发规则](rules/README.md)；本地设计与授权见根 AGENTS.md。Harness 提供自动证据，不代替设计确认或人工验收。
+统一验证入口为 `bash scripts/verify`（底层执行 [verify.sh](checks/verify.sh)），CI 使用相同入口。工程与产品细则见 [规则索引](rules/README.md)，协作与授权底线见根 `AGENTS.md`。Harness 提供自动验证证据，不代替设计确认、独立评审或人工验收。
 
-## 使用
+## 入口与范围
 
-环境：Python 3.10+、uv、Git、Bash；Node 遵循 frontend/package.json engines（`^20.19.0 || >=22.12.0`）。依赖安装是独立步骤，检查不下载或升级依赖。
+环境要求：Python 3.10+、`uv`、`git`、`bash`、`perl`；Node 遵循 `frontend/package.json` 的 `engines`（`^20.19.0 || >=22.12.0`）。依赖安装是独立前置步骤，检查入口不隐式下载或升级依赖。
 
 ```bash
 uv sync --frozen --dev
 (cd frontend && npm ci)
-bash scripts/verify            # all：静态 + 后端全量 + 前端全量 + 类型/构建/PWA
-bash scripts/verify backend    # 静态 + 后端全量
-bash scripts/verify frontend   # 静态 + 前端全量 + 类型/构建/PWA
-bash scripts/verify docs       # 工程 Markdown 链接/空白 + Shell 语法 + Git 空白
-bash run_tests.sh              # 兼容转发，等同 backend
+bash harness/checks/check-local-rules.sh  # 规则文件、Markdown 链接/空白与 Shell 语法
+git diff --check                          # 工作树未暂存差异空白检查
+bash scripts/verify                       # all：静态治理 + 后端全量 + 前端全量 + 类型/构建/PWA
+bash scripts/verify backend               # 静态治理 + 后端全量（临时数据隔离）
+bash scripts/verify frontend              # 静态治理 + 前端全量 + 类型/构建/PWA
+bash scripts/verify docs                  # 静态治理（Markdown 链接/空白 + Shell 语法 + Git 空白）
+bash run_tests.sh                         # 兼容转发，等同 bash scripts/verify backend
 ```
 
-可从其他工作目录调用，支持带空格的路径。所选组件全部预检后才运行；失败立即停止并保留原生退出码。环境缺失输出 BLOCKED 并退出 2；未知参数也退出 2。仅所选检查全部成功才输出 PASS，组件 PASS 不代表 all PASS。
+| 命令 | 职责与边界 |
+| --- | --- |
+| [check-local-rules.sh](checks/check-local-rules.sh) | 检查 `README.md`、`harness/` 规则与本地 `AGENTS.md`、`docs/`（存在时）的非空、换行符、行尾空白、相对文件链接，以及入口脚本 Shell 语法 |
+| [local-tests.sh](checks/local-tests.sh) | 执行环境预检、后端临时目录隔离 `pytest`、前端 `vitest` 与 `vue-tsc`/`vite`/PWA 构建校验；缺失或预检不满足时退出 `2` 并报告 `BLOCKED` |
+| [verify.sh](checks/verify.sh) | 串联参数校验、预检、静态治理检查与 `local-tests.sh`；支持从任意工作目录及带空格路径调用，失败立即停止并保留原生退出码 |
 
-- 静态检查包含工作树和暂存区空白，以及维护中的工程 Markdown；存在的本地忽略文档也检查，缺失不阻塞 CI。没有全量 lint Gate，不把依赖声明当作已通过的检查。
-- 后端执行 `uv run --frozen --no-sync --offline pytest -q`，将 DATA_DIR、LEDGER_FILE、DATABASE_FILE、LOG_DIR 指向新建临时目录，关闭调度器与 LLM，并清空模型连接配置，退出清理目录。它不是 OS 沙箱，测试不得硬编码真实路径。
-- 前端使用 jsdom 测试；build 已包含 vue-tsc、Vite 和 PWA 校验，不重复执行。后端没有独立构建 Gate。
-- 修改锁文件后重新安装依赖；`--no-sync` 不证明本地与锁一致，CI 使用 frozen 同步。
-- 结果输出到终端，不生成状态机报告。检查会写临时目录、.harness/uv-cache/、pytest 与前端缓存/产物，不执行迁移、真实外部调用、生产服务启动或发布。
+## 本地测试适配与隔离
 
-## 交付检查
+- **静态治理检查**：覆盖工作树与暂存区空白（`git diff --check`、`git diff --cached --check`）、Shell 语法（`bash -n`）以及工程 Markdown 链接与格式（`check-local-rules.sh` 与 `check_docs.py`）。本地忽略文档存在时一并检查，缺失不阻塞 CI。
+- **后端隔离验证**：`local-tests.sh` 创建临时目录并在退出时自动清理，强制将 `DATA_DIR`、`LEDGER_FILE`、`DATABASE_FILE`、`LOG_DIR` 指向临时路径，设置 `SCHEDULER_ENABLED=false`、`LLM_ENABLED=false` 并清空 `LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`，再执行 `uv run --frozen --no-sync --offline pytest -q`。它不是 OS 级沙箱，测试严禁硬编码真实 `data/` 路径或读取真实 `.env`。
+- **前端测试与构建**：在 `frontend/` 下串行执行 `npm run test:run`（Vitest + `jsdom`）与 `npm run build`（含 `vue-tsc -b`、`vite build` 及 `scripts/verify-pwa.mjs`）。
+- **锁文件与缓存边界**：修改 `pyproject.toml`/`uv.lock` 或 `frontend/package*.json` 后须重新同步依赖；`--no-sync` 不证明本地虚拟环境与锁文件完全一致，CI 通过 `--frozen` 校验。检查仅写入临时目录、`.harness/uv-cache/`、测试缓存与 `frontend/dist/`，不触碰真实账本或数据库。
 
-| 改动 | 自动检查 | 额外场景与人工边界 |
+## 交付检查与人工验收边界
+
+| 改动范围 | 必跑自动检查 | 额外场景与人工/外部验收边界 |
 | --- | --- | --- |
-| 纯文档、注释、格式 | docs | 直接核对忽略文件前后内容与引用 |
-| 后端 | backend | 受影响功能场景 |
-| 前端 | frontend | 加载/空/错/重试、返回及布局 |
-| 跨前后端、Harness/CI | all | Harness 自测、入口与 CI 一致性 |
-| 账本写入、投影 | backend | 金额精度、临时账本、写失败、投影一致性/DIRTY/恢复；纯投影改动按实际影响选择写入场景 |
-| 迁移 | backend | 只读预览、回滚、幂等；实际执行前确认外部可恢复备份 |
-| 性能 | backend | 经授权的匿名真实账本 1×/等分布 2× |
-| LLM | backend | 确定性事实、本地校验、模型不可用降级 |
-| PWA | frontend | 真实设备 HTTPS 安装、更新、API 不缓存 |
+| 纯文档、规则、注释、格式 | `docs` | 直接核对 Git 忽略文件（`AGENTS.md`、`docs/`）前后内容与本地链接 |
+| 后端业务、API、领域、持久化 | `backend` | 受影响接口契约、错误码、领域边界与回归用例 |
+| 前端页面、组件、路由、状态 | `frontend` | 加载态、空状态、错误与重试、URL 查询恢复、移动端安全区与导航返回 |
+| 跨前后端、契约变更、Harness/CI | `all` | Harness 自测（`tests/harness/test_verify_entrypoint.py`）、前后端契约与 CI 一致性 |
+| 账本写入、SQLite 投影 | `backend` | `Decimal` 精度、临时账本原子写、写失败回滚、投影 `READY`/`DIRTY` 与从账本重建恢复 |
+| 数据库迁移（`scripts/migrate_v3.py`） | `backend` | 默认只读预览、WAL/孤儿关联阻断、失败回滚、幂等；实际执行前须确认外部停机备份与授权 |
+| 性能基准（`scripts/benchmark_*.py`） | `backend` | 合成夹具仅验回归；正式性能结论须基于经授权的匿名真实账本 1× 与等分布 2× |
+| LLM 月度复盘 | `backend` | 确定性代码计算财务事实、模型输出本地结构校验、超时/异常 `LlmUnavailableError` 降级 |
+| PWA 壳层与更新提示 | `frontend` | 真实设备 HTTPS 下安装、发现新版本提示确认、`/api` 与 `/health` 永不缓存 |
 
-风险叠加取并集。迭代可定向运行 pytest/Vitest，交付运行对应全量组件；定向后端测试须使用同等临时环境隔离。保留 runner 的零测试失败语义；必需场景缺失、全跳过或未覆盖，不能宣称验收完成。额外场景核对实际测试，文件名和 PASS 不证明覆盖。
-
-自动 PASS 只证明本轮选定检查。设计确认、只读 Reviewer 和必需人工验收分别说明；未完成项保持待完成/阻塞。需要留证时记录实际命令、退出码、摘要与未覆盖项，CI 保留任务日志，不把旧报告当作本轮证据。
+多类改动叠加时取并集。开发迭代可带同等临时环境变量定向运行 `pytest` 或 `vitest run`，交付前运行对应组件全量检查。仅所选检查全部成功才输出 `PASS`，单项 `PASS` 不代表 `all` 通过；零测试执行、全跳过、缺适配或环境缺失均不算通过。设计确认、独立子代理评审与人工验收状态须在回复中分别说明。

@@ -18,11 +18,11 @@ export type TransactionDraft = {
   payee: string
   description: string
   currency: string
-  /** Total positive amount string for the transaction. */
+  /** User-entered signed total. A leading minus is a refund or reversal, not an absolute value. */
   amount: string
   fromAccounts: string[]
   toAccounts: string[]
-  /** Positive amount allocations per account on each side. */
+  /** Signed allocations in the same direction as `amount`, not raw Beancount posting signs. */
   fromLines: DraftLine[]
   toLines: DraftLine[]
 }
@@ -77,22 +77,24 @@ export function draftFromTransaction(transaction: {
   let toLines: DraftLine[] = []
   let amount = '0'
 
+  // Expense categories and income funding keep the entered sign; the opposite side is negated in the ledger.
+  const enteredAmount = (postingAmount: string, invert: boolean) => (invert ? negateAmount(postingAmount) : postingAmount)
+
   if (type === 'expense') {
     const categories = postings.filter((p) => p.account.startsWith('Expenses:'))
     const funding = postings.filter((p) => !p.account.startsWith('Expenses:'))
     toAccounts = categories.map((p) => p.account)
     fromAccounts = funding.map((p) => p.account)
-    toLines = categories.map((p) => ({ account: p.account, amount: p.amount.startsWith('-') ? negateAmount(p.amount) : p.amount }))
-    fromLines = funding.map((p) => ({ account: p.account, amount: p.amount.startsWith('-') ? negateAmount(p.amount) : p.amount }))
+    toLines = categories.map((p) => ({ account: p.account, amount: enteredAmount(p.amount, false) }))
+    fromLines = funding.map((p) => ({ account: p.account, amount: enteredAmount(p.amount, true) }))
     amount = toLines.length ? addAmounts(...toLines.map((l) => l.amount || '0')) : '0'
   } else if (type === 'income') {
-    // Income negative, funding positive in Beancount
     const income = postings.filter((p) => p.account.startsWith('Income:'))
     const funding = postings.filter((p) => !p.account.startsWith('Income:'))
     toAccounts = income.map((p) => p.account)
     fromAccounts = funding.map((p) => p.account)
-    toLines = income.map((p) => ({ account: p.account, amount: p.amount.startsWith('-') ? negateAmount(p.amount) : p.amount }))
-    fromLines = funding.map((p) => ({ account: p.account, amount: p.amount.startsWith('-') ? negateAmount(p.amount) : p.amount }))
+    toLines = income.map((p) => ({ account: p.account, amount: enteredAmount(p.amount, true) }))
+    fromLines = funding.map((p) => ({ account: p.account, amount: enteredAmount(p.amount, false) }))
     amount = fromLines.length ? addAmounts(...fromLines.map((l) => l.amount || '0')) : '0'
   } else {
     const sources = postings.filter((p) => p.amount.startsWith('-'))

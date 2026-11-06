@@ -54,6 +54,67 @@ describe('transactionDraft', () => {
     ])
   })
 
+  it('reloads a negative expense as the original signed amount', () => {
+    const saved = buildPostingsFromDraft(baseDraft({ amount: '-8.00' }))
+    const draft = draftFromTransaction({
+      id: 'tx-refund',
+      date: '2025-04-01',
+      transaction_type: 'expense',
+      postings: saved,
+    })
+    expect(draft.amount.startsWith('-')).toBe(true)
+    expect(draft.amount).toBe('-8')
+    expect(draft.fromAccounts).toEqual(['Assets:Cash'])
+    expect(draft.toAccounts).toEqual(['Expenses:Food'])
+    expect(draft.toLines).toEqual([{ account: 'Expenses:Food', amount: '-8.00' }])
+    expect(draft.fromLines).toEqual([{ account: 'Assets:Cash', amount: '-8' }])
+    expect(buildPostingsFromDraft(draft)).toEqual(saved)
+  })
+
+  it('reloads a negative income reversal as the original signed amount', () => {
+    const saved = buildPostingsFromDraft(baseDraft({
+      type: 'income',
+      amount: '-50.00',
+      fromAccounts: ['Assets:Cash'],
+      toAccounts: ['Income:Salary'],
+    }))
+    const draft = draftFromTransaction({
+      id: 'tx-reversal',
+      date: '2025-04-01',
+      transaction_type: 'income',
+      postings: saved,
+    })
+    expect(draft.amount).toBe('-50')
+    expect(draft.fromAccounts).toEqual(['Assets:Cash'])
+    expect(draft.toAccounts).toEqual(['Income:Salary'])
+    expect(draft.fromLines).toEqual([{ account: 'Assets:Cash', amount: '-50.00' }])
+    expect(draft.toLines).toEqual([{ account: 'Income:Salary', amount: '-50' }])
+    expect(buildPostingsFromDraft(draft)).toEqual([
+      { account: 'Assets:Cash', amount: '-50.00', currency: 'CNY' },
+      { account: 'Income:Salary', amount: '50.00', currency: 'CNY' },
+    ])
+  })
+
+  it('keeps split refund lines negative when editing', () => {
+    const draft = draftFromTransaction({
+      id: 'tx-split-refund',
+      date: '2025-04-01',
+      transaction_type: 'expense',
+      postings: [
+        { account: 'Expenses:Food', amount: '-3.00', currency: 'CNY' },
+        { account: 'Expenses:Transport', amount: '-5.00', currency: 'CNY' },
+        { account: 'Assets:Cash', amount: '8.00', currency: 'CNY' },
+      ],
+    })
+    expect(draft.amount).toBe('-8')
+    expect(draft.toLines).toEqual([
+      { account: 'Expenses:Food', amount: '-3.00' },
+      { account: 'Expenses:Transport', amount: '-5.00' },
+    ])
+    expect(draft.fromLines).toEqual([{ account: 'Assets:Cash', amount: '-8' }])
+    expect(buildPostingsFromDraft(draft).map((posting) => posting.amount)).toEqual(['-3.00', '-5.00', '8.00'])
+  })
+
   it('requires distribute and balances multi category with decimal strings', () => {
     const draft = baseDraft({
       amount: '0.30',
