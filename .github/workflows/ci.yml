@@ -29,8 +29,8 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --frozen --dev
 
-      - name: Run backend checks
-        run: bash scripts/verify backend
+      - name: Run backend tests
+        run: bash run_tests.sh
 
   frontend:
     name: Frontend tests and build
@@ -51,5 +51,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run frontend checks
-        run: bash ../scripts/verify frontend
+      - name: Run frontend tests
+        run: npm run test:run
+
+      - name: Build frontend
+        run: npm run build
