@@ -80,6 +80,9 @@ async def lifespan(app: FastAPI):
                 minute=settings.SCHEDULER_MINUTE,
                 timezone=settings.SCHEDULER_TIMEZONE,
             )
+            recurring_scheduler.add_monthly_exchange_rate_job(
+                timezone=settings.SCHEDULER_TIMEZONE,
+            )
 
     yield
 

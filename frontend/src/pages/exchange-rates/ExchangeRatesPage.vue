@@ -2,7 +2,12 @@
   <section class="page secondary-page exchange-rates-page">
     <van-nav-bar title="汇率" left-arrow @click-left="router.back()">
       <template #right>
-        <van-button size="small" type="primary" plain @click="openCreate()">添加</van-button>
+        <div class="nav-actions">
+          <van-button size="small" plain :loading="generating" @click="generateCurrentMonth">
+            生成本月
+          </van-button>
+          <van-button size="small" type="primary" plain @click="openCreate()">添加</van-button>
+        </div>
       </template>
     </van-nav-bar>
 
@@ -171,6 +176,7 @@ const quoteCurrency = ref('CNY')
 const catalogCurrencies = ref<CurrencyItem[]>([])
 const rates = ref<ExchangeRate[]>([])
 const loading = ref(false)
+const generating = ref(false)
 const error = ref('')
 
 const showDetail = ref(false)
@@ -246,15 +252,22 @@ function onRateInput(value: string) {
   rateFieldError.value = ''
 }
 
+function operatingQuoteCode(catalog: CurrencyItem[]) {
+  const operating = catalog.find((item) => item.is_operating)
+  return operating?.code ? operating.code.toUpperCase() : ''
+}
+
 async function load() {
   loading.value = true
   error.value = ''
   try {
-    const [catalog, list] = await Promise.all([
-      currenciesApi.list(true),
-      exchangeRatesApi.getExchangeRates(quoteCurrency.value),
-    ])
+    const catalog = await currenciesApi.list(true)
     catalogCurrencies.value = catalog
+    const operating = operatingQuoteCode(catalog)
+    if (operating) {
+      quoteCurrency.value = operating
+    }
+    const list = await exchangeRatesApi.getExchangeRates(quoteCurrency.value)
     const quote = quoteCurrency.value.toUpperCase()
     const enabledCodes = new Set(
       catalog
@@ -266,6 +279,26 @@ async function load() {
     error.value = (reason as ApiError).message || '汇率加载失败'
   } finally {
     loading.value = false
+  }
+}
+
+async function generateCurrentMonth() {
+  if (generating.value) return
+  generating.value = true
+  try {
+    const result = await exchangeRatesApi.generateCurrentMonth()
+    if (result.status === 'unavailable') {
+      showToast('暂无可用牌价')
+    } else if (result.written.length) {
+      showToast(`已写入 ${result.written.length} 个币种`)
+    } else {
+      showToast('本月汇率已处理')
+    }
+    await load()
+  } catch (reason) {
+    showToast((reason as ApiError).message || '生成失败')
+  } finally {
+    generating.value = false
   }
 }
 
@@ -449,6 +482,12 @@ onMounted(load)
 <style scoped>
 .exchange-rates-page {
   padding-bottom: 24px;
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .quote-card {
