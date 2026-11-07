@@ -22,6 +22,7 @@ vi.mock('../../../api/exchangeRates', () => ({
     createExchangeRate: vi.fn(),
     updateExchangeRate: vi.fn(),
     deleteExchangeRate: vi.fn(),
+    generateCurrentMonth: vi.fn(),
   },
 }))
 vi.mock('../../../api/currencies', () => ({
@@ -39,8 +40,8 @@ const sampleRate = {
 }
 
 const catalog = [
-  { code: 'CNY', name: '人民币', symbol: '¥', enabled: true, sort_order: 0 },
-  { code: 'USD', name: '美元', symbol: '$', enabled: true, sort_order: 1 },
+  { code: 'CNY', name: '人民币', symbol: '¥', enabled: true, sort_order: 0, is_operating: true },
+  { code: 'USD', name: '美元', symbol: '$', enabled: true, sort_order: 1, is_operating: false },
 ]
 
 function mountPage() {
@@ -240,5 +241,50 @@ describe('ExchangeRatesPage', () => {
 
     expect(exchangeRatesApi.deleteExchangeRate).toHaveBeenCalledWith('USD', '2026-07-01', 'CNY')
     expect(exchangeRatesApi.getExchangeRates).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses catalog operating currency for list requests', async () => {
+    vi.mocked(currenciesApi.list).mockResolvedValue([
+      { code: 'USD', name: '美元', symbol: '$', enabled: true, sort_order: 0, is_operating: true },
+      { code: 'CNY', name: '人民币', symbol: '¥', enabled: true, sort_order: 1, is_operating: false },
+    ])
+    vi.mocked(exchangeRatesApi.getExchangeRates).mockResolvedValue([
+      {
+        currency: 'CNY',
+        rate: '0.14',
+        quote_currency: 'USD',
+        effective_date: '2026-07-01',
+        currency_pair: 'CNY/USD',
+      },
+    ])
+    const wrapper = mountPage()
+    await flushPromises()
+    expect(exchangeRatesApi.getExchangeRates).toHaveBeenCalledWith('USD')
+    expect(wrapper.text()).toContain('主货币：USD')
+    expect(wrapper.text()).toContain('CNY/USD')
+  })
+
+  it('generates current-month rates and reloads the list', async () => {
+    vi.mocked(exchangeRatesApi.getExchangeRates)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([sampleRate])
+    vi.mocked(exchangeRatesApi.generateCurrentMonth).mockResolvedValue({
+      effective_date: '2026-11-01',
+      source_date: '2026-11-01',
+      written: ['USD'],
+      skipped: [],
+      missing: [],
+      status: 'completed',
+    })
+    const wrapper = mountPage()
+    await flushPromises()
+    const generate = wrapper.findAll('button').find((btn) => btn.text().includes('生成本月'))
+    expect(generate).toBeTruthy()
+    await generate!.trigger('click')
+    await flushPromises()
+    expect(exchangeRatesApi.generateCurrentMonth).toHaveBeenCalledTimes(1)
+    expect(exchangeRatesApi.getExchangeRates).toHaveBeenCalledTimes(2)
+    expect(exchangeRatesApi.getExchangeRates).toHaveBeenLastCalledWith('CNY')
+    expect(wrapper.text()).toContain('USD/CNY')
   })
 })

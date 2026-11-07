@@ -43,6 +43,15 @@ export type ConvertAmountResponse = {
     to_currency: string
 }
 
+export type GenerateCurrentMonthResponse = {
+    effective_date: string
+    source_date: string | null
+    written: string[]
+    skipped: string[]
+    missing: string[]
+    status: 'completed' | 'unavailable'
+}
+
 export const exchangeRatesApi = {
     /**
      * 获取所有汇率列表
@@ -140,5 +149,14 @@ export const exchangeRatesApi = {
      */
     convertAmount(data: ConvertAmountRequest): Promise<ConvertAmountResponse> {
         return apiClient.post('/api/exchange-rates/convert', data)
-    }
+    },
+
+    /**
+     * 按调度时区当前月生成当月 1 日汇率
+     */
+    generateCurrentMonth(): Promise<GenerateCurrentMonthResponse> {
+        return apiClient.post('/api/exchange-rates/generate-current-month', null, {
+            timeout: 90000,
+        })
+    },
 }

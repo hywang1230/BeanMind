@@ -127,6 +127,35 @@ describe('TransactionForm', () => {
     })
   })
 
+  it('shows a saved negative expense amount as negative when editing', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const wrapper = mount(TransactionForm, {
+      props: {
+        mode: 'edit',
+        loading: false,
+        initial: {
+          id: 'tx-refund',
+          date: '2025-04-01',
+          payee: '',
+          description: '',
+          transaction_type: 'expense',
+          display_amounts: [],
+          postings: [
+            { account: 'Expenses:Food', amount: '-8.00', currency: 'CNY' },
+            { account: 'Assets:Cash', amount: '8.00', currency: 'CNY' },
+          ],
+        },
+      },
+      global: { plugins: [Vant, pinia] },
+    })
+    await flushPromises()
+
+    const money = wrapper.findComponent({ name: 'MoneyInput' })
+    expect(money.props('modelValue')).toBe('-8')
+    expect(wrapper.find('.money-value').text()).toBe('-8.00')
+  })
+
   it('navigates to distribute when multiple categories selected', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

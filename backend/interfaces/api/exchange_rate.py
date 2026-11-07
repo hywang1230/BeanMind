@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from backend.infrastructure.persistence.beancount.beancount_provider import BeancountServiceProvider
 from backend.infrastructure.persistence.beancount.repositories import ExchangeRateRepositoryImpl
 from backend.application.services.exchange_rate_service import ExchangeRateApplicationService
+from backend.application.services.monthly_exchange_rate import MonthlyExchangeRateService
 from backend.interfaces.errors import ApiError
 from backend.services.currency_catalog import CurrencyCatalogError, CurrencyCatalogService
 
@@ -73,6 +74,16 @@ class ConvertAmountResponse(BaseModel):
     to_currency: str = Field(..., description="目标货币")
 
 
+class GenerateCurrentMonthResponse(BaseModel):
+    """生成本月汇率响应"""
+    effective_date: str = Field(..., description="当月 1 日")
+    source_date: Optional[str] = Field(default=None, description="实际采用的牌价日")
+    written: List[str] = Field(..., description="本次写入的币种")
+    skipped: List[str] = Field(..., description="已有汇率而跳过的币种")
+    missing: List[str] = Field(..., description="牌价缺失的币种")
+    status: str = Field(..., description="completed 或 unavailable")
+
+
 class MessageResponse(BaseModel):
     """消息响应"""
     message: str
@@ -94,6 +105,13 @@ def get_exchange_rate_service() -> ExchangeRateApplicationService:
     beancount_service = BeancountServiceProvider.get_service(settings.LEDGER_FILE)
     exchange_rate_repo = ExchangeRateRepositoryImpl(beancount_service)
     return ExchangeRateApplicationService(exchange_rate_repo)
+
+
+def get_monthly_exchange_rate_service(
+    db: Session = Depends(get_db),
+) -> MonthlyExchangeRateService:
+    """调度与按钮共用的当月汇率生成服务。"""
+    return MonthlyExchangeRateService(db, settings.LEDGER_FILE)
 
 
 # ========== API 端点 ==========
@@ -246,6 +264,19 @@ def convert_amount(
         "from_currency": request.from_currency.upper(),
         "to_currency": request.to_currency.upper()
     }
+
+
+@router.post(
+    "/generate-current-month",
+    response_model=GenerateCurrentMonthResponse,
+    summary="生成本月汇率",
+    description="按调度时区当前月写入当月 1 日对主币种的自动汇率",
+)
+def generate_current_month(
+    service: MonthlyExchangeRateService = Depends(get_monthly_exchange_rate_service),
+):
+    """调用与定时任务相同的生成方法；不接受历史月份。"""
+    return service.generate_current_month()
 
 
 @router.get(

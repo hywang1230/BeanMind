@@ -5,9 +5,11 @@
 import logging
 from datetime import date, datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +85,83 @@ class RecurringScheduler:
         )
         
         logger.info(f"已添加周期记账定时任务: 每天 {hour:02d}:{minute:02d} ({timezone}) 执行")
-    
+
+    def add_monthly_exchange_rate_job(
+        self,
+        timezone: str = "Asia/Shanghai",
+        *,
+        now: Optional[datetime] = None,
+    ):
+        """添加每月自动汇率任务，并在 1 日 10:00 之后补跑一次。"""
+        job_id = "monthly_exchange_rate_job"
+        existing_job = self._scheduler.get_job(job_id)
+        if existing_job:
+            self._scheduler.remove_job(job_id)
+            logger.info("已移除旧的每月汇率任务: %s", job_id)
+
+        # 14h-1s：覆盖 1 日 10:00 至 23:59:59，不跨到 2 日。
+        self._scheduler.add_job(
+            func=self._execute_monthly_exchange_rates,
+            trigger=CronTrigger(
+                day=1,
+                hour=10,
+                minute=0,
+                timezone=timezone,
+            ),
+            id=job_id,
+            name="每月自动汇率任务",
+            replace_existing=True,
+            misfire_grace_time=14 * 3600 - 1,
+        )
+        logger.info("已添加每月汇率定时任务: 每月 01 日 10:00 (%s) 执行", timezone)
+
+        from backend.application.services.monthly_exchange_rate import should_catch_up_monthly_fx
+
+        current = now or datetime.now(ZoneInfo(timezone))
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=ZoneInfo(timezone))
+        else:
+            current = current.astimezone(ZoneInfo(timezone))
+        if should_catch_up_monthly_fx(current):
+            self._scheduler.add_job(
+                func=self._execute_monthly_exchange_rates,
+                trigger="date",
+                run_date=datetime.now(ZoneInfo(timezone)),
+                id="monthly_exchange_rate_job_catchup",
+                name="每月自动汇率补跑",
+                replace_existing=True,
+                misfire_grace_time=300,
+            )
+            logger.info("已安排每月汇率补跑: %s", current.isoformat())
+
+    def _execute_monthly_exchange_rates(self):
+        """执行当月自动汇率；仅在调度时区的 1 日运行。"""
+        logger.info("开始执行每月汇率任务...")
+        try:
+            from backend.application.services.monthly_exchange_rate import MonthlyExchangeRateService
+            from backend.config import get_db_session, settings
+
+            tz = ZoneInfo(settings.SCHEDULER_TIMEZONE)
+            now = datetime.now(tz)
+            if now.day != 1:
+                logger.info("monthly_fx skip reason=not_first_day")
+                return
+
+            db = get_db_session()
+            try:
+                result = MonthlyExchangeRateService(db, settings.LEDGER_FILE).generate_current_month(now=now)
+                logger.info(
+                    "monthly_fx job status=%s written=%d skipped=%d missing=%d",
+                    result.get("status"),
+                    len(result.get("written") or []),
+                    len(result.get("skipped") or []),
+                    len(result.get("missing") or []),
+                )
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("每月汇率任务执行失败")
+
     def _execute_recurring_tasks(self):
         """执行周期记账任务"""
         logger.info("开始执行周期记账任务...")
