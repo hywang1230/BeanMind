@@ -100,20 +100,16 @@ LLM_TIMEOUT_SECONDS=300
 
 ## 验证
 
-统一入口与风险验收规则见 [Harness](harness/README.md)，开发规则见 [工程规则](harness/rules/README.md)。
-
 ```bash
 uv sync --frozen --dev
+bash run_tests.sh               # 后端 pytest（临时数据，关闭调度器与 LLM）
+
 (cd frontend && npm ci)
-bash scripts/verify             # 后端全量 + 前端全量 + 类型/构建/PWA
-bash scripts/verify backend     # 仅后端组件及静态检查
-bash scripts/verify frontend    # 仅前端组件及静态检查
-bash scripts/verify docs        # 文档与入口静态检查
+(cd frontend && npm run test:run)
+(cd frontend && npm run build)  # 含类型检查与 PWA 产物校验
 ```
 
-检查不隐式安装依赖；后端强制使用临时数据并关闭调度器与 LLM，失败保留非零退出码。CI 使用相同入口。自动检查不替代设计确认、真实设备验收、迁移备份确认或匿名真实数据性能验证。
-
-默认使用本地 docs 设计文档与 Shell Harness，无需 OpenSpec CLI 或 change 清单。风险验收要求见 Harness；AGENTS.md 与 docs 保持 Git 忽略策略，CI 不依赖这些本地文件。
+检查不隐式安装依赖；失败保留非零退出码。CI 运行上述命令，不依赖本地 `harness/`、`AGENTS.md` 与 `docs/`。自动检查不替代设计确认、真实设备验收、迁移备份确认或匿名真实数据性能验证。本地协作规则、设计文档与 Shell Harness 保持 Git 忽略策略。
 
 
 ## License
